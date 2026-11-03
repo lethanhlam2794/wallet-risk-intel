@@ -116,3 +116,18 @@ Sanctions Intelligence (spec §19 Phases 1-2).
   - Technical feature map: `docs/feature-maps/foundation-ofac-sanctions.md` — module map, ingestion flow, NULL-safe match partitioning, reason model, freshness/caching, provenance, security posture, verification entry points, accepted deviations
   - Evidence assets: `docs/feature-maps/assets/live-*.json` (9 real response captures)
 - **Machine Evidence**: real OFAC import `ofac-c1279a38fa18-1793687967` (19,484 entities / 1,075 listings / 72 programs); live API verified `data_status` on all detail endpoints post-fix.
+
+---
+
+# Pipeline Run 2 — Public Wallet Labels (spec Phase 3)
+
+Plan: `plans/20261103-1530-public-wallet-labels/`
+
+### [P3_STAGE_1_VERIFICATION] - Stage 1: Grounded Pre-Planning & Adversarial Debate
+- **Completion Timestamp**: 2026-11-03 15:55:00
+- **Status**: PASSED (APPROVE_WITH_AMENDMENTS, all applied)
+- **Machine Evidence**:
+  - Live source verified: `prettydeath/wallet-attribution` MIT license; `data/ethereum.csv` 105,267 rows + `bsc.csv` 3,525 rows; 9-col CSV; PK (address,network) pre-merged
+  - Critic (`devin -p` dangerous read-only mode, tree-hash verified unchanged — 245 files) reported 17 findings: F1/F2 blocking (OFAC-hardcoded dispatch seams, single-path Snapshot), F3 network-blind soft-revoke, F4 fingerprint DB-id instability, F5 OFAC-shaped ImportResult, F6-F17 medium/low (entity dedup hygiene, staging collision semantics, data_status spec, wallet endpoint labels, source_field filter, purge keep-set, CSV hardening)
+  - All amendments applied to phase files; `reports/critique.md`
+- **Self-Audit Commitment**: plan grounded in live-verified CSV facts (quoted commas, empty entities, 'Null' literals, mixed-case addresses, uniform rebuild date) — not assumptions.
