@@ -1,0 +1,27 @@
+?   	checkwallet/cmd/api	[no test files]
+?   	checkwallet/cmd/migrate	[no test files]
+?   	checkwallet/cmd/worker	[no test files]
+ok  	checkwallet/internal/config	0.014s
+?   	checkwallet/internal/db	[no test files]
+ok  	checkwallet/internal/enrichment	8.265s
+?   	checkwallet/internal/httpserver	[no test files]
+?   	checkwallet/internal/ingestion	[no test files]
+?   	checkwallet/internal/label	[no test files]
+ok  	checkwallet/internal/middleware	0.127s
+ok  	checkwallet/internal/network	0.024s
+?   	checkwallet/internal/platform/cache	[no test files]
+?   	checkwallet/internal/platform/database	[no test files]
+?   	checkwallet/internal/platform/logger	[no test files]
+ok  	checkwallet/internal/platform/metrics	0.025s
+?   	checkwallet/internal/provider	[no test files]
+ok  	checkwallet/internal/provider/chainabuse	0.036s
+ok  	checkwallet/internal/provider/goplus	0.625s
+ok  	checkwallet/internal/provider/ofac	3.883s
+ok  	checkwallet/internal/provider/publicaml	3.727s
+ok  	checkwallet/internal/provider/resilience	1.370s
+ok  	checkwallet/internal/provider/walletattribution	2.259s
+ok  	checkwallet/internal/sanctions	0.011s
+ok  	checkwallet/internal/testutil	0.518s
+ok  	checkwallet/internal/wallet	0.147s
+?   	checkwallet/migrations	[no test files]
+ok  	checkwallet/tests	39.506s

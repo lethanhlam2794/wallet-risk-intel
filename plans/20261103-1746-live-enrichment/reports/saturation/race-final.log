@@ -1,0 +1,15 @@
+ok  	checkwallet/internal/config	1.056s
+ok  	checkwallet/internal/enrichment	42.154s
+ok  	checkwallet/internal/middleware	1.205s
+ok  	checkwallet/internal/network	1.084s
+ok  	checkwallet/internal/platform/metrics	1.098s
+ok  	checkwallet/internal/provider/chainabuse	1.152s
+ok  	checkwallet/internal/provider/goplus	1.847s
+ok  	checkwallet/internal/provider/ofac	9.129s
+ok  	checkwallet/internal/provider/publicaml	4.930s
+ok  	checkwallet/internal/provider/resilience	2.491s
+ok  	checkwallet/internal/provider/walletattribution	6.534s
+ok  	checkwallet/internal/sanctions	1.142s
+ok  	checkwallet/internal/testutil	1.753s
+ok  	checkwallet/internal/wallet	2.448s
+ok  	checkwallet/tests	74.719s
