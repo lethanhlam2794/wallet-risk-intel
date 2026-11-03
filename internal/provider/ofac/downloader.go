@@ -237,11 +237,18 @@ func (d *Downloader) attempt(ctx context.Context) (provider.Snapshot, time.Durat
 		os.Remove(f.Name())
 		return provider.Snapshot{}, 0, fmt.Errorf("ofac download: close: %w", err)
 	}
-	return provider.Snapshot{
+	sum := hex.EncodeToString(h.Sum(nil))
+	file := provider.File{
 		Path:      filepath.Clean(f.Name()),
-		Checksum:  hex.EncodeToString(h.Sum(nil)),
+		Name:      "sdn_advanced.xml",
+		Checksum:  sum,
 		SizeBytes: written,
 		FinalURL:  resp.Request.URL.String(),
+	}
+	return provider.Snapshot{
+		Files:     []provider.File{file},
+		Checksum:  sum, // single file → its own checksum (unchanged semantics)
+		SizeBytes: written,
 	}, 0, nil
 }
 

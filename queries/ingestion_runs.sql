@@ -42,6 +42,11 @@ WHERE status = 'RUNNING'
 -- name: ListRecentRunIDs :many
 SELECT id FROM ingestion_runs ORDER BY started_at DESC LIMIT $1;
 
+-- name: ListRunningRunIDs :many
+-- Keep-set for staging purge (F13): another source's in-flight run must
+-- never have its staging rows deleted by this run's housekeeping.
+SELECT id FROM ingestion_runs WHERE status = 'RUNNING';
+
 -- name: GetLatestSnapshot :one
 SELECT * FROM sanctions_snapshots
 WHERE source_id = $1

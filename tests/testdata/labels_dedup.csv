@@ -1,0 +1,7 @@
+address,network,entity,label,category,source,source_url,confidence,last_updated
+0x00000000000000000000000000000000000000d1,ethereum,Binance ,Binance: Wallet 1,exchange,eth-labels,https://example.com,high,2026-10-01
+0x00000000000000000000000000000000000000d2,ethereum,Binance,Binance: Wallet 2,exchange,eth-labels,https://example.com,high,2026-10-01
+0x00000000000000000000000000000000000000d3,ethereum,Binance,Scam Sushiswap,scam,forta,https://example.com,high,2026-10-01
+0x00000000000000000000000000000000000000d4,ethereum,,Empty Entity,defi,eth-labels,https://example.com,medium,2026-10-01
+0x00000000000000000000000000000000000000d5,ethereum,Mixed Co,UnseenCatLabel,brandnewcat,eth-labels,https://example.com,medium,2026-10-01
+0x00000000000000000000000000000000000000D6,ethereum,CaseCo,Mixed Case Label,service,eth-labels,https://example.com,medium,2026-10-01

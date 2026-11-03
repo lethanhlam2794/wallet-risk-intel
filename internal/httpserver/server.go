@@ -16,6 +16,7 @@ import (
 	"checkwallet/internal/config"
 	"checkwallet/internal/db"
 	"checkwallet/internal/ingestion"
+	"checkwallet/internal/label"
 	"checkwallet/internal/middleware"
 	"checkwallet/internal/network"
 	"checkwallet/internal/platform/metrics"
@@ -45,6 +46,9 @@ type Deps struct {
 	// Sanctions wires /api/v1/sanctions/* when set; it also serves as the
 	// FreshnessProvider for wallet responses when Freshness is nil.
 	Sanctions *sanctions.Service
+	// Labels wires /api/v1/wallets/:network/:address/labels and the wallet
+	// endpoint's label summary when set.
+	Labels *label.Service
 	// Metrics wires request instrumentation and /metrics when set.
 	Metrics *metrics.Metrics
 }
@@ -83,7 +87,12 @@ func New(d Deps) *gin.Engine {
 	}
 	walletSvc := wallet.NewService(d.Queries)
 	api.GET("/networks", networksHandler(d.Resolver))
-	api.GET("/wallets/:network/:address", walletHandler(d.Resolver, walletSvc, fresh))
+	api.GET("/wallets/:network/:address", walletHandler(d.Resolver, walletSvc, fresh, d.Labels))
+
+	if d.Labels != nil {
+		lh := label.NewHandler(d.Labels, d.Resolver)
+		api.GET("/wallets/:network/:address/labels", lh.WalletLabels)
+	}
 
 	if d.Sanctions != nil {
 		sc := sanctions.NewHandler(d.Sanctions, d.Resolver)
@@ -162,7 +171,8 @@ func networksHandler(resolver *network.Resolver) gin.HandlerFunc {
 	}
 }
 
-func walletHandler(resolver *network.Resolver, svc *wallet.Service, fresh FreshnessProvider) gin.HandlerFunc {
+func walletHandler(resolver *network.Resolver, svc *wallet.Service,
+	fresh FreshnessProvider, labels *label.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		net, normalized, err := wallet.ResolveAndNormalize(resolver, c.Param("network"), c.Param("address"))
 		if err != nil {
@@ -179,17 +189,30 @@ func walletHandler(resolver *network.Resolver, svc *wallet.Service, fresh Freshn
 			middleware.InternalError(c)
 			return
 		}
+		// data_status here stays SANCTIONS-scoped (F10) — label freshness
+		// lives on the /labels endpoint response only.
 		dataStatus := "UNAVAILABLE"
 		var lastSynced *time.Time
 		if fresh != nil {
 			dataStatus, lastSynced = fresh.DataStatus(c.Request.Context())
+		}
+		labelsOut := []any{}
+		var labelsCount int64
+		if labels != nil {
+			if items, count, err := labels.Summary(c.Request.Context(), w.ID); err == nil {
+				labelsCount = count
+				for _, it := range items {
+					labelsOut = append(labelsOut, it)
+				}
+			}
 		}
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{
 			"network":            net.Code,
 			"address":            w.Address,
 			"normalized_address": w.NormalizedAddress,
 			"address_type":       w.AddressType,
-			"labels":             []any{},
+			"labels":             labelsOut,
+			"labels_count":       labelsCount,
 			"data_status":        dataStatus,
 			"last_synced_at":     lastSynced,
 			"first_seen_at":      w.CreatedAt.Time.UTC(),

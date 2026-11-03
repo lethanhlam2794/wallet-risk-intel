@@ -94,6 +94,7 @@ var staticTables = map[string]bool{
 	"schema_migrations":   true,
 	"blockchain_networks": true,
 	"data_sources":        true,
+	"risk_categories":     true, // migration-seeded taxonomy
 }
 
 // TruncateAll clears every mutable domain table so tests start from a clean,

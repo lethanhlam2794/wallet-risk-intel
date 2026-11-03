@@ -45,6 +45,11 @@ func (h *AdminHandler) TriggerRun(c *gin.Context) {
 	if body.Source == "" {
 		body.Source = "ofac_sdn"
 	}
+	if !h.svc.HasPipeline(body.Source) {
+		middleware.RespondError(c, http.StatusBadRequest, "INVALID_SOURCE",
+			"unknown source")
+		return
+	}
 	triggeredBy := "unknown"
 	if cl := middleware.ClientFrom(c); cl != nil {
 		triggeredBy = cl.Name

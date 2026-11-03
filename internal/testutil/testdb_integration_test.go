@@ -24,5 +24,5 @@ func TestRequireTestPool_SeededSchema(t *testing.T) {
 
 	var sources int
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM data_sources").Scan(&sources))
-	assert.Equal(t, 1, sources, "ofac_sdn seed must survive truncation")
+	assert.Equal(t, 2, sources, "ofac_sdn + wallet_attribution seeds must survive truncation")
 }

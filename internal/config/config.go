@@ -10,6 +10,7 @@ import (
 )
 
 const defaultOFACSnapshotURL = "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN_ADVANCED.XML"
+const defaultWattrDataBaseURL = "https://raw.githubusercontent.com/prettydeath/wallet-attribution/main/data"
 
 // Config is the runtime configuration for api and worker processes.
 type Config struct {
@@ -22,7 +23,11 @@ type Config struct {
 	OFACDownloadMaxBytes int64
 	OFACDownloadTimeout  time.Duration
 
+	WattrDataBaseURL      string
+	WattrDownloadMaxBytes int64
+
 	SanctionsStaleAfter time.Duration
+	LabelsStaleAfter    time.Duration
 
 	RateLimitRequests int
 	RateLimitWindow   time.Duration
@@ -41,7 +46,9 @@ func Load() (*Config, error) {
 		RedisURL:            envOr("REDIS_URL", "redis://127.0.0.1:6380/0"),
 		LogLevel:            envOr("LOG_LEVEL", "info"),
 		OFACSnapshotURL:     envOr("OFAC_SNAPSHOT_URL", defaultOFACSnapshotURL),
+		WattrDataBaseURL:    envOr("WATTR_DATA_BASE_URL", defaultWattrDataBaseURL),
 		SanctionsStaleAfter: envDur("SANCTIONS_STALE_AFTER", 48*time.Hour),
+		LabelsStaleAfter:    envDur("LABELS_STALE_AFTER", 168*time.Hour),
 		RateLimitWindow:     envDur("RATE_LIMIT_WINDOW", time.Minute),
 		BootstrapAdminKey:   os.Getenv("API_BOOTSTRAP_ADMIN_KEY"),
 		BootstrapReaderKey:  os.Getenv("API_BOOTSTRAP_READER_KEY"),
@@ -52,6 +59,9 @@ func Load() (*Config, error) {
 
 	var err error
 	if cfg.OFACDownloadMaxBytes, err = envInt64("OFAC_DOWNLOAD_MAX_BYTES", 512<<20); err != nil {
+		return nil, err
+	}
+	if cfg.WattrDownloadMaxBytes, err = envInt64("WATTR_DOWNLOAD_MAX_BYTES", 32<<20); err != nil {
 		return nil, err
 	}
 	if cfg.OFACDownloadTimeout, err = time.ParseDuration(envOr("OFAC_DOWNLOAD_TIMEOUT", "10m")); err != nil {

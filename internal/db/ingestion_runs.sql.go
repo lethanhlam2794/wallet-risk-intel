@@ -181,6 +181,32 @@ func (q *Queries) ListRecentRunIDs(ctx context.Context, limit int32) ([]pgtype.U
 	return items, nil
 }
 
+const listRunningRunIDs = `-- name: ListRunningRunIDs :many
+SELECT id FROM ingestion_runs WHERE status = 'RUNNING'
+`
+
+// Keep-set for staging purge (F13): another source's in-flight run must
+// never have its staging rows deleted by this run's housekeeping.
+func (q *Queries) ListRunningRunIDs(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listRunningRunIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStaleRunningRuns = `-- name: ListStaleRunningRuns :many
 SELECT id, source_id, status, started_at, completed_at, records_fetched, records_inserted, records_updated, records_rejected, snapshot_checksum, snapshot_version, cursor_value, error_message, triggered_by, heartbeat_at FROM ingestion_runs
 WHERE status = 'RUNNING'

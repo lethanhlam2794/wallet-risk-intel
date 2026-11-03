@@ -1,0 +1,3 @@
+address,network,entity,label,category,source,source_url,confidence,last_updated
+0x00000000000000000000000000000000000000c1,ethereum,MultiEnt,First Label,entity,eth-labels,https://example.com,medium,2026-10-01
+0x00000000000000000000000000000000000000c1,ethereum,MultiEnt,Second Label,scam,forta,https://example.com,high,2026-10-01

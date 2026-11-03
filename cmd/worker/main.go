@@ -24,6 +24,7 @@ import (
 	"checkwallet/internal/platform/logger"
 	"checkwallet/internal/provider"
 	"checkwallet/internal/provider/ofac"
+	"checkwallet/internal/provider/walletattribution"
 )
 
 func main() {
@@ -66,16 +67,23 @@ func run(source, file string) error {
 		return err
 	}
 
-	var dl provider.SnapshotSource
+	fetchers := map[string]provider.SnapshotSource{}
 	if file == "" {
-		dl, err = ofac.NewDownloader(cfg.OFACSnapshotURL,
+		ofacDl, err := ofac.NewDownloader(cfg.OFACSnapshotURL,
 			ofac.WithMaxBytes(cfg.OFACDownloadMaxBytes))
 		if err != nil {
 			return err
 		}
+		wattrDl, err := walletattribution.NewDownloader(cfg.WattrDataBaseURL,
+			wattrFiles(resolver), walletattribution.WithMaxBytes(cfg.WattrDownloadMaxBytes))
+		if err != nil {
+			return err
+		}
+		fetchers["ofac_sdn"] = ofacDl
+		fetchers[walletattribution.SourceCode] = wattrDl
 	}
 
-	svc := ingestion.NewService(pool, resolver, dl, log)
+	svc := ingestion.NewService(pool, resolver, fetchers, log)
 	svc.SweepStaleRuns(ctx)
 	runID, err := svc.RunSync(ctx, ingestion.RunRequest{
 		SourceCode: source, TriggeredBy: "worker", FilePath: file,
@@ -109,4 +117,14 @@ func loadResolver(ctx context.Context, q *db.Queries) (*network.Resolver, error)
 		})
 	}
 	return network.NewResolver(nets), nil
+}
+
+// wattrFiles maps each registered network to its upstream CSV artifact
+// (data/{code}.csv) — the dataset layout is one file per network.
+func wattrFiles(resolver *network.Resolver) []string {
+	files := []string{}
+	for _, n := range resolver.List() {
+		files = append(files, n.Code+".csv")
+	}
+	return files
 }

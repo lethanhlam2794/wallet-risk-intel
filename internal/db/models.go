@@ -37,6 +37,15 @@ type DataSource struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type DataSourceSnapshot struct {
+	ID          int64              `json:"id"`
+	SourceID    int64              `json:"source_id"`
+	Version     string             `json:"version"`
+	Checksum    string             `json:"checksum"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	RowCount    int64              `json:"row_count"`
+}
+
 type Entity struct {
 	ID         int64              `json:"id"`
 	Name       string             `json:"name"`
@@ -60,6 +69,13 @@ type IngestionRun struct {
 	ErrorMessage     pgtype.Text        `json:"error_message"`
 	TriggeredBy      pgtype.Text        `json:"triggered_by"`
 	HeartbeatAt      pgtype.Timestamptz `json:"heartbeat_at"`
+}
+
+type RiskCategory struct {
+	ID           int64  `json:"id"`
+	Code         string `json:"code"`
+	Name         string `json:"name"`
+	CategoryType string `json:"category_type"`
 }
 
 type SanctionsEntity struct {
@@ -179,6 +195,21 @@ type StgSanctionsWallet struct {
 	Evidence           []byte      `json:"evidence"`
 }
 
+type StgWalletLabel struct {
+	RunID            pgtype.UUID `json:"run_id"`
+	NetworkCode      string      `json:"network_code"`
+	Address          string      `json:"address"`
+	EntityName       pgtype.Text `json:"entity_name"`
+	Label            string      `json:"label"`
+	UpstreamCategory string      `json:"upstream_category"`
+	SourceField      pgtype.Text `json:"source_field"`
+	SourceUrl        pgtype.Text `json:"source_url"`
+	Confidence       string      `json:"confidence"`
+	LastUpdated      pgtype.Text `json:"last_updated"`
+	Fingerprint      string      `json:"fingerprint"`
+	Evidence         []byte      `json:"evidence"`
+}
+
 type Wallet struct {
 	ID                int64              `json:"id"`
 	NetworkID         int64              `json:"network_id"`
@@ -187,4 +218,24 @@ type Wallet struct {
 	AddressType       string             `json:"address_type"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WalletLabel struct {
+	ID                 int64              `json:"id"`
+	WalletID           int64              `json:"wallet_id"`
+	CategoryID         int64              `json:"category_id"`
+	SourceID           int64              `json:"source_id"`
+	EntityID           pgtype.Int8        `json:"entity_id"`
+	ExternalRecordID   pgtype.Text        `json:"external_record_id"`
+	Fingerprint        string             `json:"fingerprint"`
+	Label              string             `json:"label"`
+	Confidence         string             `json:"confidence"`
+	VerificationStatus string             `json:"verification_status"`
+	SourceUrl          pgtype.Text        `json:"source_url"`
+	UpstreamCategory   pgtype.Text        `json:"upstream_category"`
+	Evidence           []byte             `json:"evidence"`
+	ObservedAt         pgtype.Timestamptz `json:"observed_at"`
+	FirstSeenAt        pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt         pgtype.Timestamptz `json:"last_seen_at"`
+	RevokedAt          pgtype.Timestamptz `json:"revoked_at"`
 }

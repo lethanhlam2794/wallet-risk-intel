@@ -17,6 +17,7 @@ const (
 	CodeInternal       = "INTERNAL"
 	CodeBadRequest     = "BAD_REQUEST"
 	CodeConflict       = "INGESTION_RUNNING"
+	CodeInvalidCursor  = "INVALID_CURSOR"
 )
 
 type errorEnvelope struct {

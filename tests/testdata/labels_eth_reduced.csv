@@ -1,0 +1,5 @@
+address,network,entity,label,category,source,source_url,confidence,last_updated
+0x00000000000000000000000000000000000000a1,ethereum,Binance,Binance: Hot Wallet,exchange,eth-labels+cex-list,https://example.com,high,2026-10-01
+0x00000000000000000000000000000000000000a2,ethereum,ScamCo,Phish Kit,scam,forta,https://example.com,high,2026-10-01
+0x00000000000000000000000000000000000000a3,ethereum,CasinoX,Lucky Dice,gambling,community,https://example.com,medium,2026-10-01
+0x00000000000000000000000000000000000000a4,ethereum,,Mixer One,mixer,tornado-watch,https://example.com,medium,2026-10-01

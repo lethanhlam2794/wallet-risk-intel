@@ -1,6 +1,8 @@
 // Package ingestion orchestrates snapshot-source runs end to end:
 // single-flight gating (advisory lock + RUNNING unique index), download,
 // staging import, validation, atomic publish, and cache-pointer updates.
+// Per-source work dispatches through the Pipeline registry — no source-
+// keyed if-chains (F1).
 package ingestion
 
 import (
@@ -12,6 +14,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,7 +27,7 @@ import (
 	"checkwallet/internal/network"
 	"checkwallet/internal/platform/metrics"
 	"checkwallet/internal/provider"
-	"checkwallet/internal/provider/ofac"
+	"checkwallet/internal/provider/walletattribution"
 )
 
 // ErrIngestionRunning is returned when a run for the source is already
@@ -47,7 +51,7 @@ const heartbeatInterval = 30 * time.Second
 type RunRequest struct {
 	SourceCode  string // data_sources.code, e.g. "ofac_sdn"
 	TriggeredBy string // api client name or "worker"
-	FilePath    string // when set, use this local file instead of downloading
+	FilePath    string // comma-separated local files; skips download
 }
 
 // Service runs snapshot ingestions against the pinned pool.
@@ -55,14 +59,22 @@ type Service struct {
 	pool       *pgxpool.Pool
 	log        *slog.Logger
 	networks   map[string]int64
-	downloader provider.SnapshotSource
+	pipelines  map[string]Pipeline
+	fetchers   map[string]provider.SnapshotSource
 	metrics    *metrics.Metrics
 	runTimeout time.Duration
 	now        func() time.Time // test hook
 }
 
 // SetMetrics attaches Prometheus collectors (nil-safe no-op when unset).
-func (s *Service) SetMetrics(m *metrics.Metrics) { s.metrics = m }
+func (s *Service) SetMetrics(m *metrics.Metrics) {
+	s.metrics = m
+	for _, p := range s.pipelines {
+		if pm, ok := p.(interface{ SetMetrics(*metrics.Metrics) }); ok {
+			pm.SetMetrics(m)
+		}
+	}
+}
 
 // SetRunTimeout overrides the detached-run deadline (tests shrink it).
 func (s *Service) SetRunTimeout(d time.Duration) { s.runTimeout = d }
@@ -75,18 +87,30 @@ func (s *Service) SweepStaleRuns(ctx context.Context) {
 	}
 }
 
-// NewService wires the ingestion orchestrator. downloader may be nil when
-// only FilePath runs are used.
+// HasPipeline reports whether a source code maps to a registered pipeline —
+// the admin trigger validates against this set.
+func (s *Service) HasPipeline(code string) bool {
+	_, ok := s.pipelines[code]
+	return ok
+}
+
+// NewService wires the ingestion orchestrator. fetchers maps source code →
+// downloader; it may be nil/empty when only FilePath runs are used.
 func NewService(pool *pgxpool.Pool, resolver *network.Resolver,
-	downloader provider.SnapshotSource, log *slog.Logger) *Service {
+	fetchers map[string]provider.SnapshotSource, log *slog.Logger) *Service {
 	nets := map[string]int64{}
 	for _, n := range resolver.List() {
 		nets[n.Code] = n.ID
 	}
-	return &Service{
-		pool: pool, log: log, networks: nets,
-		downloader: downloader, runTimeout: defaultRunTimeout, now: time.Now,
+	s := &Service{
+		pool: pool, log: log, networks: nets, fetchers: fetchers,
+		runTimeout: defaultRunTimeout, now: time.Now,
 	}
+	s.pipelines = map[string]Pipeline{
+		"ofac_sdn":                   newOFACPipeline(nets, func() time.Time { return s.now() }),
+		walletattribution.SourceCode: newLabelsPipeline(nets, func() time.Time { return s.now() }, log),
+	}
+	return s
 }
 
 // RunSync executes an ingestion run in the caller's context (worker mode).
@@ -150,15 +174,19 @@ func (s *Service) begin(ctx context.Context, req RunRequest) (*pgxpool.Conn, *db
 	qc := db.New(conn)
 
 	// Reap crashed workers' RUNNING rows, then purge staging older than
-	// the most recent runs (kept for diagnosis).
+	// the most recent runs (kept for diagnosis). The keep-set must include
+	// every currently-RUNNING run — an OFAC run's housekeeping must never
+	// delete a labels run's in-flight staging (F13), and vice versa.
 	_ = qc.MarkStaleRunsFailed(ctx)
-	keep, err := qc.ListRecentRunIDs(ctx, failedStagingKeep)
-	if err == nil && len(keep) > 0 {
-		uuids := make([]pgtype.UUID, 0, len(keep))
-		for _, id := range keep {
-			uuids = append(uuids, pgtype.UUID{Bytes: id.Bytes, Valid: true})
-		}
-		s.purgeStagingExcept(ctx, qc, uuids)
+	var keep []pgtype.UUID
+	if recent, err := qc.ListRecentRunIDs(ctx, failedStagingKeep); err == nil {
+		keep = append(keep, recent...)
+	}
+	if running, err := qc.ListRunningRunIDs(ctx); err == nil {
+		keep = append(keep, running...)
+	}
+	if len(keep) > 0 {
+		s.purgeStagingExcept(ctx, qc, keep)
 	}
 
 	runID := uuid.New()
@@ -192,6 +220,13 @@ func (s *Service) execute(ctx context.Context, conn *pgxpool.Conn, qc *db.Querie
 		}
 	}()
 
+	p, ok := s.pipelines[req.SourceCode]
+	if !ok {
+		s.finish(qc, runID, "FAILED", provider.ImportResult{}, publishStats{},
+			"", "", fmt.Sprintf("no pipeline registered for source %q", req.SourceCode))
+		return
+	}
+
 	// Liveness heartbeat: the stale-run sweep keys off heartbeat_at, so a
 	// slow-but-alive run (large download, long publish) is never reaped.
 	// Beats go through the pool (not the pinned conn — pgx conns forbid
@@ -215,88 +250,127 @@ func (s *Service) execute(ctx context.Context, conn *pgxpool.Conn, qc *db.Querie
 	}()
 	defer func() { close(hbStop); <-hbDone }()
 
-	// 1. Obtain the snapshot (download or file mode).
+	// 1. Obtain the snapshot (download or file mode). File mode accepts
+	// comma-separated paths; only downloader-produced temp files are
+	// removed — never a caller-owned path.
 	var snap provider.Snapshot
 	var err error
+	downloaded := false
 	if req.FilePath != "" {
-		snap, err = checksumFile(req.FilePath)
-	} else if s.downloader == nil {
-		err = errors.New("no downloader configured")
+		snap, err = checksumFiles(req.FilePath)
+	} else if fetcher := s.fetchers[req.SourceCode]; fetcher == nil {
+		err = fmt.Errorf("no downloader configured for source %q", req.SourceCode)
 	} else {
-		snap, err = s.downloader.Download(ctx)
-		if err == nil {
-			defer os.Remove(snap.Path)
-		}
+		snap, err = fetcher.Download(ctx)
+		downloaded = err == nil
+	}
+	if downloaded {
+		defer func() {
+			for _, f := range snap.Files {
+				os.Remove(f.Path)
+			}
+		}()
 	}
 	if err != nil {
 		s.finish(qc, runID, "FAILED", provider.ImportResult{}, publishStats{}, "", "", fmt.Sprintf("fetch: %s", err))
 		return
 	}
-	if snap.FinalURL != "" {
-		s.log.Info("snapshot fetched", "run_id", runID, "final_url", snap.FinalURL,
-			"checksum", snap.Checksum[:12], "size_bytes", snap.SizeBytes)
+	for _, f := range snap.Files {
+		if f.FinalURL != "" {
+			s.log.Info("snapshot file fetched", "run_id", runID, "name", f.Name,
+				"final_url", f.FinalURL, "checksum", f.Checksum[:12], "size_bytes", f.SizeBytes)
+		}
 	}
 
+	runUUID := pgtype.UUID{Bytes: runID, Valid: true}
+
 	// 2. Checksum-identical no-op: skip stage/publish/invalidate entirely.
-	prev, prevErr := qc.GetLatestSnapshot(ctx, sourceID)
-	if prevErr == nil && prev.Checksum == snap.Checksum {
+	prevVersion, prevChecksum, prevErr := p.LatestVersion(ctx, qc, sourceID)
+	if prevErr == nil && prevChecksum != "" && prevChecksum == snap.Checksum {
 		s.log.Info("identical checksum; skipping publish", "run_id", runID, "checksum", snap.Checksum[:12])
 		s.finish(qc, runID, "COMPLETED", provider.ImportResult{}, publishStats{},
-			snap.Checksum, prev.Version, "")
+			snap.Checksum, prevVersion, "")
 		result = "COMPLETED"
 		return
 	}
 
 	// 3. Stage.
-	imp := ofac.NewImporter(s.networks)
-	res, meta, err := imp.Import(ctx, qc, snap.Path, runID)
+	res, meta, err := p.Import(ctx, qc, snap, runUUID)
 	if err != nil {
 		s.finish(qc, runID, "FAILED", res, publishStats{}, snap.Checksum, "", fmt.Sprintf("stage: %s", err))
 		return
 	}
 
 	// 4. Validate staged snapshot.
-	var prevSnap *db.SanctionsSnapshot
-	if prevErr == nil {
-		prevSnap = &prev
-	}
-	if err := validateStaged(ctx, qc, runID, meta, prevSnap); err != nil {
+	if err := p.Validate(ctx, qc, runUUID, meta); err != nil {
 		s.finish(qc, runID, "FAILED", res, publishStats{}, snap.Checksum, "", fmt.Sprintf("validate: %s", err))
 		return
 	}
 
-	// 5. Publish atomically. Readers resolve the current version from the
-	// snapshots table itself — no separate cache pointer to go stale.
-	stats, version, err := s.publish(ctx, conn, sourceID, runID, snap.Checksum, meta, res)
+	// 5. Publish atomically in ONE transaction on the pinned conn. Readers
+	// resolve the current version from the snapshots table itself — no
+	// separate cache pointer to go stale.
+	tx, err := conn.Begin(ctx)
 	if err != nil {
+		s.finish(qc, runID, "FAILED", res, publishStats{}, snap.Checksum, "", fmt.Sprintf("publish: %s", err))
+		return
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(context.Background())
+		}
+	}()
+	for _, stmt := range []string{
+		"SET LOCAL lock_timeout = '10s'",
+		"SET LOCAL statement_timeout = '120s'",
+	} {
+		if _, err := tx.Exec(ctx, stmt); err != nil {
+			s.finish(qc, runID, "FAILED", res, publishStats{}, snap.Checksum, "", fmt.Sprintf("publish tx tuning: %s", err))
+			return
+		}
+	}
+	version, stats, err := p.Publish(ctx, db.New(tx), runUUID, sourceID, meta)
+	if err != nil {
+		// Roll back BEFORE finish: qc shares the pinned conn, so a finish
+		// issued while tx is still open lands inside the aborted
+		// transaction (25P02) and the run would stay RUNNING forever.
+		_ = tx.Rollback(context.Background())
 		s.finish(qc, runID, "FAILED", res, stats, snap.Checksum, "", fmt.Sprintf("publish: %s", err))
 		return
 	}
+	if err := tx.Commit(ctx); err != nil {
+		_ = tx.Rollback(context.Background())
+		s.finish(qc, runID, "FAILED", res, stats, snap.Checksum, "", fmt.Sprintf("publish commit: %s", err))
+		return
+	}
+	committed = true
 
 	// 6. Successful runs don't keep staging around.
-	s.deleteStaging(context.Background(), qc, runID)
+	s.deleteStaging(context.Background(), qc, runID, p)
 	s.finish(qc, runID, "COMPLETED", res, stats, snap.Checksum, version, "")
 	result = "COMPLETED"
 	if s.metrics != nil {
 		s.metrics.IncIngestionRecords(req.SourceCode, "fetched",
-			res.Entities+res.Wallets+res.Programs+res.EntityPrograms+res.References)
+			res.Entities+res.Wallets+res.Programs+res.EntityPrograms+res.References+res.Labels)
 		s.metrics.IncIngestionRecords(req.SourceCode, "updated", stats.upserted)
 		s.metrics.IncIngestionRecords(req.SourceCode, "rejected", res.Rejected+stats.revoked)
 	}
 	s.log.Info("ingestion run completed", "run_id", runID, "version", version,
-		"entities", res.Entities, "wallets", res.Wallets, "rejected", res.Rejected)
+		"entities", res.Entities, "wallets", res.Wallets, "labels", res.Labels,
+		"rejected", res.Rejected)
 }
 
 func (s *Service) q() *db.Queries { return db.New(s.pool) }
 
 func (s *Service) finish(qc *db.Queries, runID uuid.UUID, status string,
 	res provider.ImportResult, stats publishStats, checksum, version, errMsg string) {
-	fetched := res.Entities + res.Wallets + res.Programs + res.EntityPrograms + res.References
+	fetched := res.Entities + res.Wallets + res.Programs + res.EntityPrograms + res.References + res.Labels
 	params := db.FinishIngestionRunParams{
 		ID:              pgtype.UUID{Bytes: runID, Valid: true},
 		Status:          status,
 		RecordsFetched:  fetched,
-		RecordsInserted: res.Entities + res.Wallets + res.Programs + res.EntityPrograms + res.References,
+		RecordsInserted: fetched,
 		RecordsUpdated:  stats.upserted,
 		RecordsRejected: res.Rejected + stats.revoked,
 		SnapshotChecksum: pgtype.Text{
@@ -315,41 +389,67 @@ func (s *Service) finish(qc *db.Queries, runID uuid.UUID, status string,
 	}
 }
 
+// purgeStagingExcept removes staging rows for runs outside the keep set —
+// across EVERY registered pipeline's staging (housekeeping is global so a
+// dead run's rows can't leak regardless of which source ran next).
 func (s *Service) purgeStagingExcept(ctx context.Context, qc *db.Queries, keep []pgtype.UUID) {
-	for _, fn := range []func(context.Context, []pgtype.UUID) error{
-		qc.StgPurgeEntitiesExceptRuns, qc.StgPurgeWalletsExceptRuns,
-		qc.StgPurgeProgramsExceptRuns, qc.StgPurgeEntityProgramsExceptRuns,
-		qc.StgPurgeReferencesExceptRuns,
-	} {
-		if err := fn(ctx, keep); err != nil {
-			s.log.Warn("staging purge failed", "error", err)
+	seen := map[string]bool{}
+	for _, p := range s.pipelines {
+		for _, name := range p.StagingNames() {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			if err := stagingPurge[name](ctx, qc, keep); err != nil {
+				s.log.Warn("staging purge failed", "table", name, "error", err)
+			}
 		}
 	}
 }
 
-func (s *Service) deleteStaging(ctx context.Context, qc *db.Queries, runID uuid.UUID) {
+// deleteStaging removes this run's staging rows — only the running
+// pipeline's own set.
+func (s *Service) deleteStaging(ctx context.Context, qc *db.Queries, runID uuid.UUID, p Pipeline) {
 	u := pgtype.UUID{Bytes: runID, Valid: true}
-	for _, fn := range []func(context.Context, pgtype.UUID) error{
-		qc.StgDeleteRunEntities, qc.StgDeleteRunWallets, qc.StgDeleteRunPrograms,
-		qc.StgDeleteRunEntityPrograms, qc.StgDeleteRunReferences,
-	} {
-		_ = fn(ctx, u)
+	for _, name := range p.StagingNames() {
+		_ = stagingDelete[name](ctx, qc, u)
 	}
 }
 
-// checksumFile hashes a local snapshot for the -file worker path.
-func checksumFile(path string) (provider.Snapshot, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return provider.Snapshot{}, err
+// checksumFiles hashes comma-separated local artifact paths for the -file
+// worker path. The combined checksum composes over the provided files only,
+// in filename order — a single-CSV run is network-scoped by its content,
+// not by which files were passed.
+func checksumFiles(csvPaths string) (provider.Snapshot, error) {
+	var files []provider.File
+	for _, path := range strings.Split(csvPaths, ",") {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return provider.Snapshot{}, err
+		}
+		h := sha256.New()
+		n, err := io.Copy(h, f)
+		f.Close()
+		if err != nil {
+			return provider.Snapshot{}, err
+		}
+		files = append(files, provider.File{
+			Path: path, Name: filepath.Base(path),
+			Checksum: hex.EncodeToString(h.Sum(nil)), SizeBytes: n,
+		})
 	}
-	defer f.Close()
-	h := sha256.New()
-	n, err := io.Copy(h, f)
-	if err != nil {
-		return provider.Snapshot{}, err
+	if len(files) == 0 {
+		return provider.Snapshot{}, errors.New("no usable files in -file list")
 	}
-	return provider.Snapshot{Path: path, Checksum: hex.EncodeToString(h.Sum(nil)), SizeBytes: n}, nil
+	return provider.Snapshot{
+		Files:     files,
+		Checksum:  provider.CombinedChecksum(files),
+		SizeBytes: provider.TotalSize(files),
+	}, nil
 }
 
 func isUniqueViolation(err error) bool {

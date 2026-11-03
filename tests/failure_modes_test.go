@@ -52,7 +52,7 @@ func testAPIObserved(t *testing.T, publish bool) (*httptest.Server, *pgxpool.Poo
 		RateLimitRequests: 1000, RateLimitAnon: 1000, RateLimitWindow: time.Minute,
 		SanctionsStaleAfter: 48 * time.Hour,
 	}
-	m := metrics.New(metrics.LatestSnapshotQuery(q))
+	m := metrics.New(metrics.LatestSnapshotQuery(q), metrics.LabelsActiveQuery(q))
 	sanSvc := sanctions.NewService(q, rdb, resolver, cfg.SanctionsStaleAfter)
 	sanSvc.SetMetrics(m)
 	engine := httpserver.New(httpserver.Deps{
@@ -106,7 +106,7 @@ func TestMetrics_IngestionValues(t *testing.T) {
 	// The server built inside testAPIObserved owns its own registry, so run
 	// a service with a fresh registry and scrape IT — what matters is the
 	// collectors carry real values.
-	m2 := metrics.New(metrics.LatestSnapshotQuery(q))
+	m2 := metrics.New(metrics.LatestSnapshotQuery(q), metrics.LabelsActiveQuery(q))
 	svc := ingestion.NewService(pool, resolver, nil, log)
 	svc.SetMetrics(m2)
 	runID, err := svc.RunSync(context.Background(), ingestion.RunRequest{

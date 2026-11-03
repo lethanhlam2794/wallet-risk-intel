@@ -100,8 +100,10 @@ paths:
       summary: Get-or-create a wallet record
       description: |
         Normalizes the address (EIP-55/hex), resolves the network, and
-        returns the wallet with freshness metadata. `labels` is reserved
-        and always empty in this phase.
+        returns the wallet with freshness metadata. `labels` carries the
+        first five active public-label summaries; `data_status` here stays
+        **sanctions**-scoped — label freshness is reported by the labels
+        endpoint below.
       parameters:
         - { $ref: "#/components/parameters/Network" }
         - { $ref: "#/components/parameters/Address" }
@@ -121,10 +123,158 @@ paths:
                   normalized_address: "0x098b716b8aaf21512996dc57eb0615e2383e2f96"
                   address_type: evm
                   labels: []
+                  labels_count: 0
                   data_status: AVAILABLE
                   last_synced_at: "2026-10-28T12:00:00Z"
                   first_seen_at: "2026-10-28T12:00:01Z"
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/wallets/{network}/{address}/labels:
+    get:
+      tags: [wallets]
+      summary: Public attribution labels for a wallet
+      description: |
+        Lists public wallet labels (upstream attribution dataset —
+        prettydeath/wallet-attribution, MIT license). Labels are community/
+        provider attributions, `reported` never auto-verified; GAMBLING and
+        EXCHANGE are classifications, not risk verdicts; an empty `labels`
+        array is "no data", **not** "safe".
+
+        - `labels_count` is the total number of rows matching the active
+          filters, not the page size.
+        - `data_status`/`last_synced_at` reflect the latest published
+          wallet-attribution snapshot and are recomputed per response
+          (never served from cache): `UNAVAILABLE` means no snapshot has
+          been published yet.
+        - Revoked labels are hidden unless `active_only=false`.
+      parameters:
+        - { $ref: "#/components/parameters/Network" }
+        - { $ref: "#/components/parameters/Address" }
+        - name: category
+          in: query
+          schema: { type: string }
+          description: Filter by normalized category code (e.g. `EXCHANGE`,
+            `SCAM`); an upstream string resolves to the same code.
+        - name: source
+          in: query
+          schema: { type: string }
+          description: Filter by data source code (e.g. `wallet_attribution`).
+        - name: source_field
+          in: query
+          schema: { type: string }
+          description: Substring match on the upstream `source` vocabulary
+            inside evidence (e.g. `forta`, `eth-labels`).
+        - name: verification_status
+          in: query
+          schema: { type: string, enum: [reported, unverified, verified, disputed] }
+        - name: active_only
+          in: query
+          schema: { type: boolean, default: true }
+          description: When false, soft-revoked labels are included with
+            their `revoked_at` timestamp.
+        - name: cursor
+          in: query
+          schema: { type: string }
+          description: Opaque base64 cursor from a previous `next_cursor`.
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200, minimum: 1 }
+      responses:
+        "200":
+          description: Label page plus freshness metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/LabelPage" }
+              examples:
+                labeled:
+                  summary: Labeled wallet
+                  value:
+                    data:
+                      network: ethereum
+                      address: "0x00000000000000000000000000000000000000a1"
+                      normalized_address: "0x00000000000000000000000000000000000000a1"
+                      labels:
+                        - wallet_label_id: 42
+                          category: EXCHANGE
+                          category_type: ENTITY_TYPE
+                          label: "Binance: Hot Wallet"
+                          entity: { id: 7, name: Binance }
+                          source: { code: wallet_attribution, name: "Wallet Attribution (prettydeath)" }
+                          source_field: "eth-labels+cex-list"
+                          source_url: "https://example.com"
+                          upstream_category: exchange
+                          confidence: high
+                          verification_status: reported
+                          evidence:
+                            source_field: "eth-labels+cex-list"
+                            upstream_record: { label: "Binance: Hot Wallet", entity: Binance }
+                            fetch_checksum_part: "ab12cd34ef56…"
+                            observed_at: "2026-10-01T00:00:00Z"
+                          observed_at: "2026-10-01T00:00:00Z"
+                          first_seen_at: "2026-11-03T12:00:00Z"
+                          last_seen_at: "2026-11-03T12:00:00Z"
+                          revoked_at: null
+                      labels_count: 1
+                      next_cursor: ""
+                      data_status: AVAILABLE
+                      last_synced_at: "2026-11-03T12:00:00Z"
+                revoked:
+                  summary: Revoked label (active_only=false)
+                  value:
+                    data:
+                      network: ethereum
+                      address: "0x00000000000000000000000000000000000000a5"
+                      normalized_address: "0x00000000000000000000000000000000000000a5"
+                      labels:
+                        - wallet_label_id: 46
+                          category: HACK
+                          category_type: MALICIOUS_ACTIVITY
+                          label: "Null Entity Label"
+                          entity: { id: 9, name: "Null" }
+                          source: { code: wallet_attribution, name: "Wallet Attribution (prettydeath)" }
+                          source_field: forta
+                          source_url: "https://example.com"
+                          upstream_category: hack
+                          confidence: high
+                          verification_status: reported
+                          evidence: {}
+                          observed_at: "2026-10-01T00:00:00Z"
+                          first_seen_at: "2026-11-03T12:00:00Z"
+                          last_seen_at: "2026-11-04T12:00:00Z"
+                          revoked_at: "2026-11-04T12:00:00Z"
+                      labels_count: 1
+                      next_cursor: ""
+                      data_status: AVAILABLE
+                      last_synced_at: "2026-11-04T12:00:00Z"
+                unlabeled:
+                  summary: Unlabeled wallet (no data — not a verdict)
+                  value:
+                    data:
+                      network: ethereum
+                      address: "0x00000000000000000000000000000000deadbeef"
+                      normalized_address: "0x00000000000000000000000000000000deadbeef"
+                      labels: []
+                      labels_count: 0
+                      next_cursor: ""
+                      data_status: AVAILABLE
+                      last_synced_at: "2026-11-03T12:00:00Z"
+        "400":
+          description: Invalid address/network/filters or malformed cursor.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              examples:
+                invalidCursor:
+                  value:
+                    error:
+                      code: INVALID_CURSOR
+                      message: invalid cursor
+                      request_id: "req_123"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
@@ -439,8 +589,11 @@ components:
         address_type: { type: string }
         labels:
           type: array
-          items: { type: object }
-          description: Reserved; always empty in this phase.
+          items: { $ref: "#/components/schemas/LabelSummary" }
+          description: First five active public-label summaries.
+        labels_count:
+          type: integer
+          description: Total active labels for the wallet (all sources).
         data_status: { $ref: "#/components/schemas/DataStatus" }
         last_synced_at: { type: ["string", "null"], format: date-time }
         first_seen_at: { type: string, format: date-time }
@@ -448,6 +601,73 @@ components:
       type: string
       enum: [AVAILABLE, STALE, UNAVAILABLE]
       description: Snapshot freshness recomputed at serve time.
+    LabelSummary:
+      type: object
+      properties:
+        wallet_label_id: { type: integer }
+        category: { type: string, description: Normalized category code }
+        category_type:
+          type: string
+          enum: [LEGAL, MALICIOUS_ACTIVITY, SERVICE_TYPE, ENTITY_TYPE, OTHER]
+        label: { type: string }
+        entity:
+          type: ["object", "null"]
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        confidence: { type: string, enum: [unknown, low, medium, high] }
+        verification_status:
+          type: string
+          enum: [unverified, reported, verified, disputed]
+    Label:
+      allOf:
+        - $ref: "#/components/schemas/LabelSummary"
+        - type: object
+          properties:
+            source:
+              type: object
+              properties:
+                code: { type: string }
+                name: { type: string }
+            source_field:
+              type: string
+              description: Upstream `source` vocabulary (e.g. eth-labels+cex-list).
+            source_url: { type: ["string", "null"] }
+            upstream_category: { type: ["string", "null"] }
+            evidence:
+              type: object
+              description: Provenance payload — upstream_record, source_field,
+                fetch_checksum_part, observed_at/date_unparsed.
+            observed_at: { type: ["string", "null"], format: date-time }
+            first_seen_at: { type: ["string", "null"], format: date-time }
+            last_seen_at: { type: ["string", "null"], format: date-time }
+            revoked_at: { type: ["string", "null"], format: date-time }
+    LabelPage:
+      type: object
+      properties:
+        network: { type: string }
+        address: { type: string }
+        normalized_address: { type: string }
+        labels:
+          type: array
+          items: { $ref: "#/components/schemas/Label" }
+        labels_count:
+          type: integer
+          description: Total rows matching the active filters (not page size).
+        next_cursor:
+          type: string
+          description: Opaque base64 cursor for the next page; empty when done.
+        data_status: { $ref: "#/components/schemas/DataStatus" }
+        last_synced_at: { type: ["string", "null"], format: date-time }
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            request_id: { type: string }
     Reason:
       type: object
       properties:

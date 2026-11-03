@@ -36,11 +36,11 @@ func TestDownload_Success(t *testing.T) {
 	d := testDownloader(t, srv.URL, WithTmpDir(t.TempDir()))
 	snap, err := d.Download(context.Background())
 	require.NoError(t, err)
-	defer os.Remove(snap.Path)
+	defer os.Remove(snap.Files[0].Path)
 
 	assert.Equal(t, int64(len(payload)), snap.SizeBytes)
 	assert.Len(t, snap.Checksum, 64)
-	data, err := os.ReadFile(snap.Path)
+	data, err := os.ReadFile(snap.Files[0].Path)
 	require.NoError(t, err)
 	assert.Equal(t, payload, string(data))
 }
@@ -85,7 +85,7 @@ func TestDownload_429HonorsRetryAfter(t *testing.T) {
 	d := testDownloader(t, srv.URL, WithTmpDir(t.TempDir()), WithMaxRetries(3), WithBackoff(time.Millisecond))
 	snap, err := d.Download(context.Background())
 	require.NoError(t, err)
-	defer os.Remove(snap.Path)
+	defer os.Remove(snap.Files[0].Path)
 	assert.Equal(t, int32(2), calls.Load())
 }
 
@@ -201,8 +201,8 @@ func TestDownload_AllowlistedRedirectWorks(t *testing.T) {
 	d := testDownloader(t, srv.URL+"/go", WithTmpDir(t.TempDir()), WithMaxRetries(1))
 	snap, err := d.Download(context.Background())
 	require.NoError(t, err)
-	defer os.Remove(snap.Path)
-	assert.Equal(t, srv.URL+"/sdn.xml", snap.FinalURL)
+	defer os.Remove(snap.Files[0].Path)
+	assert.Equal(t, srv.URL+"/sdn.xml", snap.Files[0].FinalURL)
 }
 
 // A hostile Retry-After hint is capped — it must never wedge the run.
@@ -223,7 +223,7 @@ func TestDownload_RetryAfterCapped(t *testing.T) {
 	start := time.Now()
 	snap, err := d.Download(context.Background())
 	require.NoError(t, err)
-	defer os.Remove(snap.Path)
+	defer os.Remove(snap.Files[0].Path)
 	assert.Equal(t, int32(2), calls.Load())
 	assert.Less(t, time.Since(start), 2*time.Second, "Retry-After hint must be capped, not honored verbatim")
 }

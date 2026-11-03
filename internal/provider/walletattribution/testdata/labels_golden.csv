@@ -1,0 +1,8 @@
+address,network,entity,label,category,source,source_url,confidence,last_updated
+0x0ac2d6f5f5afc669d3ca38f830dad2b4f238ad3f,ethereum,0x-protocol,0x: Eth2Dai Bridge,bridge,eth-labels+graphsense,https://github.com/dawsbot/eth-labels,medium,2026-10-01
+0x8ed95d1746bf1e4dab58d8ed4724f1ef95b20db0,ethereum,"Binance, Inc.","Binance: Hot Wallet, US",exchange,eth-labels,https://example.com,high,2026-10-01
+0xBBbd1bbb4f9b936c3604906d7592a644071de884,ethereum,Null,Some Label,scam,forta,https://example.com,high,2026-10-01
+0x0000000000000000000000000000000000000001,ethereum,,Empty Entity Label,gambling,community,https://example.com,medium,2026-10-01
+0x0000000000000000000000000000000000000002,bsc,Wrong Network,Cross Net Row,bridge,eth-labels,https://example.com,medium,2026-10-01
+0x0000000000000000000000000000000000000003,ethereum,Acme,Bad Date Row,defi,eth-labels,https://example.com,medium,not-a-date
+not-an-address,ethereum,Bad Addr,Should Reject,entity,eth-labels,https://example.com,medium,2026-10-01

@@ -64,7 +64,36 @@ DATABASE_URL=... REDIS_URL=... go run ./cmd/worker -source ofac_sdn
 
 # Or ingest a local file (skips download)
 go run ./cmd/worker -source ofac_sdn -file /tmp/SDN_ADVANCED.XML
+
+# Ingest public wallet labels (two bounded GETs, one per network)
+go run ./cmd/worker -source wallet_attribution
+
+# Or from local CSVs (comma-separated; single file = network-scoped run)
+go run ./cmd/worker -source wallet_attribution -file /tmp/ethereum.csv,/tmp/bsc.csv
 ```
+
+## Public wallet labels
+
+Source: [prettydeath/wallet-attribution](https://github.com/prettydeath/wallet-attribution)
+(MIT license) — one CSV per supported network under `data/`. Rows are
+community/provider attributions: `verification_status` is always `reported`
+and never auto-verified; an absent label is **no data, not a safe verdict**;
+`GAMBLING`/`EXCHANGE` are classifications, not risk verdicts.
+
+```bash
+# List a wallet's labels (reader key)
+curl -H "X-API-Key: dev-reader-key" \
+  'http://localhost:8080/api/v1/wallets/ethereum/0x…/labels?limit=50'
+
+# Filters: category / source / source_field / verification_status /
+# active_only=false (shows soft-revoked rows) / cursor pagination
+curl -H "X-API-Key: dev-reader-key" \
+  'http://localhost:8080/api/v1/wallets/ethereum/0x…/labels?category=scam&active_only=false'
+```
+
+`data_status`/`last_synced_at` reflect the latest published label snapshot
+(`UNAVAILABLE` before first publish; `STALE` after `LABELS_STALE_AFTER`,
+default 168h). The wallet endpoint's `data_status` stays sanctions-scoped.
 
 ## Example calls
 

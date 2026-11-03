@@ -1,0 +1,2 @@
+address,chain,entity,label,category,source,source_url,confidence,last_updated
+0x0ac2d6f5f5afc669d3ca38f830dad2b4f238ad3f,ethereum,0x-protocol,0x: Eth2Dai Bridge,bridge,eth-labels,https://example.com,medium,2026-10-01

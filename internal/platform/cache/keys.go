@@ -11,9 +11,11 @@ const (
 	prefixRateLimit       = "rl"
 )
 
-// WalletLabels keys the wallet-label lookup cache.
-func WalletLabels(network, normalizedAddress string) string {
-	return fmt.Sprintf("%s:%s:%s", prefixWalletLabels, network, normalizedAddress)
+// WalletLabels keys the wallet-label lookup cache; the snapshot version is
+// embedded so a publish makes old entries unreachable — a fresh run can
+// never serve a stale label set (F15).
+func WalletLabels(network, normalizedAddress, snapshotVersion string) string {
+	return fmt.Sprintf("%s:%s:%s:%s", prefixWalletLabels, network, normalizedAddress, snapshotVersion)
 }
 
 // WalletSanctions keys the sanctions lookup cache; the snapshot version is

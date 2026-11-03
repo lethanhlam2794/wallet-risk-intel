@@ -29,11 +29,16 @@ type Metrics struct {
 	IngestionRecords     *prometheus.CounterVec
 	IngestionLastSuccess prometheus.Gauge
 	RateLimitStoreErrors prometheus.Counter
+
+	DynamicLabelCategories prometheus.Counter
 }
 
 // New builds the registry. snapshotQuery supplies the latest published_at
-// for the age gauge (computed on scrape, never cached).
-func New(snapshotQuery func(ctx context.Context) (time.Time, bool)) *Metrics {
+// for the age gauge (computed on scrape, never cached); labelsActiveQuery
+// supplies the live wallet_labels count for the active-labels gauge —
+// scrape-time so API and worker processes never diverge.
+func New(snapshotQuery func(ctx context.Context) (time.Time, bool),
+	labelsActiveQuery func(ctx context.Context) (int64, bool)) *Metrics {
 	reg := prometheus.NewRegistry()
 	fac := promauto.With(reg)
 
@@ -69,7 +74,24 @@ func New(snapshotQuery func(ctx context.Context) (time.Time, bool)) *Metrics {
 			Name: "rate_limit_store_errors_total",
 			Help: "Rate-limiter store failures served fail-open.",
 		}),
+		DynamicLabelCategories: fac.NewCounter(prometheus.CounterOpts{
+			Name: "labels_dynamic_categories_total",
+			Help: "Risk categories created dynamically from unseen upstream codes.",
+		}),
 	}
+
+	reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "wallet_labels_active_total",
+		Help: "Live (non-revoked) wallet labels across all sources.",
+	}, func() float64 {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		n, ok := labelsActiveQuery(ctx)
+		if !ok {
+			return 0
+		}
+		return float64(n)
+	}))
 
 	reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "sanctions_snapshot_age_seconds",
@@ -119,7 +141,21 @@ func (m *Metrics) IncSanctionsMatch() { m.SanctionsMatches.Inc() }
 // IncRateLimitStoreError counts fail-open rate-limiter store failures.
 func (m *Metrics) IncRateLimitStoreError() { m.RateLimitStoreErrors.Inc() }
 
+// IncDynamicLabelCategories counts categories created at publish time from
+// unseen upstream codes (warn-and-track posture).
+func (m *Metrics) IncDynamicLabelCategories(n int64) {
+	m.DynamicLabelCategories.Add(float64(n))
+}
+
 func itoa(i int) string { return strconv.Itoa(i) }
+
+// LabelsActiveQuery adapts the generated query to the gauge callback.
+func LabelsActiveQuery(q *db.Queries) func(context.Context) (int64, bool) {
+	return func(ctx context.Context) (int64, bool) {
+		n, err := q.CountActiveLabels(ctx)
+		return n, err == nil
+	}
+}
 
 // LatestSnapshotQuery adapts the generated query to the gauge callback.
 func LatestSnapshotQuery(q *db.Queries) func(context.Context) (time.Time, bool) {

@@ -16,13 +16,16 @@ import (
 	"checkwallet/internal/db"
 	"checkwallet/internal/httpserver"
 	"checkwallet/internal/ingestion"
+	"checkwallet/internal/label"
 	"checkwallet/internal/middleware"
 	"checkwallet/internal/network"
 	"checkwallet/internal/platform/cache"
 	"checkwallet/internal/platform/database"
 	"checkwallet/internal/platform/logger"
 	"checkwallet/internal/platform/metrics"
+	"checkwallet/internal/provider"
 	"checkwallet/internal/provider/ofac"
+	"checkwallet/internal/provider/walletattribution"
 	"checkwallet/internal/sanctions"
 )
 
@@ -65,16 +68,26 @@ func run() error {
 		return err
 	}
 
-	dl, err := ofac.NewDownloader(cfg.OFACSnapshotURL,
+	ofacDl, err := ofac.NewDownloader(cfg.OFACSnapshotURL,
 		ofac.WithMaxBytes(cfg.OFACDownloadMaxBytes))
 	if err != nil {
 		return err
 	}
-	ingestSvc := ingestion.NewService(pool, resolver, dl, log)
+	wattrDl, err := walletattribution.NewDownloader(cfg.WattrDataBaseURL,
+		wattrFiles(resolver), walletattribution.WithMaxBytes(cfg.WattrDownloadMaxBytes))
+	if err != nil {
+		return err
+	}
+	fetchers := map[string]provider.SnapshotSource{
+		"ofac_sdn":                   ofacDl,
+		walletattribution.SourceCode: wattrDl,
+	}
+	ingestSvc := ingestion.NewService(pool, resolver, fetchers, log)
 	ingestSvc.SweepStaleRuns(ctx) // crashed workers leave no zombie RUNNING rows
 	sanctionsSvc := sanctions.NewService(queries, rdb.R(), resolver, cfg.SanctionsStaleAfter)
+	labelSvc := label.NewService(queries, rdb.R(), cfg.LabelsStaleAfter)
 
-	m := metrics.New(metrics.LatestSnapshotQuery(queries))
+	m := metrics.New(metrics.LatestSnapshotQuery(queries), metrics.LabelsActiveQuery(queries))
 	ingestSvc.SetMetrics(m)
 	sanctionsSvc.SetMetrics(m)
 
@@ -83,6 +96,7 @@ func run() error {
 		Resolver: resolver, Queries: queries,
 		Admin:     ingestion.NewAdminHandler(ingestSvc, queries, log),
 		Sanctions: sanctionsSvc,
+		Labels:    labelSvc,
 		Metrics:   m,
 	})
 
@@ -134,4 +148,14 @@ func loadResolver(ctx context.Context, q *db.Queries) (*network.Resolver, error)
 		})
 	}
 	return network.NewResolver(nets), nil
+}
+
+// wattrFiles maps each registered network to its upstream CSV artifact
+// (data/{code}.csv) — the dataset layout is one file per network.
+func wattrFiles(resolver *network.Resolver) []string {
+	files := []string{}
+	for _, n := range resolver.List() {
+		files = append(files, n.Code+".csv")
+	}
+	return files
 }
