@@ -1,0 +1,25 @@
+{
+    "data": {
+        "network": "ethereum",
+        "address": "0x098B716B8Aaf21512996dC57EB0615e2383E2f96",
+        "normalized_address": "0x098b716b8aaf21512996dc57eb0615e2383e2f96",
+        "status": "INSUFFICIENT_DATA",
+        "providers": [
+            {
+                "source": "chainabuse",
+                "enabled": false,
+                "status": "DISABLED",
+                "cached": false,
+                "persisted": false,
+                "error": {
+                    "code": "disabled",
+                    "message": "provider not enabled \u2014 no outbound call made"
+                },
+                "observations": [],
+                "signals": {},
+                "exposures": []
+            }
+        ],
+        "enriched_at": "2026-11-03T16:01:16.294895748Z"
+    }
+}

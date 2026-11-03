@@ -1,0 +1,203 @@
+{
+    "data": {
+        "network": "ethereum",
+        "address": "0x098B716B8Aaf21512996dC57EB0615e2383E2f96",
+        "normalized_address": "0x098b716b8aaf21512996dc57eb0615e2383e2f96",
+        "status": "COMPLETED",
+        "providers": [
+            {
+                "source": "goplus",
+                "enabled": true,
+                "status": "OK",
+                "cached": false,
+                "fetched_at": "2026-11-03T16:01:13.506172103Z",
+                "http_status": 200,
+                "latency_ms": 486,
+                "persisted": true,
+                "observations": [
+                    {
+                        "category": "OTHER",
+                        "label": "Blacklist doubt",
+                        "entity": "",
+                        "confidence": "unknown",
+                        "verification_status": "reported",
+                        "observed_at": "2026-11-03T16:01:13.506172103Z",
+                        "evidence": {
+                            "data_source": "SlowMist,BlockSec",
+                            "field": "blacklist_doubt",
+                            "value": "1"
+                        }
+                    },
+                    {
+                        "category": "SANCTIONED",
+                        "label": "Sanctioned",
+                        "entity": "",
+                        "confidence": "unknown",
+                        "verification_status": "reported",
+                        "observed_at": "2026-11-03T16:01:13.506172103Z",
+                        "evidence": {
+                            "data_source": "SlowMist,BlockSec",
+                            "field": "sanctioned",
+                            "value": "1"
+                        }
+                    },
+                    {
+                        "category": "HACK",
+                        "label": "Stealing attack",
+                        "entity": "",
+                        "confidence": "unknown",
+                        "verification_status": "reported",
+                        "observed_at": "2026-11-03T16:01:13.506172103Z",
+                        "evidence": {
+                            "data_source": "SlowMist,BlockSec",
+                            "field": "stealing_attack",
+                            "value": "1"
+                        }
+                    }
+                ],
+                "signals": {
+                    "blacklist_doubt": "1",
+                    "blackmail_activities": "0",
+                    "contract_address": "0",
+                    "cybercrime": "0",
+                    "darkweb_transactions": "0",
+                    "data_source": "SlowMist,BlockSec",
+                    "fake_kyc": "0",
+                    "fake_standard_interface": "0",
+                    "fake_token": "0",
+                    "financial_crime": "0",
+                    "gas_abuse": "0",
+                    "honeypot_related_address": "0",
+                    "malicious_mining_activities": "0",
+                    "mixer": "0",
+                    "money_laundering": "0",
+                    "number_of_malicious_contracts_created": "0",
+                    "phishing_activities": "0",
+                    "reinit": "0",
+                    "sanctioned": "1",
+                    "stealing_attack": "1"
+                },
+                "exposures": []
+            },
+            {
+                "source": "publicaml",
+                "enabled": true,
+                "status": "OK",
+                "cached": false,
+                "fetched_at": "2026-11-03T16:01:14.844733538Z",
+                "http_status": 200,
+                "latency_ms": 1822,
+                "persisted": true,
+                "observations": [
+                    {
+                        "category": "SANCTIONED",
+                        "label": "Sanctioned",
+                        "entity": "Lazarus Group",
+                        "confidence": "unknown",
+                        "verification_status": "reported",
+                        "observed_at": "2026-11-03T16:01:14.844733538Z",
+                        "evidence": {
+                            "entity_label": "Lazarus Group",
+                            "field": "sanctioned",
+                            "value": true
+                        }
+                    },
+                    {
+                        "category": "SANCTIONED",
+                        "label": "sanction",
+                        "entity": "Lazarus Group",
+                        "confidence": "unknown",
+                        "verification_status": "reported",
+                        "observed_at": "2026-11-03T16:01:14.844733538Z",
+                        "evidence": {
+                            "category": "sanction",
+                            "score": 100.0,
+                            "source": "ofac:sdn_advanced",
+                            "source_confidence": 1.0
+                        }
+                    }
+                ],
+                "signals": {
+                    "category": "sanction",
+                    "chain": "ETH",
+                    "direct_exposure": 100,
+                    "exposure_direction": "mixed",
+                    "incident_bonus": 5,
+                    "indirect_exposure": 50,
+                    "label": "Lazarus Group",
+                    "outbound_exposure_count": 7,
+                    "risk_level": "CRITICAL",
+                    "sanctioned": true,
+                    "wallet_address": "0x098b716b8aaf21512996dc57eb0615e2383e2f96"
+                },
+                "provider_score": 100,
+                "exposures": [
+                    {
+                        "counterparty": "0x35fb6f6db4fb05e6a4ce86f2c93691425626d4b1",
+                        "category": "sanction",
+                        "hops": 1,
+                        "score": 90,
+                        "direction": "outbound"
+                    },
+                    {
+                        "counterparty": "0x3cffd56b47b7b41c56258d9c7731abadc360e073",
+                        "category": "sanction",
+                        "hops": 1,
+                        "score": 90,
+                        "direction": "outbound"
+                    },
+                    {
+                        "counterparty": "0x3e37627deaa754090fbfbb8bd226c1ce66d255e9",
+                        "category": "sanction",
+                        "hops": 1,
+                        "score": 90,
+                        "direction": "outbound"
+                    },
+                    {
+                        "counterparty": "0x53b6936513e738f44fb50d2b9476730c0ab3bfc1",
+                        "category": "sanction",
+                        "hops": 1,
+                        "score": 90,
+                        "direction": "outbound"
+                    },
+                    {
+                        "counterparty": "0xa0e1c89ef1a489c9c7de96311ed5ce5d32c20e4b",
+                        "category": "sanction",
+                        "hops": 1,
+                        "score": 90,
+                        "direction": "outbound"
+                    },
+                    {
+                        "counterparty": "0x08723392ed15743cc38513c4925f5e6be5c17243",
+                        "category": "sanction",
+                        "hops": 1,
+                        "score": 90,
+                        "direction": "outbound"
+                    },
+                    {
+                        "counterparty": "0xf7b31119c2682c88d88d455dbb9d5932c65cf1be",
+                        "category": "sanction",
+                        "hops": 1,
+                        "score": 90,
+                        "direction": "outbound"
+                    }
+                ]
+            },
+            {
+                "source": "chainabuse",
+                "enabled": false,
+                "status": "DISABLED",
+                "cached": false,
+                "persisted": false,
+                "error": {
+                    "code": "disabled",
+                    "message": "provider not enabled \u2014 no outbound call made"
+                },
+                "observations": [],
+                "signals": {},
+                "exposures": []
+            }
+        ],
+        "enriched_at": "2026-11-03T16:01:13.006046777Z"
+    }
+}

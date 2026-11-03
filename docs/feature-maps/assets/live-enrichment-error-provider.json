@@ -1,0 +1,7 @@
+{
+    "error": {
+        "code": "BAD_REQUEST",
+        "message": "unknown provider in providers filter",
+        "request_id": "07a59124-4469-4637-ab4a-4ee8fe6127fc"
+    }
+}

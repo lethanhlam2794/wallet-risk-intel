@@ -178,3 +178,87 @@ Plan: `plans/20261103-1530-public-wallet-labels/`
 ### [P3_STAGE_6_DOCS] - Stage 6: Guidebook + Feature Map
 - **Status**: PASSED
 - **Deliverables**: `docs/guidebook-wallet-labels.md` (8 sections, real captures only, SQL verification queries, ops notes), `docs/feature-maps/public-wallet-labels.md` (data flow, structures, invariants, remediated findings, known limits)
+
+---
+
+# Pipeline Run 3 — Live Enrichment (spec Phase 4)
+
+Plan: `plans/20261103-1746-live-enrichment/`
+
+### [P4_STAGE_1_VERIFICATION] - Stage 1: Grounded Pre-Planning & Adversarial Debate
+- **Completion Timestamp**: 2026-11-03 17:58:00
+- **Status**: PASSED (PLAN_CONSENSUS_REACHED, round 2)
+- **Completed Tasks**:
+  - [x] Scanned existing pending plans in ./plans/ (both prior runs completed; no overlap)
+  - [x] Pre-scouting: provider interface, cache keys, server Deps pattern, config, metrics, migrations, spec §4.4–4.6/§13–17/§19
+  - [x] Provider terms verified live: GoPlus free license-free (~30/min), PublicAML free keyless (~1k/h), Chainabuse key-gated (10/mo free → DISABLED default); both free adapters live-called and fixtures captured
+  - [x] Canonical plan structure: plan.md + 5 phase files
+  - [x] Devin Critic (`devin -p` session `imminent-felidae`, dangerous read-only) round 1 → CHANGES_REQUESTED (F1–F9: PublicAML chain-map defect, bounded sync path, refresh throttle, errgroup sibling-cancel, pinned DDL, hardcoded allowlists, §13 extension doc, honeypot demotion, OpenAPI staleness)
+  - [x] All F1–F9 applied + 4 residual nits → round 2 `PLAN_CONSENSUS_REACHED` (`reports/critique.md`, `reports/rebuttal-round-2.md`)
+- **Machine Evidence**:
+  - Plan path: `file:///home/lethanhlam/Desktop/Profile/check-wallet/plans/20261103-1746-live-enrichment/plan.md`
+  - Scaffolding: `phase-01-provider-foundation.md`, `phase-02-goplus-adapter.md`, `phase-03-publicaml-adapter.md`, `phase-04-chainabuse-adapter.md`, `phase-05-enrichment-api.md`
+  - Live provider captures in plan Sources table (sanctioned 0x098B…2f96 → GoPlus `sanctioned:"1"` + PublicAML `aml_score:100` w/ OFAC direct_attribution)
+- **Self-Audit Commitment**: plan grounded in live-verified API responses and real codebase interfaces — zero speculative assumptions.
+
+### [P4_STAGE_2_COOK] - Stage 2: Devin Cook Implementation (TDD)
+- **Completion Timestamp**: 2026-11-03 21:20:00
+- **Status**: PASSED — strict Red→Green per phase file, order 1→5, F1–F9 applied
+- **Completed Tasks**:
+  - [x] Phase 1: provider contract extension (LookupResult/Enabled/typed ErrKind), resilience toolkit (token bucket/sem/breaker/bounded retry/allowlists/4MB cap), migration 000006 + sqlc, provider metrics, config keys
+  - [x] Phase 2: GoPlus adapter — real captured fixtures (sanctioned + clean), conservative category map (honeypot→OTHER), code≠1→DEGRADED
+  - [x] Phase 3: PublicAML adapter — F1 static chain map (ETH/BSC), aml_score→provider_score only, direct_attribution vs outbound_exposure strictly separated, null-tolerant sanctioned
+  - [x] Phase 4: Chainabuse adapter — key-gated DISABLED default, zero-traffic proof, Basic auth, reported-only, provisional docs-shape
+  - [x] Phase 5: `internal/enrichment` + `GET /wallets/{net}/{addr}/enrichment` — cache-first (15m/60s negative, self-describing), singleflight, F3 refresh guard, non-cancelling errgroup (F4), 25s deadline, aggregate COMPLETED/PARTIAL/FAILED/INSUFFICIENT_DATA, append-only audit rows w/ 25-row retention, Redis fail-open (`cache:"bypassed"`), OpenAPI + README
+- **Machine Evidence**:
+  - Live dev curl: COMPLETED w/ real GoPlus+PublicAML data; `cached:true` @5ms; `refresh=1` refetch; audit rows carry literal `requested_chain` (`1`,`ETH`)
+  - Gates: gofmt/vet/build clean; `go test -count=1 ./...` + `-race` green; migration up/down on `check_wallet_test`
+  - Test-infra fix documented: `internal/enrichment` on `check_wallet_enrichment_test` + Redis DB 10 (parallel-package truncate hazard); `api_wallets` count scoped to `normalized_address` (invariant preserved)
+  - Report: `plans/20261103-1746-live-enrichment/reports/cook-report.md`
+
+### [P4_STAGE_3_REVIEW] - Stage 3: Independent Review (Devin Review) — 4 rounds
+- **Completion Timestamp**: 2026-11-03 22:55:00
+- **Status**: APPROVED (round 4)
+- **Reviewer**: fresh `devin -p --permission-mode dangerous` sessions each round, read-only mandate; tree-hash before/after per round (unchanged)
+- **Rounds**:
+  - R1 `review-round-1.md`: CHANGES_REQUESTED — 1 MEDIUM (rollback test mutated shared `check_wallet_test`) + 7 advisory. Fixes: dedicated `check_wallet_rollback_test` + `NotEqual` fail-closed guard; `LookupError.RequestedChain` + `StampRequestedChain` on all post-dispatch error paths; refresh+outage `bypassed` marker; honest sibling-failure test; provider-filter dedup; OpenAPI nits; caller-cancel breaker filter; https→http redirect refusal; error-body payload persistence
+  - R2 `review-round-2.md`: CHANGES_REQUESTED — new MEDIUM: raw `lerr.Response` → JSONB INSERT rollback on non-JSON bodies. Fix: `json.Valid` gate + `{"upstream_body"}` envelope + map-path stamps + 3 real-DB tests
+  - R3 `review-round-3.md`: CHANGES_REQUESTED — residual MEDIUM: `json.Valid` ⊋ Postgres rules (`\u0000`, lone surrogates, invalid UTF-8 — Go-valid, PG-illegal; also `lr.Raw` path + envelope NUL). Fix: `jsonbText`/`jsonbSafe` sanitizer on ALL payload sources + `errJSON` Message + 10-case real-DB battery
+  - R4 `review-round-4.md`: **APPROVED** — mid-audit fixes verified on final state: uppercase-`D` escapes, unsanitized `error` JSONB, escaped-backslash fake-pair → replaced regexes with parity-aware `jsonbEscapeClean` scanner. 28-case probe + live `::jsonb` casts clean
+- **Reports**: `reports/review-round-{1..4}.md`, `remediation-round-{1..4}.md`, `prompt-review{,-r2,-r3,-r4}.md`, `treehash-before-review{,-r2,-r3,-r4}.txt`
+
+### [P4_STAGE_4_SATURATION] - Stage 4: Remediation + Anonymous/Blind Saturation (ck:loop)
+- **Completion Timestamp**: 2026-11-03 23:25:00
+- **Status**: PASSED — **SCORE: 10/10**
+- **Metric**: `go test -count=1 -shuffle=on ./...` — 15 packages, randomized in-package order, cache disabled; 10 consecutive iterations, 0 FAIL (`reports/saturation/iter-{1..10}.log`)
+- **Post-review race**: `go test -count=1 -race -shuffle=on ./...` — 15 ok / 0 FAIL (`reports/saturation/race-final.log`, 74.7s tests-pkg)
+- **Notes**: no code changes needed during saturation — post-APPROVED tree stable under blind ordering; earlier `-race` flake proven environmental (two concurrent suites TRUNCATE-ing shared `check_wallet_test`)
+- **Session cleanup**: `ps` audited — zero `devin` pipeline processes for this repo (independent reviewers exited; unrelated `game-item-broker` session untouched)
+- **Report**: `reports/stage4-saturation.md`
+
+### [P4_STAGE_5_BROWSER_E2E] - Stage 5: Real-Browser E2E & Performance Verification
+- **Status**: SKIPPED-NO-UI — backend-only deliverable; no browser/UI surface exists (3rd consecutive pipeline with this decision: OFAC, wallet-labels, live-enrichment)
+- **Justification**: repository ships REST API + worker only; no HTML/frontend build target. Mechanical assertions substitute per codex-vibe fallback.
+- **Substitution (live-server captures, `docs/feature-maps/assets/`)**:
+  - `live-enrichment-completed.json` — `COMPLETED`: goplus OK 200/486ms, publicaml OK `provider_score:100`/`persisted:true`, chainabuse `DISABLED` (zero calls, no key)
+  - `live-enrichment-cached.json` — second call `cached:true`, `persisted` reflects original fetch (documented semantics)
+  - `live-enrichment-refresh.json` — `refresh=1` bypasses cache, refetches
+  - `live-enrichment-disabled.json` — `?providers=chainabuse` alone → `INSUFFICIENT_DATA` (disabled ≠ attempted)
+  - `live-enrichment-error-provider.json` — unknown provider → `BAD_REQUEST`
+  - `live-enrichment-error-auth.json` — no key → `UNAUTHORIZED`
+- **Secret hygiene**: API log grep — zero key/header material emitted (F9)
+- **Perf sample**: cold fan-out ≈1.9s (PublicAML-bound), cached read 5ms-class; 25s parent deadline far above p99
+
+### [P4_STAGE_6_DOCS] - Stage 6: Guidebook + Technical Feature Map
+- **Completion Timestamp**: 2026-11-03 23:45:00
+- **Status**: PASSED
+- **Deliverables**:
+  - `docs/guidebook-live-enrichment.md` — 9 sections; real captures only (`live-enrichment-*.json`: COMPLETED/cached/refresh/DISABLED→INSUFFICIENT_DATA/error envelopes); SQL verification queries + live output incl. a real `RATE_LIMITED` audit row; Redis key inspection; aggregate-status table; resilience/ops notes; known limits
+  - `docs/feature-maps/live-enrichment.md` — contract/adapters/resilience/pipeline/persistence/jsonb-legality layer/cache/invariants/remediated-findings/limits
+  - `docs/feature-maps/assets/live-enrichment-{completed,cached,refresh,disabled,error-provider,error-auth}.json`
+- **Verification**: every code/example block derived from real commands (live API on :18080, psql, redis-cli — outputs embedded verbatim)
+
+## Pipeline Run 3 — COMPLETE
+All six stages accounted for: S1 plan-consensus, S2 cook, S3 review
+APPROVED (4 rounds), S4 saturation 10/10, S5 SKIPPED-NO-UI + live
+substitution, S6 docs published. Working tree intentionally uncommitted.
