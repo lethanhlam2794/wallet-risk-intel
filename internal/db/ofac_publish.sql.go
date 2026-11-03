@@ -53,30 +53,6 @@ func (q *Queries) InsertSnapshot(ctx context.Context, arg InsertSnapshotParams) 
 	return i, err
 }
 
-const publishDeleteEntityProgramsForSource = `-- name: PublishDeleteEntityProgramsForSource :exec
-DELETE FROM sanctions_entity_programs
-WHERE sanctions_entity_id IN (
-    SELECT id FROM sanctions_entities WHERE source_id = $1::bigint
-)
-`
-
-func (q *Queries) PublishDeleteEntityProgramsForSource(ctx context.Context, dollar_1 int64) error {
-	_, err := q.db.Exec(ctx, publishDeleteEntityProgramsForSource, dollar_1)
-	return err
-}
-
-const publishDeleteReferencesForSource = `-- name: PublishDeleteReferencesForSource :exec
-DELETE FROM sanctions_references
-WHERE sanctions_entity_id IN (
-    SELECT id FROM sanctions_entities WHERE source_id = $1::bigint
-)
-`
-
-func (q *Queries) PublishDeleteReferencesForSource(ctx context.Context, dollar_1 int64) error {
-	_, err := q.db.Exec(ctx, publishDeleteReferencesForSource, dollar_1)
-	return err
-}
-
 const publishEnsureWallets = `-- name: PublishEnsureWallets :execrows
 INSERT INTO wallets (network_id, address, normalized_address, address_type)
 SELECT DISTINCT sw.network_id, sw.listed_address, sw.normalized_address, 'evm'
@@ -88,54 +64,6 @@ DO UPDATE SET updated_at = wallets.updated_at
 
 func (q *Queries) PublishEnsureWallets(ctx context.Context, runID pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, publishEnsureWallets, runID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const publishInsertEntityPrograms = `-- name: PublishInsertEntityPrograms :execrows
-INSERT INTO sanctions_entity_programs (sanctions_entity_id, program_id)
-SELECT se.id, sp.id
-FROM stg_sanctions_entity_programs ep
-JOIN sanctions_entities se
-    ON se.source_id = $1 AND se.external_entity_id = ep.external_entity_id
-JOIN sanctions_programs sp
-    ON sp.source_id = $1 AND sp.code = ep.program_code
-WHERE ep.run_id = $2
-ON CONFLICT DO NOTHING
-`
-
-type PublishInsertEntityProgramsParams struct {
-	SourceID int64       `json:"source_id"`
-	RunID    pgtype.UUID `json:"run_id"`
-}
-
-func (q *Queries) PublishInsertEntityPrograms(ctx context.Context, arg PublishInsertEntityProgramsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, publishInsertEntityPrograms, arg.SourceID, arg.RunID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const publishInsertReferences = `-- name: PublishInsertReferences :execrows
-INSERT INTO sanctions_references
-    (sanctions_entity_id, reference_type, title, reference_url, published_at, details)
-SELECT se.id, r.reference_type, r.title, r.reference_url, r.published_at, r.details
-FROM stg_sanctions_references r
-JOIN sanctions_entities se
-    ON se.source_id = $1 AND se.external_entity_id = r.external_entity_id
-WHERE r.run_id = $2
-`
-
-type PublishInsertReferencesParams struct {
-	SourceID int64       `json:"source_id"`
-	RunID    pgtype.UUID `json:"run_id"`
-}
-
-func (q *Queries) PublishInsertReferences(ctx context.Context, arg PublishInsertReferencesParams) (int64, error) {
-	result, err := q.db.Exec(ctx, publishInsertReferences, arg.SourceID, arg.RunID)
 	if err != nil {
 		return 0, err
 	}
@@ -159,6 +87,64 @@ type PublishRevokeAbsentEntitiesParams struct {
 
 func (q *Queries) PublishRevokeAbsentEntities(ctx context.Context, arg PublishRevokeAbsentEntitiesParams) (int64, error) {
 	result, err := q.db.Exec(ctx, publishRevokeAbsentEntities, arg.SourceID, arg.RunID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const publishRevokeAbsentEntityPrograms = `-- name: PublishRevokeAbsentEntityPrograms :execrows
+UPDATE sanctions_entity_programs ep SET revoked_at = NOW()
+FROM sanctions_entities se, sanctions_programs sp
+WHERE ep.sanctions_entity_id = se.id
+  AND ep.program_id = sp.id
+  AND se.source_id = $1
+  AND sp.source_id = $1
+  AND ep.revoked_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM stg_sanctions_entity_programs s
+      WHERE s.run_id = $2
+        AND s.external_entity_id = se.external_entity_id
+        AND s.program_code = sp.code
+  )
+`
+
+type PublishRevokeAbsentEntityProgramsParams struct {
+	SourceID int64       `json:"source_id"`
+	RunID    pgtype.UUID `json:"run_id"`
+}
+
+func (q *Queries) PublishRevokeAbsentEntityPrograms(ctx context.Context, arg PublishRevokeAbsentEntityProgramsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, publishRevokeAbsentEntityPrograms, arg.SourceID, arg.RunID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const publishRevokeAbsentReferences = `-- name: PublishRevokeAbsentReferences :execrows
+UPDATE sanctions_references r SET revoked_at = NOW()
+FROM sanctions_entities se
+WHERE r.sanctions_entity_id = se.id
+  AND se.source_id = $1
+  AND r.revoked_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM stg_sanctions_references s
+      WHERE s.run_id = $2
+        AND s.external_entity_id = se.external_entity_id
+        AND s.reference_type = r.reference_type
+        AND COALESCE(s.title, '') = COALESCE(r.title, '')
+        AND COALESCE(s.reference_url, '') = COALESCE(r.reference_url, '')
+  )
+`
+
+type PublishRevokeAbsentReferencesParams struct {
+	SourceID int64       `json:"source_id"`
+	RunID    pgtype.UUID `json:"run_id"`
+}
+
+func (q *Queries) PublishRevokeAbsentReferences(ctx context.Context, arg PublishRevokeAbsentReferencesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, publishRevokeAbsentReferences, arg.SourceID, arg.RunID)
 	if err != nil {
 		return 0, err
 	}
@@ -226,6 +212,32 @@ func (q *Queries) PublishUpsertEntities(ctx context.Context, arg PublishUpsertEn
 	return result.RowsAffected(), nil
 }
 
+const publishUpsertEntityPrograms = `-- name: PublishUpsertEntityPrograms :execrows
+INSERT INTO sanctions_entity_programs (sanctions_entity_id, program_id, revoked_at)
+SELECT se.id, sp.id, NULL
+FROM stg_sanctions_entity_programs ep
+JOIN sanctions_entities se
+    ON se.source_id = $1 AND se.external_entity_id = ep.external_entity_id
+JOIN sanctions_programs sp
+    ON sp.source_id = $1 AND sp.code = ep.program_code
+WHERE ep.run_id = $2
+ON CONFLICT (sanctions_entity_id, program_id) DO UPDATE SET
+    revoked_at = NULL
+`
+
+type PublishUpsertEntityProgramsParams struct {
+	SourceID int64       `json:"source_id"`
+	RunID    pgtype.UUID `json:"run_id"`
+}
+
+func (q *Queries) PublishUpsertEntityPrograms(ctx context.Context, arg PublishUpsertEntityProgramsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, publishUpsertEntityPrograms, arg.SourceID, arg.RunID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const publishUpsertPrograms = `-- name: PublishUpsertPrograms :execrows
 INSERT INTO sanctions_programs (source_id, code, name, description, source_url)
 SELECT $1, p.code, p.name, p.description, p.source_url
@@ -241,6 +253,37 @@ type PublishUpsertProgramsParams struct {
 
 func (q *Queries) PublishUpsertPrograms(ctx context.Context, arg PublishUpsertProgramsParams) (int64, error) {
 	result, err := q.db.Exec(ctx, publishUpsertPrograms, arg.SourceID, arg.RunID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const publishUpsertReferences = `-- name: PublishUpsertReferences :execrows
+INSERT INTO sanctions_references
+    (sanctions_entity_id, reference_type, title, reference_url, published_at, details,
+     last_seen_at, revoked_at)
+SELECT se.id, r.reference_type, r.title, r.reference_url, r.published_at, r.details,
+       NOW(), NULL
+FROM stg_sanctions_references r
+JOIN sanctions_entities se
+    ON se.source_id = $1 AND se.external_entity_id = r.external_entity_id
+WHERE r.run_id = $2
+ON CONFLICT (sanctions_entity_id, reference_type,
+             COALESCE(title, ''), COALESCE(reference_url, '')) DO UPDATE SET
+    published_at = EXCLUDED.published_at,
+    details = EXCLUDED.details,
+    last_seen_at = NOW(),
+    revoked_at = NULL
+`
+
+type PublishUpsertReferencesParams struct {
+	SourceID int64       `json:"source_id"`
+	RunID    pgtype.UUID `json:"run_id"`
+}
+
+func (q *Queries) PublishUpsertReferences(ctx context.Context, arg PublishUpsertReferencesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, publishUpsertReferences, arg.SourceID, arg.RunID)
 	if err != nil {
 		return 0, err
 	}

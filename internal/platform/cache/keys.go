@@ -9,7 +9,6 @@ const (
 	prefixWalletSanctions = "wallet:sanctions"
 	prefixProvider        = "provider"
 	prefixRateLimit       = "rl"
-	keyCurrentSnapshot    = "sanctions:current_snapshot"
 )
 
 // WalletLabels keys the wallet-label lookup cache.
@@ -38,6 +37,3 @@ func RateLimitClient(clientID string, window int64) string {
 func RateLimitAnon(ip string, window int64) string {
 	return fmt.Sprintf("%s:anon:%s:%d", prefixRateLimit, ip, window)
 }
-
-// CurrentSnapshot is the published OFAC snapshot version pointer.
-func CurrentSnapshot() string { return keyCurrentSnapshot }

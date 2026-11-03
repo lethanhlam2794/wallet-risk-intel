@@ -2,6 +2,7 @@ package ingestion
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -33,8 +34,14 @@ type triggerBody struct {
 // 409 INGESTION_RUNNING when a run is already in flight.
 func (h *AdminHandler) TriggerRun(c *gin.Context) {
 	var body triggerBody
-	// Empty body is allowed: default to the only registered source.
-	_ = c.ShouldBindJSON(&body)
+	// Empty body is allowed (defaults to the only registered source); a
+	// malformed payload is a 400, not a silent default.
+	if err := c.ShouldBindJSON(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			middleware.RespondError(c, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
+			return
+		}
+	}
 	if body.Source == "" {
 		body.Source = "ofac_sdn"
 	}
@@ -81,7 +88,11 @@ func (h *AdminHandler) GetRun(c *gin.Context) {
 	run, err := h.q.GetIngestionRun(c.Request.Context(),
 		pgtype.UUID{Bytes: id, Valid: true})
 	if err != nil {
-		middleware.RespondError(c, http.StatusNotFound, middleware.CodeNotFound, "run not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			middleware.RespondError(c, http.StatusNotFound, middleware.CodeNotFound, "run not found")
+		} else {
+			middleware.InternalError(c)
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": runDTO(run)})

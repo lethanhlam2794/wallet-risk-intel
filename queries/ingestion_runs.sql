@@ -22,14 +22,22 @@ WHERE id = $1;
 -- name: GetIngestionRun :one
 SELECT * FROM ingestion_runs WHERE id = $1;
 
+-- name: TouchRunHeartbeat :exec
+-- Liveness signal for the stale-run sweep: a live run beats every
+-- heartbeatInterval; only silent runs are reapable.
+UPDATE ingestion_runs SET heartbeat_at = NOW()
+WHERE id = $1 AND status = 'RUNNING';
+
 -- name: ListStaleRunningRuns :many
 SELECT * FROM ingestion_runs
-WHERE status = 'RUNNING' AND started_at < NOW() - INTERVAL '1 hour';
+WHERE status = 'RUNNING'
+  AND COALESCE(heartbeat_at, started_at) < NOW() - INTERVAL '1 hour';
 
 -- name: MarkStaleRunsFailed :exec
 UPDATE ingestion_runs SET status = 'FAILED', completed_at = NOW(),
     error_message = 'worker restarted'
-WHERE status = 'RUNNING' AND started_at < NOW() - INTERVAL '1 hour';
+WHERE status = 'RUNNING'
+  AND COALESCE(heartbeat_at, started_at) < NOW() - INTERVAL '1 hour';
 
 -- name: ListRecentRunIDs :many
 SELECT id FROM ingestion_runs ORDER BY started_at DESC LIMIT $1;

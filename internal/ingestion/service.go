@@ -18,11 +18,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 
 	"checkwallet/internal/db"
 	"checkwallet/internal/network"
-	"checkwallet/internal/platform/cache"
 	"checkwallet/internal/platform/metrics"
 	"checkwallet/internal/provider"
 	"checkwallet/internal/provider/ofac"
@@ -36,9 +34,18 @@ var ErrIngestionRunning = errors.New("ingestion already running for source")
 // diagnosis; older staging is purged at run start.
 const failedStagingKeep = 5
 
-// staleRunAfter is how old a RUNNING row must be before the next run
-// reaps it as a crashed worker.
+// staleRunAfter is how long a run's heartbeat may go silent before the
+// sweep reaps the row as a crashed worker.
 const staleRunAfter = time.Hour
+
+// defaultRunTimeout bounds a detached async run (Enqueue). Long enough for
+// 3 download attempts + parse + publish of the ~128MB SDN file; short
+// enough that a wedged run cannot hold the single-flight gate forever.
+const defaultRunTimeout = 45 * time.Minute
+
+// heartbeatInterval is how often a live run touches heartbeat_at so the
+// stale-run sweep can distinguish "alive but slow" from "crashed".
+const heartbeatInterval = 30 * time.Second
 
 // RunRequest describes one ingestion execution.
 type RunRequest struct {
@@ -50,16 +57,19 @@ type RunRequest struct {
 // Service runs snapshot ingestions against the pinned pool.
 type Service struct {
 	pool       *pgxpool.Pool
-	rdb        *redis.Client
 	log        *slog.Logger
 	networks   map[string]int64
 	downloader provider.SnapshotSource
 	metrics    *metrics.Metrics
+	runTimeout time.Duration
 	now        func() time.Time // test hook
 }
 
 // SetMetrics attaches Prometheus collectors (nil-safe no-op when unset).
 func (s *Service) SetMetrics(m *metrics.Metrics) { s.metrics = m }
+
+// SetRunTimeout overrides the detached-run deadline (tests shrink it).
+func (s *Service) SetRunTimeout(d time.Duration) { s.runTimeout = d }
 
 // SweepStaleRuns marks RUNNING rows older than the run timeout as FAILED —
 // crashed workers leave no zombie runs (call on process boot).
@@ -71,15 +81,15 @@ func (s *Service) SweepStaleRuns(ctx context.Context) {
 
 // NewService wires the ingestion orchestrator. downloader may be nil when
 // only FilePath runs are used.
-func NewService(pool *pgxpool.Pool, rdb *redis.Client, resolver *network.Resolver,
+func NewService(pool *pgxpool.Pool, resolver *network.Resolver,
 	downloader provider.SnapshotSource, log *slog.Logger) *Service {
 	nets := map[string]int64{}
 	for _, n := range resolver.List() {
 		nets[n.Code] = n.ID
 	}
 	return &Service{
-		pool: pool, rdb: rdb, log: log, networks: nets,
-		downloader: downloader, now: time.Now,
+		pool: pool, log: log, networks: nets,
+		downloader: downloader, runTimeout: defaultRunTimeout, now: time.Now,
 	}
 }
 
@@ -113,8 +123,11 @@ func (s *Service) Enqueue(ctx context.Context, req RunRequest) (uuid.UUID, error
 				advisoryUnlock(context.Background(), conn, sourceID)
 			}
 		}()
-		// Detached: client disconnects must not kill the run.
-		s.execute(context.Background(), conn, qc, runID, sourceID, req)
+		// Detached but bounded: client disconnects must not kill the run,
+		// and a wedged run must not hold the single-flight gate forever.
+		runCtx, cancel := context.WithTimeout(context.Background(), s.runTimeout)
+		defer cancel()
+		s.execute(runCtx, conn, qc, runID, sourceID, req)
 	}()
 	return runID, nil
 }
@@ -183,6 +196,24 @@ func (s *Service) execute(ctx context.Context, conn *pgxpool.Conn, qc *db.Querie
 		}
 	}()
 
+	// Liveness heartbeat: the stale-run sweep keys off heartbeat_at, so a
+	// slow-but-alive run (large download, long publish) is never reaped.
+	hbStop := make(chan struct{})
+	go func() {
+		t := time.NewTicker(heartbeatInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-hbStop:
+				return
+			case <-t.C:
+				_ = qc.TouchRunHeartbeat(context.Background(),
+					pgtype.UUID{Bytes: runID, Valid: true})
+			}
+		}
+	}()
+	defer close(hbStop)
+
 	// 1. Obtain the snapshot (download or file mode).
 	var snap provider.Snapshot
 	var err error
@@ -199,6 +230,10 @@ func (s *Service) execute(ctx context.Context, conn *pgxpool.Conn, qc *db.Querie
 	if err != nil {
 		s.finish(qc, runID, "FAILED", provider.ImportResult{}, publishStats{}, "", "", fmt.Sprintf("fetch: %s", err))
 		return
+	}
+	if snap.FinalURL != "" {
+		s.log.Info("snapshot fetched", "run_id", runID, "final_url", snap.FinalURL,
+			"checksum", snap.Checksum[:12], "size_bytes", snap.SizeBytes)
 	}
 
 	// 2. Checksum-identical no-op: skip stage/publish/invalidate entirely.
@@ -229,17 +264,12 @@ func (s *Service) execute(ctx context.Context, conn *pgxpool.Conn, qc *db.Querie
 		return
 	}
 
-	// 5. Publish atomically, then move the cache pointer after commit.
+	// 5. Publish atomically. Readers resolve the current version from the
+	// snapshots table itself — no separate cache pointer to go stale.
 	stats, version, err := s.publish(ctx, conn, sourceID, runID, snap.Checksum, meta, res)
 	if err != nil {
 		s.finish(qc, runID, "FAILED", res, stats, snap.Checksum, "", fmt.Sprintf("publish: %s", err))
 		return
-	}
-	if s.rdb != nil {
-		if err := s.rdb.Set(context.Background(), cache.CurrentSnapshot(), version, 0).Err(); err != nil {
-			s.log.Error("cache pointer update failed (readers fall back to DB)",
-				"run_id", runID, "error", err)
-		}
 	}
 
 	// 6. Successful runs don't keep staging around.

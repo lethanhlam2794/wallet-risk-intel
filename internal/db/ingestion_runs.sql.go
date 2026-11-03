@@ -53,7 +53,7 @@ func (q *Queries) FinishIngestionRun(ctx context.Context, arg FinishIngestionRun
 }
 
 const getIngestionRun = `-- name: GetIngestionRun :one
-SELECT id, source_id, status, started_at, completed_at, records_fetched, records_inserted, records_updated, records_rejected, snapshot_checksum, snapshot_version, cursor_value, error_message, triggered_by FROM ingestion_runs WHERE id = $1
+SELECT id, source_id, status, started_at, completed_at, records_fetched, records_inserted, records_updated, records_rejected, snapshot_checksum, snapshot_version, cursor_value, error_message, triggered_by, heartbeat_at FROM ingestion_runs WHERE id = $1
 `
 
 func (q *Queries) GetIngestionRun(ctx context.Context, id pgtype.UUID) (IngestionRun, error) {
@@ -74,6 +74,7 @@ func (q *Queries) GetIngestionRun(ctx context.Context, id pgtype.UUID) (Ingestio
 		&i.CursorValue,
 		&i.ErrorMessage,
 		&i.TriggeredBy,
+		&i.HeartbeatAt,
 	)
 	return i, err
 }
@@ -124,7 +125,7 @@ func (q *Queries) GetSourceByCode(ctx context.Context, code string) (DataSource,
 const insertIngestionRun = `-- name: InsertIngestionRun :one
 INSERT INTO ingestion_runs (id, source_id, status, triggered_by)
 VALUES ($1, $2, 'RUNNING', $3)
-RETURNING id, source_id, status, started_at, completed_at, records_fetched, records_inserted, records_updated, records_rejected, snapshot_checksum, snapshot_version, cursor_value, error_message, triggered_by
+RETURNING id, source_id, status, started_at, completed_at, records_fetched, records_inserted, records_updated, records_rejected, snapshot_checksum, snapshot_version, cursor_value, error_message, triggered_by, heartbeat_at
 `
 
 type InsertIngestionRunParams struct {
@@ -151,6 +152,7 @@ func (q *Queries) InsertIngestionRun(ctx context.Context, arg InsertIngestionRun
 		&i.CursorValue,
 		&i.ErrorMessage,
 		&i.TriggeredBy,
+		&i.HeartbeatAt,
 	)
 	return i, err
 }
@@ -180,8 +182,9 @@ func (q *Queries) ListRecentRunIDs(ctx context.Context, limit int32) ([]pgtype.U
 }
 
 const listStaleRunningRuns = `-- name: ListStaleRunningRuns :many
-SELECT id, source_id, status, started_at, completed_at, records_fetched, records_inserted, records_updated, records_rejected, snapshot_checksum, snapshot_version, cursor_value, error_message, triggered_by FROM ingestion_runs
-WHERE status = 'RUNNING' AND started_at < NOW() - INTERVAL '1 hour'
+SELECT id, source_id, status, started_at, completed_at, records_fetched, records_inserted, records_updated, records_rejected, snapshot_checksum, snapshot_version, cursor_value, error_message, triggered_by, heartbeat_at FROM ingestion_runs
+WHERE status = 'RUNNING'
+  AND COALESCE(heartbeat_at, started_at) < NOW() - INTERVAL '1 hour'
 `
 
 func (q *Queries) ListStaleRunningRuns(ctx context.Context) ([]IngestionRun, error) {
@@ -208,6 +211,7 @@ func (q *Queries) ListStaleRunningRuns(ctx context.Context) ([]IngestionRun, err
 			&i.CursorValue,
 			&i.ErrorMessage,
 			&i.TriggeredBy,
+			&i.HeartbeatAt,
 		); err != nil {
 			return nil, err
 		}
@@ -222,10 +226,23 @@ func (q *Queries) ListStaleRunningRuns(ctx context.Context) ([]IngestionRun, err
 const markStaleRunsFailed = `-- name: MarkStaleRunsFailed :exec
 UPDATE ingestion_runs SET status = 'FAILED', completed_at = NOW(),
     error_message = 'worker restarted'
-WHERE status = 'RUNNING' AND started_at < NOW() - INTERVAL '1 hour'
+WHERE status = 'RUNNING'
+  AND COALESCE(heartbeat_at, started_at) < NOW() - INTERVAL '1 hour'
 `
 
 func (q *Queries) MarkStaleRunsFailed(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, markStaleRunsFailed)
+	return err
+}
+
+const touchRunHeartbeat = `-- name: TouchRunHeartbeat :exec
+UPDATE ingestion_runs SET heartbeat_at = NOW()
+WHERE id = $1 AND status = 'RUNNING'
+`
+
+// Liveness signal for the stale-run sweep: a live run beats every
+// heartbeatInterval; only silent runs are reapable.
+func (q *Queries) TouchRunHeartbeat(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, touchRunHeartbeat, id)
 	return err
 }

@@ -75,7 +75,7 @@ func run(source, file string) error {
 		}
 	}
 
-	svc := ingestion.NewService(pool, rdb.R(), resolver, dl, log)
+	svc := ingestion.NewService(pool, resolver, dl, log)
 	svc.SweepStaleRuns(ctx)
 	runID, err := svc.RunSync(ctx, ingestion.RunRequest{
 		SourceCode: source, TriggeredBy: "worker", FilePath: file,

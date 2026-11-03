@@ -70,7 +70,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	ingestSvc := ingestion.NewService(pool, rdb.R(), resolver, dl, log)
+	ingestSvc := ingestion.NewService(pool, resolver, dl, log)
 	ingestSvc.SweepStaleRuns(ctx) // crashed workers leave no zombie RUNNING rows
 	sanctionsSvc := sanctions.NewService(queries, rdb.R(), resolver, cfg.SanctionsStaleAfter)
 

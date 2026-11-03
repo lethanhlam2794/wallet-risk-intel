@@ -42,7 +42,7 @@ func testAPIFull(t *testing.T, publish bool) (*httptest.Server, *pgxpool.Pool, *
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	if publish {
-		svc := ingestion.NewService(pool, rdb, resolver, nil, log)
+		svc := ingestion.NewService(pool, resolver, nil, log)
 		runID, err := svc.RunSync(context.Background(), ingestion.RunRequest{
 			SourceCode: "ofac_sdn", TriggeredBy: "test", FilePath: ofacFixture,
 		})
@@ -177,9 +177,6 @@ func TestSanctions_StaleDataStatus(t *testing.T) {
 	_, err := pool.Exec(context.Background(),
 		"UPDATE sanctions_snapshots SET published_at = NOW() - INTERVAL '72 hours'")
 	require.NoError(t, err)
-	// Drop the snapshot pointer so the service re-reads the aged row.
-	rdb := testutil.RequireTestRedis(t)
-	require.NoError(t, rdb.Del(context.Background(), cache.CurrentSnapshot()).Err())
 
 	w := get(t, srv, "/api/v1/sanctions/wallets/ethereum/"+ethAddr, key)
 	d := bodyData(t, w)
@@ -196,8 +193,9 @@ func TestSanctions_CacheVersionedKeys(t *testing.T) {
 	require.Equal(t, true, bodyData(t, w)["matched"])
 
 	// Find the versioned key that was written.
-	version, err := rdb.Get(ctx, cache.CurrentSnapshot()).Result()
-	require.NoError(t, err)
+	var version string
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT version FROM sanctions_snapshots ORDER BY published_at DESC, id DESC LIMIT 1").Scan(&version))
 	cacheKey := cache.WalletSanctions("ethereum", strings.ToLower(ethAddr), version)
 	n, err := rdb.Exists(ctx, cacheKey).Result()
 	require.NoError(t, err)
@@ -224,7 +222,7 @@ func TestSanctions_CacheVersionedKeys(t *testing.T) {
 		"<Day>28</Day>":  "<Day>29</Day>",
 	})
 	q := db.New(pool)
-	svc := ingestion.NewService(pool, rdb, testResolver(t, q), nil,
+	svc := ingestion.NewService(pool, testResolver(t, q), nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	runID, err := svc.RunSync(ctx, ingestion.RunRequest{
 		SourceCode: "ofac_sdn", TriggeredBy: "test", FilePath: reduced,
@@ -233,8 +231,9 @@ func TestSanctions_CacheVersionedKeys(t *testing.T) {
 	run := runStatus(t, q, runID)
 	require.Equal(t, "COMPLETED", run.Status, "run failed: %s", run.ErrorMessage.String)
 
-	newVersion, err := rdb.Get(ctx, cache.CurrentSnapshot()).Result()
-	require.NoError(t, err)
+	var newVersion string
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT version FROM sanctions_snapshots ORDER BY published_at DESC, id DESC LIMIT 1").Scan(&newVersion))
 	require.NotEqual(t, version, newVersion)
 	w = get(t, srv, "/api/v1/sanctions/wallets/ethereum/"+ethAddr, key)
 	require.Equal(t, true, bodyData(t, w)["matched"])

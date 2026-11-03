@@ -24,7 +24,6 @@ import (
 	"checkwallet/internal/httpserver"
 	"checkwallet/internal/ingestion"
 	"checkwallet/internal/network"
-	"checkwallet/internal/platform/cache"
 	"checkwallet/internal/testutil"
 )
 
@@ -51,7 +50,7 @@ func newIngestionService(t *testing.T, withRedis bool) (*ingestion.Service, *db.
 		rdb = testutil.RequireTestRedis(t)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := ingestion.NewService(pool, rdb, testResolver(t, q), nil, log)
+	svc := ingestion.NewService(pool, testResolver(t, q), nil, log)
 	return svc, q, pool, rdb
 }
 
@@ -80,7 +79,7 @@ func count(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) int64 {
 }
 
 func TestIngestion_PublishFixture(t *testing.T) {
-	svc, q, pool, rdb := newIngestionService(t, true)
+	svc, q, pool, _ := newIngestionService(t, true)
 	ctx := context.Background()
 
 	runID := runFixtureSync(t, svc, ofacFixture)
@@ -108,9 +107,11 @@ func TestIngestion_PublishFixture(t *testing.T) {
 	assert.Equal(t, int64(2), count(t, pool,
 		"SELECT count(*) FROM sanctions_wallets WHERE network_id IS NULL"))
 
-	// Cache pointer moved after commit.
-	version, err := rdb.Get(ctx, cache.CurrentSnapshot()).Result()
-	require.NoError(t, err)
+	// Published version is resolvable from the snapshots table — readers
+	// take it straight from the registry, no separate cache pointer.
+	var version string
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT version FROM sanctions_snapshots ORDER BY published_at DESC, id DESC LIMIT 1").Scan(&version))
 	assert.Equal(t, run.SnapshotVersion.String, version)
 
 	// Successful runs do not keep staging.
@@ -220,6 +221,89 @@ func TestIngestion_Revocation(t *testing.T) {
 	assert.Equal(t, "USDT", currency)
 }
 
+// Provenance (spec §6): program links and references absent from a new
+// snapshot are soft-revoked, never hard-deleted — and a later relisting
+// revives them in place, preserving first_seen_at.
+func TestIngestion_ProvenanceSoftRevoke(t *testing.T) {
+	svc, q, pool, _ := newIngestionService(t, true)
+	ctx := context.Background()
+
+	runFixtureSync(t, svc, ofacFixture)
+	var firstSeen time.Time
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT r.first_seen_at FROM sanctions_references r
+		 JOIN sanctions_entities se ON se.id = r.sanctions_entity_id
+		 WHERE se.external_entity_id='31940'`).Scan(&firstSeen))
+	require.Equal(t, int64(1), count(t, pool,
+		`SELECT count(*) FROM sanctions_references r
+		 JOIN sanctions_entities se ON se.id = r.sanctions_entity_id
+		 WHERE se.external_entity_id='31940' AND r.revoked_at IS NULL`))
+	require.Equal(t, int64(2), count(t, pool,
+		`SELECT count(*) FROM sanctions_entity_programs ep
+		 JOIN sanctions_entities se ON se.id = ep.sanctions_entity_id
+		 WHERE se.external_entity_id='31940' AND ep.revoked_at IS NULL`))
+
+	// Reduced snapshot: drop the CYBER2 program link and the legal-authority
+	// reference (EntryEvent) from entity 31940.
+	reduced := rewriteFixture(t, ofacFixture, map[string]string{
+		`      <SanctionsMeasure ID="168368" SanctionsTypeID="1">
+        <Comment>CYBER2</Comment>
+      </SanctionsMeasure>
+`: "",
+		`      <EntryEvent ID="31940" EntryEventTypeID="1" LegalBasisID="92049">
+        <Date CalendarTypeID="1"><Year>2022</Year><Month>9</Month><Day>13</Day></Date>
+      </EntryEvent>
+`: "",
+		"<Day>28</Day>": "<Day>29</Day>",
+	})
+	runID2 := runFixtureSync(t, svc, reduced)
+	require.Equal(t, "COMPLETED", runStatus(t, q, runID2).Status)
+
+	// Rows survive with revoked_at set — provenance preserved.
+	assert.Equal(t, int64(1), count(t, pool,
+		`SELECT count(*) FROM sanctions_entity_programs ep
+		 JOIN sanctions_entities se ON se.id = ep.sanctions_entity_id
+		 JOIN sanctions_programs sp ON sp.id = ep.program_id
+		 WHERE se.external_entity_id='31940' AND sp.code='CYBER2'
+		   AND ep.revoked_at IS NOT NULL`),
+		"dropped program link must be revoked, not deleted")
+	assert.Equal(t, int64(1), count(t, pool,
+		`SELECT count(*) FROM sanctions_references r
+		 JOIN sanctions_entities se ON se.id = r.sanctions_entity_id
+		 WHERE se.external_entity_id='31940' AND r.revoked_at IS NOT NULL`),
+		"dropped reference must be revoked, not deleted")
+	assert.Equal(t, int64(1), count(t, pool,
+		`SELECT count(*) FROM sanctions_entity_programs ep
+		 JOIN sanctions_entities se ON se.id = ep.sanctions_entity_id
+		 WHERE se.external_entity_id='31940' AND ep.revoked_at IS NULL`),
+		"DPRK3 link must stay live")
+
+	// Republish the full fixture (newer issue date): the revoked rows
+	// revive in place.
+	relisted := rewriteFixture(t, ofacFixture, map[string]string{
+		"<Day>28</Day>": "<Day>30</Day>",
+	})
+	runID3 := runFixtureSync(t, svc, relisted)
+	require.Equal(t, "COMPLETED", runStatus(t, q, runID3).Status)
+	assert.Equal(t, int64(2), count(t, pool,
+		`SELECT count(*) FROM sanctions_entity_programs ep
+		 JOIN sanctions_entities se ON se.id = ep.sanctions_entity_id
+		 WHERE se.external_entity_id='31940' AND ep.revoked_at IS NULL`),
+		"relisted program link must revive")
+	assert.Equal(t, int64(1), count(t, pool,
+		`SELECT count(*) FROM sanctions_references r
+		 JOIN sanctions_entities se ON se.id = r.sanctions_entity_id
+		 WHERE se.external_entity_id='31940' AND r.revoked_at IS NULL`),
+		"relisted reference must revive")
+	var revivedFirstSeen time.Time
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT r.first_seen_at FROM sanctions_references r
+		 JOIN sanctions_entities se ON se.id = r.sanctions_entity_id
+		 WHERE se.external_entity_id='31940'`).Scan(&revivedFirstSeen))
+	assert.Equal(t, firstSeen, revivedFirstSeen,
+		"revived reference keeps original first_seen_at")
+}
+
 func TestIngestion_DateRegression(t *testing.T) {
 	svc, q, pool, _ := newIngestionService(t, true)
 
@@ -271,7 +355,7 @@ func testAPIWithAdmin(t *testing.T) (*httptest.Server, *pgxpool.Pool, *redis.Cli
 		SanctionsStaleAfter: 48 * time.Hour,
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := ingestion.NewService(pool, rdb, resolver, nil, log)
+	svc := ingestion.NewService(pool, resolver, nil, log)
 	engine := httpserver.New(httpserver.Deps{
 		Pool: pool, RDB: rdb, Cfg: cfg, Logger: log,
 		Resolver: resolver, Queries: queries,

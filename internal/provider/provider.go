@@ -10,6 +10,7 @@ type Snapshot struct {
 	Path      string
 	Checksum  string // sha256 hex of the file bytes
 	SizeBytes int64
+	FinalURL  string // effective URL after redirects — audit trail for SSRF checks
 }
 
 // ImportResult reports staging-write counters for one run.

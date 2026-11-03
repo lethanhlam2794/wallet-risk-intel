@@ -38,7 +38,7 @@ func testAPIObserved(t *testing.T, publish bool) (*httptest.Server, *pgxpool.Poo
 	log := slog.New(slog.NewTextHandler(io.MultiWriter(logBuf), nil))
 
 	if publish {
-		svc := ingestion.NewService(pool, rdb, resolver, nil, log)
+		svc := ingestion.NewService(pool, resolver, nil, log)
 		runID, err := svc.RunSync(context.Background(), ingestion.RunRequest{
 			SourceCode: "ofac_sdn", TriggeredBy: "test", FilePath: ofacFixture,
 		})
@@ -99,7 +99,7 @@ func TestMetrics_IngestionValues(t *testing.T) {
 	srv, pool, _ := testAPIObserved(t, false)
 	q := db.New(pool)
 	resolver := testResolver(t, q)
-	rdb := testutil.RequireTestRedis(t)
+	testutil.RequireTestRedis(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	// Wire the same Metrics registry the server uses into a new run.
@@ -107,7 +107,7 @@ func TestMetrics_IngestionValues(t *testing.T) {
 	// a service with a fresh registry and scrape IT — what matters is the
 	// collectors carry real values.
 	m2 := metrics.New(metrics.LatestSnapshotQuery(q))
-	svc := ingestion.NewService(pool, rdb, resolver, nil, log)
+	svc := ingestion.NewService(pool, resolver, nil, log)
 	svc.SetMetrics(m2)
 	runID, err := svc.RunSync(context.Background(), ingestion.RunRequest{
 		SourceCode: "ofac_sdn", TriggeredBy: "test", FilePath: ofacFixture,

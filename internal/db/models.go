@@ -59,6 +59,7 @@ type IngestionRun struct {
 	CursorValue      pgtype.Text        `json:"cursor_value"`
 	ErrorMessage     pgtype.Text        `json:"error_message"`
 	TriggeredBy      pgtype.Text        `json:"triggered_by"`
+	HeartbeatAt      pgtype.Timestamptz `json:"heartbeat_at"`
 }
 
 type SanctionsEntity struct {
@@ -76,8 +77,9 @@ type SanctionsEntity struct {
 }
 
 type SanctionsEntityProgram struct {
-	SanctionsEntityID int64 `json:"sanctions_entity_id"`
-	ProgramID         int64 `json:"program_id"`
+	SanctionsEntityID int64              `json:"sanctions_entity_id"`
+	ProgramID         int64              `json:"program_id"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
 }
 
 type SanctionsProgram struct {
@@ -97,6 +99,9 @@ type SanctionsReference struct {
 	ReferenceUrl      pgtype.Text        `json:"reference_url"`
 	PublishedAt       pgtype.Timestamptz `json:"published_at"`
 	Details           []byte             `json:"details"`
+	FirstSeenAt       pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt        pgtype.Timestamptz `json:"last_seen_at"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
 }
 
 type SanctionsSnapshot struct {

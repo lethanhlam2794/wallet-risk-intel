@@ -14,7 +14,7 @@ import (
 const countProgramEntities = `-- name: CountProgramEntities :one
 SELECT count(*) FROM sanctions_entity_programs sep
 JOIN sanctions_entities se ON se.id = sep.sanctions_entity_id AND se.revoked_at IS NULL
-WHERE sep.program_id = $1
+WHERE sep.program_id = $1 AND sep.revoked_at IS NULL
 `
 
 func (q *Queries) CountProgramEntities(ctx context.Context, programID int64) (int64, error) {
@@ -200,21 +200,33 @@ func (q *Queries) LatestSnapshotPublished(ctx context.Context) (SanctionsSnapsho
 }
 
 const listEntityPrograms = `-- name: ListEntityPrograms :many
-SELECT sp.id, sp.source_id, sp.code, sp.name, sp.description, sp.source_url FROM sanctions_programs sp
+SELECT sp.id, sp.source_id, sp.code, sp.name, sp.description, sp.source_url, sep.revoked_at AS link_revoked_at FROM sanctions_programs sp
 JOIN sanctions_entity_programs sep ON sep.program_id = sp.id
 WHERE sep.sanctions_entity_id = $1
 ORDER BY sp.code
 `
 
-func (q *Queries) ListEntityPrograms(ctx context.Context, sanctionsEntityID int64) ([]SanctionsProgram, error) {
+type ListEntityProgramsRow struct {
+	ID            int64              `json:"id"`
+	SourceID      int64              `json:"source_id"`
+	Code          string             `json:"code"`
+	Name          pgtype.Text        `json:"name"`
+	Description   pgtype.Text        `json:"description"`
+	SourceUrl     pgtype.Text        `json:"source_url"`
+	LinkRevokedAt pgtype.Timestamptz `json:"link_revoked_at"`
+}
+
+// Returns all links including revoked ones so an entity detail shows its
+// last-known program context (revoked_at flag is surfaced to the caller).
+func (q *Queries) ListEntityPrograms(ctx context.Context, sanctionsEntityID int64) ([]ListEntityProgramsRow, error) {
 	rows, err := q.db.Query(ctx, listEntityPrograms, sanctionsEntityID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []SanctionsProgram{}
+	items := []ListEntityProgramsRow{}
 	for rows.Next() {
-		var i SanctionsProgram
+		var i ListEntityProgramsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SourceID,
@@ -222,6 +234,7 @@ func (q *Queries) ListEntityPrograms(ctx context.Context, sanctionsEntityID int6
 			&i.Name,
 			&i.Description,
 			&i.SourceUrl,
+			&i.LinkRevokedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -234,11 +247,14 @@ func (q *Queries) ListEntityPrograms(ctx context.Context, sanctionsEntityID int6
 }
 
 const listEntityReferences = `-- name: ListEntityReferences :many
-SELECT id, sanctions_entity_id, reference_type, title, reference_url, published_at, details FROM sanctions_references
+SELECT id, sanctions_entity_id, reference_type, title, reference_url, published_at, details, first_seen_at, last_seen_at, revoked_at FROM sanctions_references
 WHERE sanctions_entity_id = $1
 ORDER BY published_at DESC NULLS LAST, id
 `
 
+// All rows including revoked: the entity detail is the audit surface —
+// "which official reference justified this listing" stays answerable for
+// delisted entities (spec §6 provenance).
 func (q *Queries) ListEntityReferences(ctx context.Context, sanctionsEntityID int64) ([]SanctionsReference, error) {
 	rows, err := q.db.Query(ctx, listEntityReferences, sanctionsEntityID)
 	if err != nil {
@@ -256,6 +272,9 @@ func (q *Queries) ListEntityReferences(ctx context.Context, sanctionsEntityID in
 			&i.ReferenceUrl,
 			&i.PublishedAt,
 			&i.Details,
+			&i.FirstSeenAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -312,6 +331,7 @@ const listProgramsForEntities = `-- name: ListProgramsForEntities :many
 SELECT sep.sanctions_entity_id, sp.id, sp.source_id, sp.code, sp.name, sp.description, sp.source_url FROM sanctions_programs sp
 JOIN sanctions_entity_programs sep ON sep.program_id = sp.id
 WHERE sep.sanctions_entity_id = ANY($1::bigint[])
+  AND sep.revoked_at IS NULL
 ORDER BY sp.code
 `
 
@@ -325,6 +345,7 @@ type ListProgramsForEntitiesRow struct {
 	SourceUrl         pgtype.Text `json:"source_url"`
 }
 
+// Live associations only — a revoked link must not surface on a live lookup.
 func (q *Queries) ListProgramsForEntities(ctx context.Context, dollar_1 []int64) ([]ListProgramsForEntitiesRow, error) {
 	rows, err := q.db.Query(ctx, listProgramsForEntities, dollar_1)
 	if err != nil {

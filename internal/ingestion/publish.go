@@ -20,9 +20,10 @@ type publishStats struct {
 }
 
 // publish runs the staged→live transition in ONE transaction on the pinned
-// conn: upserts, entity/program/reference swaps, source-scoped revocation
-// of absent records, and the snapshot registry row. Any error rolls the
-// whole thing back — the live snapshot is never half-published.
+// conn: upserts, source-scoped soft-revocation of absent records (entities,
+// wallet listings, program links, references — provenance is never
+// hard-deleted), and the snapshot registry row. Any error rolls the whole
+// thing back — the live snapshot is never half-published.
 func (s *Service) publish(ctx context.Context, conn *pgxpool.Conn, sourceID int64,
 	runID uuid.UUID, checksum string, meta *ofac.DocMeta, res provider.ImportResult,
 ) (publishStats, string, error) {
@@ -59,13 +60,12 @@ func (s *Service) publish(ctx context.Context, conn *pgxpool.Conn, sourceID int6
 		{"programs", func() (int64, error) {
 			return qtx.PublishUpsertPrograms(ctx, db.PublishUpsertProgramsParams(src))
 		}, &stats.upserted},
-		{"entity_programs_clear", func() (int64, error) {
-			err := qtx.PublishDeleteEntityProgramsForSource(ctx, sourceID)
-			return 0, err
-		}, nil},
 		{"entity_programs", func() (int64, error) {
-			return qtx.PublishInsertEntityPrograms(ctx, db.PublishInsertEntityProgramsParams(src))
+			return qtx.PublishUpsertEntityPrograms(ctx, db.PublishUpsertEntityProgramsParams(src))
 		}, &stats.upserted},
+		{"entity_program_revocations", func() (int64, error) {
+			return qtx.PublishRevokeAbsentEntityPrograms(ctx, db.PublishRevokeAbsentEntityProgramsParams(src))
+		}, &stats.revoked},
 		{"wallets_resolve", func() (int64, error) {
 			return qtx.PublishEnsureWallets(ctx, u)
 		}, &stats.upserted},
@@ -78,13 +78,12 @@ func (s *Service) publish(ctx context.Context, conn *pgxpool.Conn, sourceID int6
 		{"entity_revocations", func() (int64, error) {
 			return qtx.PublishRevokeAbsentEntities(ctx, db.PublishRevokeAbsentEntitiesParams(src))
 		}, &stats.revoked},
-		{"references_clear", func() (int64, error) {
-			err := qtx.PublishDeleteReferencesForSource(ctx, sourceID)
-			return 0, err
-		}, nil},
 		{"references", func() (int64, error) {
-			return qtx.PublishInsertReferences(ctx, db.PublishInsertReferencesParams(src))
+			return qtx.PublishUpsertReferences(ctx, db.PublishUpsertReferencesParams(src))
 		}, &stats.upserted},
+		{"reference_revocations", func() (int64, error) {
+			return qtx.PublishRevokeAbsentReferences(ctx, db.PublishRevokeAbsentReferencesParams(src))
+		}, &stats.revoked},
 	}
 	for _, st := range steps {
 		rows, err := st.run()

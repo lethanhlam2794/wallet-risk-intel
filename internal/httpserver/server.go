@@ -53,7 +53,7 @@ type Deps struct {
 func New(d Deps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.Use(gin.Recovery(), middleware.RequestID(), middleware.MaxBodyBytes(maxRequestBodyBytes))
+	r.Use(middleware.RequestID(), middleware.Recovery(d.Logger), middleware.MaxBodyBytes(maxRequestBodyBytes))
 	r.Use(middleware.AccessLog(d.Logger, d.Metrics))
 
 	limiter := middleware.NewRateLimiter(d.RDB,
@@ -61,6 +61,9 @@ func New(d Deps) *gin.Engine {
 		func() {
 			d.Logger.Warn("rate limiter store error; failing open",
 				"component", "rate_limiter")
+			if d.Metrics != nil {
+				d.Metrics.IncRateLimitStoreError()
+			}
 		})
 
 	// Public probes (spec: healthz/readyz public; degraded ≠ dead).

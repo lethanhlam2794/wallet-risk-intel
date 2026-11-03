@@ -18,8 +18,7 @@ import (
 )
 
 const (
-	snapshotCacheTTL = 60 * time.Second // current-version pointer is short-lived
-	lookupCacheTTL   = time.Hour        // spec §14
+	lookupCacheTTL = time.Hour // spec §14
 )
 
 // Service assembles sanctions responses and owns the versioned cache.
@@ -199,27 +198,17 @@ func (s *Service) fetchLookup(ctx context.Context, networkID int64,
 	return lookup, nil
 }
 
-// currentSnapshot resolves the active snapshot version: Redis pointer with
-// a short TTL, DB fallback. Empty version means nothing ever published.
+// currentSnapshot resolves the active snapshot straight from the snapshots
+// table — a separate cache pointer could silently diverge and serve
+// pre-publish results labeled as fresh. Empty version means nothing ever
+// published.
 func (s *Service) currentSnapshot(ctx context.Context) (string, *db.SanctionsSnapshot, error) {
-	if s.rdb != nil {
-		if v, err := s.rdb.Get(ctx, cache.CurrentSnapshot()).Result(); err == nil && v != "" {
-			snap, err := s.q.LatestSnapshotPublished(ctx)
-			if err == nil {
-				return v, &snap, nil
-			}
-			return v, nil, nil
-		}
-	}
 	snap, err := s.q.LatestSnapshotPublished(ctx)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil, nil
 	}
 	if err != nil {
 		return "", nil, err
-	}
-	if s.rdb != nil {
-		_ = s.rdb.Set(ctx, cache.CurrentSnapshot(), snap.Version, snapshotCacheTTL).Err()
 	}
 	return snap.Version, &snap, nil
 }
@@ -265,7 +254,13 @@ func (s *Service) Entity(ctx context.Context, id int64) (*EntityDetail, error) {
 	}
 	progRefs := make([]ProgramRef, 0, len(progs))
 	for _, p := range progs {
-		progRefs = append(progRefs, programRef(p))
+		progRefs = append(progRefs, ProgramRef{
+			Code:        p.Code,
+			Name:        textPtr(p.Name),
+			Description: textPtr(p.Description),
+			SourceURL:   textPtr(p.SourceUrl),
+			Revoked:     p.LinkRevokedAt.Valid,
+		})
 	}
 	addresses := make([]EntityAddress, 0, len(wallets))
 	for _, w := range wallets {
@@ -287,8 +282,10 @@ func (s *Service) Entity(ctx context.Context, id int64) (*EntityDetail, error) {
 			Title:       textPtr(r.Title),
 			URL:         textPtr(r.ReferenceUrl),
 			PublishedAt: tsPtr(r.PublishedAt),
+			Revoked:     r.RevokedAt.Valid,
 		})
 	}
+	dataStatus, lastSynced := s.DataStatus(ctx)
 	return &EntityDetail{
 		EntityID:                 row.ID,
 		ExternalEntityID:         row.ExternalEntityID,
@@ -305,6 +302,8 @@ func (s *Service) Entity(ctx context.Context, id int64) (*EntityDetail, error) {
 			Code: row.SourceCode, Name: row.SourceName,
 			URL: textPtr(row.SourceHomepage),
 		},
+		DataStatus:   dataStatus,
+		LastSyncedAt: lastSynced,
 	}, nil
 }
 
@@ -318,6 +317,7 @@ func (s *Service) Program(ctx context.Context, code string) (*ProgramDetail, err
 	if err != nil {
 		return nil, err
 	}
+	dataStatus, lastSynced := s.DataStatus(ctx)
 	return &ProgramDetail{
 		Code:                    row.Code,
 		Name:                    textPtr(row.Name),
@@ -325,6 +325,8 @@ func (s *Service) Program(ctx context.Context, code string) (*ProgramDetail, err
 		SourceURL:               textPtr(row.SourceUrl),
 		SourceCode:              row.SourceCode,
 		AssociatedEntitiesCount: n,
+		DataStatus:              dataStatus,
+		LastSyncedAt:            lastSynced,
 	}, nil
 }
 
@@ -342,6 +344,8 @@ type EntityDetail struct {
 	OfficialReferences       []EntityReference `json:"official_references"`
 	Details                  []byte            `json:"details"`
 	Source                   SourceRef         `json:"source"`
+	DataStatus               string            `json:"data_status"`
+	LastSyncedAt             *time.Time        `json:"last_synced_at"`
 }
 
 // EntityAddress is one listing under an entity detail.
@@ -357,21 +361,26 @@ type EntityAddress struct {
 }
 
 // EntityReference is an official reference row under an entity detail.
+// Revoked marks a reference absent from the latest snapshot — retained so
+// the audit trail for delisted entities stays answerable (spec §6).
 type EntityReference struct {
 	Type        string     `json:"reference_type"`
 	Title       *string    `json:"title"`
 	URL         *string    `json:"reference_url"`
 	PublishedAt *time.Time `json:"published_at"`
+	Revoked     bool       `json:"revoked"`
 }
 
 // ProgramDetail is the §9.5 program response.
 type ProgramDetail struct {
-	Code                    string  `json:"code"`
-	Name                    *string `json:"name"`
-	Description             *string `json:"description"`
-	SourceURL               *string `json:"source_url"`
-	SourceCode              string  `json:"source_code"`
-	AssociatedEntitiesCount int64   `json:"associated_entities_count"`
+	Code                    string     `json:"code"`
+	Name                    *string    `json:"name"`
+	Description             *string    `json:"description"`
+	SourceURL               *string    `json:"source_url"`
+	SourceCode              string     `json:"source_code"`
+	AssociatedEntitiesCount int64      `json:"associated_entities_count"`
+	DataStatus              string     `json:"data_status"`
+	LastSyncedAt            *time.Time `json:"last_synced_at"`
 }
 
 func programRef(p db.SanctionsProgram) ProgramRef {

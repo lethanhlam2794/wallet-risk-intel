@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -16,8 +17,10 @@ import (
 
 func testDownloader(t *testing.T, serverURL string, opts ...DownloaderOption) *Downloader {
 	t.Helper()
-	host := strings.TrimPrefix(strings.TrimPrefix(serverURL, "http://"), "https://")
-	d, err := NewDownloader(serverURL, append(opts, WithAllowedHosts(host))...)
+	u, err := url.Parse(serverURL)
+	require.NoError(t, err)
+	d, err := NewDownloader(serverURL,
+		append(opts, WithAllowedHosts(u.Host), WithInsecureHTTP())...)
 	require.NoError(t, err)
 	return d
 }
@@ -147,4 +150,80 @@ func TestNewDownloader_RejectsNonAllowlistedHost(t *testing.T) {
 	_, err := NewDownloader("https://evil.example.com/x.xml", WithTmpDir(t.TempDir()))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "allowlist")
+}
+
+// Production requires https: a plaintext URL is rejected unless the
+// explicit test-only escape hatch is set.
+func TestNewDownloader_RequiresHTTPS(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+
+	_, err := NewDownloader(srv.URL, WithAllowedHosts(host), WithTmpDir(t.TempDir()))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scheme")
+
+	_, err = NewDownloader(srv.URL, WithAllowedHosts(host), WithInsecureHTTP(), WithTmpDir(t.TempDir()))
+	require.NoError(t, err)
+}
+
+// A redirect to a host outside the allowlist must be refused — the
+// allowlist is re-validated on every hop, not just the configured URL.
+func TestDownload_RedirectToNonAllowlistedHostRejected(t *testing.T) {
+	evil := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("<Sanctions/>"))
+	}))
+	defer evil.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, evil.URL+"/sdn.xml", http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	d := testDownloader(t, redirector.URL, WithTmpDir(t.TempDir()), WithMaxRetries(1))
+	_, err := d.Download(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "allowlist")
+}
+
+// A same-host redirect is allowed and the final URL is recorded for audit.
+func TestDownload_AllowlistedRedirectWorks(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/go" {
+			http.Redirect(w, r, srv.URL+"/sdn.xml", http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte("<Sanctions/>"))
+	}))
+	defer srv.Close()
+
+	d := testDownloader(t, srv.URL+"/go", WithTmpDir(t.TempDir()), WithMaxRetries(1))
+	snap, err := d.Download(context.Background())
+	require.NoError(t, err)
+	defer os.Remove(snap.Path)
+	assert.Equal(t, srv.URL+"/sdn.xml", snap.FinalURL)
+}
+
+// A hostile Retry-After hint is capped — it must never wedge the run.
+func TestDownload_RetryAfterCapped(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "31536000") // one year
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte("<ok/>"))
+	}))
+	defer srv.Close()
+
+	d := testDownloader(t, srv.URL, WithTmpDir(t.TempDir()), WithMaxRetries(3),
+		WithBackoff(time.Millisecond), WithMaxRetryWait(20*time.Millisecond))
+	start := time.Now()
+	snap, err := d.Download(context.Background())
+	require.NoError(t, err)
+	defer os.Remove(snap.Path)
+	assert.Equal(t, int32(2), calls.Load())
+	assert.Less(t, time.Since(start), 2*time.Second, "Retry-After hint must be capped, not honored verbatim")
 }

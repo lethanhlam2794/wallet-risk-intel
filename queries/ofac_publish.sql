@@ -22,22 +22,32 @@ FROM stg_sanctions_programs p
 WHERE p.run_id = $2
 ON CONFLICT (source_id, code) DO NOTHING;
 
--- name: PublishDeleteEntityProgramsForSource :exec
-DELETE FROM sanctions_entity_programs
-WHERE sanctions_entity_id IN (
-    SELECT id FROM sanctions_entities WHERE source_id = $1::bigint
-);
-
--- name: PublishInsertEntityPrograms :execrows
-INSERT INTO sanctions_entity_programs (sanctions_entity_id, program_id)
-SELECT se.id, sp.id
+-- name: PublishUpsertEntityPrograms :execrows
+INSERT INTO sanctions_entity_programs (sanctions_entity_id, program_id, revoked_at)
+SELECT se.id, sp.id, NULL
 FROM stg_sanctions_entity_programs ep
 JOIN sanctions_entities se
     ON se.source_id = $1 AND se.external_entity_id = ep.external_entity_id
 JOIN sanctions_programs sp
     ON sp.source_id = $1 AND sp.code = ep.program_code
 WHERE ep.run_id = $2
-ON CONFLICT DO NOTHING;
+ON CONFLICT (sanctions_entity_id, program_id) DO UPDATE SET
+    revoked_at = NULL;
+
+-- name: PublishRevokeAbsentEntityPrograms :execrows
+UPDATE sanctions_entity_programs ep SET revoked_at = NOW()
+FROM sanctions_entities se, sanctions_programs sp
+WHERE ep.sanctions_entity_id = se.id
+  AND ep.program_id = sp.id
+  AND se.source_id = $1
+  AND sp.source_id = $1
+  AND ep.revoked_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM stg_sanctions_entity_programs s
+      WHERE s.run_id = $2
+        AND s.external_entity_id = se.external_entity_id
+        AND s.program_code = sp.code
+  );
 
 -- name: PublishEnsureWallets :execrows
 INSERT INTO wallets (network_id, address, normalized_address, address_type)
@@ -100,20 +110,37 @@ WHERE se.source_id = $1
       WHERE s.run_id = $2 AND s.external_entity_id = se.external_entity_id
   );
 
--- name: PublishDeleteReferencesForSource :exec
-DELETE FROM sanctions_references
-WHERE sanctions_entity_id IN (
-    SELECT id FROM sanctions_entities WHERE source_id = $1::bigint
-);
-
--- name: PublishInsertReferences :execrows
+-- name: PublishUpsertReferences :execrows
 INSERT INTO sanctions_references
-    (sanctions_entity_id, reference_type, title, reference_url, published_at, details)
-SELECT se.id, r.reference_type, r.title, r.reference_url, r.published_at, r.details
+    (sanctions_entity_id, reference_type, title, reference_url, published_at, details,
+     last_seen_at, revoked_at)
+SELECT se.id, r.reference_type, r.title, r.reference_url, r.published_at, r.details,
+       NOW(), NULL
 FROM stg_sanctions_references r
 JOIN sanctions_entities se
     ON se.source_id = $1 AND se.external_entity_id = r.external_entity_id
-WHERE r.run_id = $2;
+WHERE r.run_id = $2
+ON CONFLICT (sanctions_entity_id, reference_type,
+             COALESCE(title, ''), COALESCE(reference_url, '')) DO UPDATE SET
+    published_at = EXCLUDED.published_at,
+    details = EXCLUDED.details,
+    last_seen_at = NOW(),
+    revoked_at = NULL;
+
+-- name: PublishRevokeAbsentReferences :execrows
+UPDATE sanctions_references r SET revoked_at = NOW()
+FROM sanctions_entities se
+WHERE r.sanctions_entity_id = se.id
+  AND se.source_id = $1
+  AND r.revoked_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM stg_sanctions_references s
+      WHERE s.run_id = $2
+        AND s.external_entity_id = se.external_entity_id
+        AND s.reference_type = r.reference_type
+        AND COALESCE(s.title, '') = COALESCE(r.title, '')
+        AND COALESCE(s.reference_url, '') = COALESCE(r.reference_url, '')
+  );
 
 -- name: InsertSnapshot :one
 INSERT INTO sanctions_snapshots

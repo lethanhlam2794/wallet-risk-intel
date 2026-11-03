@@ -45,8 +45,21 @@ version.
   `UNAVAILABLE` (no snapshot ever published). Non-match is a data answer,
   not a safety verdict.
 - Cache: `wallet:sanctions:{net}:{addr}:{snapshot_version}` TTL 1h; lookups
-  resolve current version first (`sanctions:current_snapshot`, short TTL +
-  DB fallback); publish bump makes old keys unreachable (spec §14).
+  resolve the current version from `sanctions_snapshots` directly (post-review
+  amendment W1: the Redis `sanctions:current_snapshot` pointer was removed —
+  it was redundant and could serve pre-publish listings labeled as fresh);
+  publish bump makes old keys unreachable (spec §14).
+
+### Contract note (Devin Review W4 — accepted deviation)
+
+The §9.3 example shape (`sanctions[].list`, `source:{provider,record_id,url}`)
+was reconciled to the implemented contract: each entry carries
+`external_entity_id` (the true OFAC `Profile@ID` record id) and
+`source:{code,name,url}` (code = `ofac_sdn` is the provider identity). The
+implemented shape is canonical — it keeps the real record id and provider
+visible without a redundant `list` key duplicating `source.code`. Entity and
+program detail responses also carry `data_status` + `last_synced_at`
+(review W3).
 
 ## Architecture
 

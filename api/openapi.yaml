@@ -464,6 +464,9 @@ components:
         name: { type: ["string", "null"] }
         description: { type: ["string", "null"] }
         source_url: { type: ["string", "null"], format: uri }
+        revoked:
+          type: boolean
+          description: Link absent from the latest snapshot — provenance only, never a live association.
     SourceRef:
       type: object
       properties:
@@ -536,6 +539,9 @@ components:
         title: { type: ["string", "null"] }
         reference_url: { type: ["string", "null"], format: uri }
         published_at: { type: ["string", "null"], format: date-time }
+        revoked:
+          type: boolean
+          description: Reference absent from the latest snapshot — retained for audit (spec §6).
     EntityDetail:
       type: object
       properties:
@@ -557,6 +563,7 @@ components:
           items: { $ref: "#/components/schemas/EntityReference" }
         details: { type: object }
         source: { $ref: "#/components/schemas/SourceRef" }
+        data_status: { $ref: "#/components/schemas/DataStatus" }
         last_synced_at: { type: ["string", "null"], format: date-time }
     ProgramDetail:
       type: object
@@ -567,6 +574,8 @@ components:
         source_url: { type: ["string", "null"], format: uri }
         source_code: { type: string }
         associated_entities_count: { type: integer }
+        data_status: { $ref: "#/components/schemas/DataStatus" }
+        last_synced_at: { type: ["string", "null"], format: date-time }
     IngestionRun:
       type: object
       properties:

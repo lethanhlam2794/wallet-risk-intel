@@ -25,12 +25,15 @@ type Reason struct {
 	Status  string  `json:"status"`
 }
 
-// ProgramRef is a sanctions program attached to an entity.
+// ProgramRef is a sanctions program attached to an entity. Revoked marks a
+// link absent from the latest snapshot — kept for provenance, never counted
+// as a live association.
 type ProgramRef struct {
 	Code        string  `json:"code"`
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	SourceURL   *string `json:"source_url"`
+	Revoked     bool    `json:"revoked,omitempty"`
 }
 
 // SourceRef identifies the list provider a record came from.

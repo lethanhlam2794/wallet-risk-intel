@@ -28,6 +28,7 @@ type Metrics struct {
 	IngestionDuration    *prometheus.HistogramVec
 	IngestionRecords     *prometheus.CounterVec
 	IngestionLastSuccess prometheus.Gauge
+	RateLimitStoreErrors prometheus.Counter
 }
 
 // New builds the registry. snapshotQuery supplies the latest published_at
@@ -63,6 +64,10 @@ func New(snapshotQuery func(ctx context.Context) (time.Time, bool)) *Metrics {
 		IngestionLastSuccess: fac.NewGauge(prometheus.GaugeOpts{
 			Name: "ingestion_last_success_timestamp",
 			Help: "Unix timestamp of the last completed ingestion run.",
+		}),
+		RateLimitStoreErrors: fac.NewCounter(prometheus.CounterOpts{
+			Name: "rate_limit_store_errors_total",
+			Help: "Rate-limiter store failures served fail-open.",
 		}),
 	}
 
@@ -110,6 +115,9 @@ func (m *Metrics) IncIngestionRecords(source, result string, n int64) {
 
 // IncSanctionsMatch counts a direct-match lookup.
 func (m *Metrics) IncSanctionsMatch() { m.SanctionsMatches.Inc() }
+
+// IncRateLimitStoreError counts fail-open rate-limiter store failures.
+func (m *Metrics) IncRateLimitStoreError() { m.RateLimitStoreErrors.Inc() }
 
 func itoa(i int) string { return strconv.Itoa(i) }
 

@@ -53,15 +53,19 @@ JOIN data_sources src ON src.id = se.source_id
 WHERE se.id = $1;
 
 -- name: ListEntityPrograms :many
-SELECT sp.* FROM sanctions_programs sp
+-- Returns all links including revoked ones so an entity detail shows its
+-- last-known program context (revoked_at flag is surfaced to the caller).
+SELECT sp.*, sep.revoked_at AS link_revoked_at FROM sanctions_programs sp
 JOIN sanctions_entity_programs sep ON sep.program_id = sp.id
 WHERE sep.sanctions_entity_id = $1
 ORDER BY sp.code;
 
 -- name: ListProgramsForEntities :many
+-- Live associations only — a revoked link must not surface on a live lookup.
 SELECT sep.sanctions_entity_id, sp.* FROM sanctions_programs sp
 JOIN sanctions_entity_programs sep ON sep.program_id = sp.id
 WHERE sep.sanctions_entity_id = ANY($1::bigint[])
+  AND sep.revoked_at IS NULL
 ORDER BY sp.code;
 
 -- name: ListEntityWallets :many
@@ -70,6 +74,9 @@ WHERE sanctions_entity_id = $1 AND revoked_at IS NULL
 ORDER BY id;
 
 -- name: ListEntityReferences :many
+-- All rows including revoked: the entity detail is the audit surface —
+-- "which official reference justified this listing" stays answerable for
+-- delisted entities (spec §6 provenance).
 SELECT * FROM sanctions_references
 WHERE sanctions_entity_id = $1
 ORDER BY published_at DESC NULLS LAST, id;
@@ -83,7 +90,7 @@ WHERE sp.code = $1;
 -- name: CountProgramEntities :one
 SELECT count(*) FROM sanctions_entity_programs sep
 JOIN sanctions_entities se ON se.id = sep.sanctions_entity_id AND se.revoked_at IS NULL
-WHERE sep.program_id = $1;
+WHERE sep.program_id = $1 AND sep.revoked_at IS NULL;
 
 -- name: LatestSnapshotPublished :one
 SELECT * FROM sanctions_snapshots
