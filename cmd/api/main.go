@@ -12,8 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+
 	"checkwallet/internal/config"
 	"checkwallet/internal/db"
+	"checkwallet/internal/enrichment"
 	"checkwallet/internal/httpserver"
 	"checkwallet/internal/ingestion"
 	"checkwallet/internal/label"
@@ -24,9 +28,14 @@ import (
 	"checkwallet/internal/platform/logger"
 	"checkwallet/internal/platform/metrics"
 	"checkwallet/internal/provider"
+	"checkwallet/internal/provider/chainabuse"
+	"checkwallet/internal/provider/goplus"
 	"checkwallet/internal/provider/ofac"
+	"checkwallet/internal/provider/publicaml"
+	"checkwallet/internal/provider/resilience"
 	"checkwallet/internal/provider/walletattribution"
 	"checkwallet/internal/sanctions"
+	"checkwallet/internal/wallet"
 )
 
 func main() {
@@ -91,13 +100,24 @@ func run() error {
 	ingestSvc.SetMetrics(m)
 	sanctionsSvc.SetMetrics(m)
 
+	// Live-enrichment providers (spec §19 phase 4). goplus + publicaml are
+	// always on (keyless tiers); chainabuse is constructed disabled without
+	// CHAINABUSE_API_KEY — Enabled() gates traffic, the adapter still
+	// reports its DISABLED status to consumers. Construction failures are
+	// config errors → fatal at boot, never silently dropped.
+	enrichSvc, err := buildEnrichment(cfg, pool, queries, rdb.R(), m, log)
+	if err != nil {
+		return err
+	}
+
 	engine := httpserver.New(httpserver.Deps{
 		Pool: pool, RDB: rdb.R(), Cfg: cfg, Logger: log,
 		Resolver: resolver, Queries: queries,
-		Admin:     ingestion.NewAdminHandler(ingestSvc, queries, log),
-		Sanctions: sanctionsSvc,
-		Labels:    labelSvc,
-		Metrics:   m,
+		Admin:      ingestion.NewAdminHandler(ingestSvc, queries, log),
+		Sanctions:  sanctionsSvc,
+		Labels:     labelSvc,
+		Enrichment: enrichSvc,
+		Metrics:    m,
 	})
 
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
@@ -115,6 +135,46 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// buildEnrichment constructs the three phase-4 providers with resilience
+// metrics hooks and wraps them in the cache-first fan-out service. Provider
+// keys are used for requests only — never logged.
+func buildEnrichment(cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
+	rdb *redis.Client, m *metrics.Metrics, log *slog.Logger) (*enrichment.Service, error) {
+
+	hooksFor := func(source string) resilience.Hooks {
+		onR, onE, onRL, onC := m.ProviderHooks(source)
+		return resilience.Hooks{OnResult: onR, OnError: onE,
+			OnRateLimited: onRL, OnCircuit: onC}
+	}
+	gp, err := goplus.New(cfg.GoPlusBaseURL, cfg.GoPlusAPIKey,
+		cfg.GoPlusRatePerMin, goplus.WithHooks(hooksFor(goplus.SourceCode)))
+	if err != nil {
+		return nil, err
+	}
+	pa, err := publicaml.New(cfg.PublicAMLBaseURL, cfg.PublicAMLAPIKey,
+		cfg.PublicAMLRatePerMin, publicaml.WithHooks(hooksFor(publicaml.SourceCode)))
+	if err != nil {
+		return nil, err
+	}
+	ca, err := chainabuse.New(cfg.ChainabuseBaseURL, cfg.ChainabuseAPIKey,
+		cfg.ChainabuseRatePerMin, chainabuse.WithHooks(hooksFor(chainabuse.SourceCode)))
+	if err != nil {
+		return nil, err
+	}
+	if !ca.Enabled() {
+		log.Info("chainabuse disabled: CHAINABUSE_API_KEY not configured")
+	}
+	return enrichment.New(
+		[]provider.Provider{gp, pa, ca},
+		pool, q, rdb, wallet.NewService(q), log, enrichment.Config{
+			PositiveTTL:     cfg.EnrichmentCacheTTL,
+			NegativeTTL:     cfg.EnrichmentNegativeTTL,
+			RefreshCooldown: cfg.EnrichmentRefreshCooldown,
+			Deadline:        cfg.EnrichmentDeadline,
+			Retain:          25,
+		}), nil
 }
 
 // bootstrapAPIClients upserts dev bootstrap keys from env. Removing the env

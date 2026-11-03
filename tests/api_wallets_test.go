@@ -103,14 +103,20 @@ func TestWallets_GetOrCreate_Idempotent(t *testing.T) {
 	assert.Equal(t, "0x098b716b8aaf21512996dc57eb0615e2383e2f96", body.Data.NormalizedAddress)
 	assert.Equal(t, "UNAVAILABLE", body.Data.DataStatus)
 
+	// Scoped to the wallet under test — other test packages share
+	// check_wallet_test and may insert unrelated wallet rows in parallel.
 	var count int
-	require.NoError(t, pool.QueryRow(context.Background(), "SELECT count(*) FROM wallets").Scan(&count))
+	require.NoError(t, pool.QueryRow(context.Background(),
+		"SELECT count(*) FROM wallets WHERE normalized_address = $1",
+		body.Data.NormalizedAddress).Scan(&count))
 	assert.Equal(t, 1, count)
 
 	// Mixed-case variant resolves to the same row — no duplicates.
 	w2 := get(t, srv, "/api/v1/wallets/ethereum/"+body.Data.NormalizedAddress, key)
 	require.Equal(t, http.StatusOK, w2.Code)
-	require.NoError(t, pool.QueryRow(context.Background(), "SELECT count(*) FROM wallets").Scan(&count))
+	require.NoError(t, pool.QueryRow(context.Background(),
+		"SELECT count(*) FROM wallets WHERE normalized_address = $1",
+		body.Data.NormalizedAddress).Scan(&count))
 	assert.Equal(t, 1, count, "get-or-create must be idempotent (UNIQUE gate)")
 }
 

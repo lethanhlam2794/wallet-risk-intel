@@ -71,6 +71,20 @@ type IngestionRun struct {
 	HeartbeatAt      pgtype.Timestamptz `json:"heartbeat_at"`
 }
 
+type ProviderObservation struct {
+	ID             int64              `json:"id"`
+	SourceID       int64              `json:"source_id"`
+	WalletID       int64              `json:"wallet_id"`
+	RequestedChain string             `json:"requested_chain"`
+	Status         string             `json:"status"`
+	HttpStatus     pgtype.Int4        `json:"http_status"`
+	LatencyMs      pgtype.Int4        `json:"latency_ms"`
+	Payload        []byte             `json:"payload"`
+	ProviderScore  pgtype.Float8      `json:"provider_score"`
+	Error          []byte             `json:"error"`
+	FetchedAt      pgtype.Timestamptz `json:"fetched_at"`
+}
+
 type RiskCategory struct {
 	ID           int64  `json:"id"`
 	Code         string `json:"code"`

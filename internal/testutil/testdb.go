@@ -73,7 +73,16 @@ func RequireTestRedis(t *testing.T) *redis.Client {
 // domain tables, and returns a pool that is closed on test cleanup.
 func RequireTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	dsn := TestDSN()
+	return RequireTestPoolDSN(t, TestDSN())
+}
+
+// RequireTestPoolDSN is RequireTestPool against a caller-supplied DSN —
+// the same _test guard applies. Packages that run under `go test ./...`
+// in parallel MUST use a package-private database (name ends `_test`);
+// the shared check_wallet_test is truncated per-test by every pool caller,
+// so row-level assertions cannot survive cross-package truncation.
+func RequireTestPoolDSN(t *testing.T, dsn string) *pgxpool.Pool {
+	t.Helper()
 	require.NoError(t, assertTestDatabase(dsn))
 	ensureTestDatabase(t, dsn)
 	require.NoError(t, database.Migrate(dsn))

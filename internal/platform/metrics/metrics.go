@@ -31,6 +31,12 @@ type Metrics struct {
 	RateLimitStoreErrors prometheus.Counter
 
 	DynamicLabelCategories prometheus.Counter
+
+	// Live provider instrumentation (spec §15/§17).
+	ProviderRequestsTotal    *prometheus.CounterVec // {source,result}
+	ProviderErrorsTotal      *prometheus.CounterVec // {source,reason}
+	ProviderRateLimitedTotal *prometheus.CounterVec // {source}
+	ProviderCircuitOpen      *prometheus.GaugeVec   // {source}
 }
 
 // New builds the registry. snapshotQuery supplies the latest published_at
@@ -78,6 +84,22 @@ func New(snapshotQuery func(ctx context.Context) (time.Time, bool),
 			Name: "labels_dynamic_categories_total",
 			Help: "Risk categories created dynamically from unseen upstream codes.",
 		}),
+		ProviderRequestsTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "provider_requests_total",
+			Help: "On-demand provider lookups by source and outcome.",
+		}, []string{"source", "result"}),
+		ProviderErrorsTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "provider_errors_total",
+			Help: "Provider lookup failures by source and typed reason.",
+		}, []string{"source", "reason"}),
+		ProviderRateLimitedTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "provider_rate_limited_total",
+			Help: "Provider lookups rejected by upstream 429 or the local limiter.",
+		}, []string{"source"}),
+		ProviderCircuitOpen: fac.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "provider_circuit_open",
+			Help: "Provider circuit breaker state (1=open/half-open, 0=closed).",
+		}, []string{"source"}),
 	}
 
 	reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -145,6 +167,40 @@ func (m *Metrics) IncRateLimitStoreError() { m.RateLimitStoreErrors.Inc() }
 // unseen upstream codes (warn-and-track posture).
 func (m *Metrics) IncDynamicLabelCategories(n int64) {
 	m.DynamicLabelCategories.Add(float64(n))
+}
+
+// ObserveProviderRequest counts one provider outcome ("ok" or an ErrKind).
+func (m *Metrics) ObserveProviderRequest(source, result string) {
+	m.ProviderRequestsTotal.WithLabelValues(source, result).Inc()
+}
+
+// IncProviderError counts one failed provider lookup by typed reason.
+func (m *Metrics) IncProviderError(source, reason string) {
+	m.ProviderErrorsTotal.WithLabelValues(source, reason).Inc()
+}
+
+// IncProviderRateLimited counts 429/limiter rejections per source.
+func (m *Metrics) IncProviderRateLimited(source string) {
+	m.ProviderRateLimitedTotal.WithLabelValues(source).Inc()
+}
+
+// SetProviderCircuit drives the breaker-state gauge.
+func (m *Metrics) SetProviderCircuit(source string, open bool) {
+	v := 0.0
+	if open {
+		v = 1
+	}
+	m.ProviderCircuitOpen.WithLabelValues(source).Set(v)
+}
+
+// ProviderHooks adapts the collectors to the resilience toolkit hook shape
+// (avoids a resilience→metrics import).
+func (m *Metrics) ProviderHooks(source string) (onResult, onError func(s, v string),
+	onRateLimited func(s string), onCircuit func(s string, open bool)) {
+	return func(s, v string) { m.ObserveProviderRequest(s, v) },
+		func(s, v string) { m.IncProviderError(s, v) },
+		func(s string) { m.IncProviderRateLimited(s) },
+		func(s string, open bool) { m.SetProviderCircuit(s, open) }
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }

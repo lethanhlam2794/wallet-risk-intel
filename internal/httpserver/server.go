@@ -15,6 +15,7 @@ import (
 
 	"checkwallet/internal/config"
 	"checkwallet/internal/db"
+	"checkwallet/internal/enrichment"
 	"checkwallet/internal/ingestion"
 	"checkwallet/internal/label"
 	"checkwallet/internal/middleware"
@@ -49,6 +50,8 @@ type Deps struct {
 	// Labels wires /api/v1/wallets/:network/:address/labels and the wallet
 	// endpoint's label summary when set.
 	Labels *label.Service
+	// Enrichment wires GET /wallets/:network/:address/enrichment when set.
+	Enrichment *enrichment.Service
 	// Metrics wires request instrumentation and /metrics when set.
 	Metrics *metrics.Metrics
 }
@@ -92,6 +95,11 @@ func New(d Deps) *gin.Engine {
 	if d.Labels != nil {
 		lh := label.NewHandler(d.Labels, d.Resolver)
 		api.GET("/wallets/:network/:address/labels", lh.WalletLabels)
+	}
+
+	if d.Enrichment != nil {
+		eh := enrichment.NewHandler(d.Enrichment, d.Resolver)
+		api.GET("/wallets/:network/:address/enrichment", eh.Enrich)
 	}
 
 	if d.Sanctions != nil {

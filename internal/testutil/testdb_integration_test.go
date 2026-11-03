@@ -22,7 +22,10 @@ func TestRequireTestPool_SeededSchema(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM blockchain_networks").Scan(&networks))
 	assert.Equal(t, 2, networks, "ethereum + bsc seeds must survive truncation")
 
-	var sources int
-	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM data_sources").Scan(&sources))
-	assert.Equal(t, 2, sources, "ofac_sdn + wallet_attribution seeds must survive truncation")
+	var sources []string
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT array_agg(code ORDER BY code) FROM data_sources").Scan(&sources))
+	assert.Equal(t,
+		[]string{"chainabuse", "goplus", "ofac_sdn", "publicaml", "wallet_attribution"},
+		sources, "all migration-seeded data sources must survive truncation")
 }

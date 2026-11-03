@@ -3,17 +3,21 @@ info:
   title: Blockchain Wallet Risk Intelligence API
   version: "0.2.0"
   description: |
-    REST API for wallet risk signals over published OFAC SDN sanctions data.
+    REST API for wallet risk signals over published OFAC SDN sanctions data,
+    public attribution labels, and live third-party enrichment.
 
-    Implemented scope (spec §19 phases 1–2): network catalog, wallet
-    normalization, sanctions wallet/entity/program lookups, admin ingestion,
-    health probes, and metrics. Later-phase endpoints (screenings, labels,
-    tracing) are intentionally absent.
+    Implemented scope (spec §19 phases 1–4): network catalog, wallet
+    normalization, sanctions wallet/entity/program lookups, public
+    attribution labels, live multi-provider wallet enrichment, admin
+    ingestion, health probes, and metrics. Later-phase endpoints
+    (screenings, tracing) are intentionally absent.
 
     **Semantics**: a non-match is data, never a safety verdict. `matched:false`
     means "no listing on this network in the current snapshot" — see
     `cross_chain_observations` and `unresolved_network_listings` for listings
-    of the same address that cannot count as a direct match.
+    of the same address that cannot count as a direct match. Provider
+    observations are `reported` — never auto-verified — and provider
+    failures surface as typed statuses, never as clean results.
   contact:
     name: Engineering
 servers:
@@ -275,6 +279,162 @@ paths:
                       code: INVALID_CURSOR
                       message: invalid cursor
                       request_id: "req_123"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/wallets/{network}/{address}/enrichment:
+    get:
+      tags: [wallets]
+      summary: Live multi-provider enrichment for a wallet
+      description: |
+        Fans out to the registered live providers (GoPlus, PublicAML,
+        Chainabuse) with cache-first semantics and returns per-provider
+        observations, signals, provider scores, and indirect exposures.
+
+        **Semantics — read before consuming:**
+
+        - `provider_score` is the **provider's own** score (e.g. PublicAML
+          `aml_score`); it is never the internal risk score and not ground
+          truth. A score of `0` is data, **not** a safe verdict —
+          especially under a non-`OK` provider status.
+        - `status` aggregates per-provider outcomes: `COMPLETED` when every
+          attempted provider succeeded, `PARTIAL` on a mix, `FAILED` when
+          every attempted provider failed, `INSUFFICIENT_DATA` when nothing
+          was attempted (e.g. all disabled).
+        - Per-provider `status` uses the persisted vocabulary: `OK`,
+          `DEGRADED`, `RATE_LIMITED`, `TIMEOUT`, `UPSTREAM_5XX`,
+          `CLIENT_4XX`, `MALFORMED`, `CIRCUIT_OPEN`, `DISABLED`,
+          `TRANSPORT`, `ERROR`. `DISABLED` means the provider is configured
+          off (e.g. no API key) and made **zero** outbound calls — it does
+          not count as attempted.
+        - `error.retry_after` is expressed in **seconds** (integer), carried
+          through from the upstream `Retry-After` hint.
+        - `cached:true` marks a response served from the provider cache;
+          `cache_expires_at` states when the cached entry expires (UTC).
+          Positive entries live 15 minutes; negative/degraded entries live
+          60 seconds and can never replay as clean (their `status` is
+          embedded in the cached payload). `cache:"bypassed"` marks a
+          Redis outage — the endpoint fails open rather than failing.
+        - `persisted` reports whether the fetch that produced this result
+          wrote a `provider_observations` audit row — on a `cached:true`
+          hit it reflects the original fetch's outcome, not this request.
+          Persistence failures never alter provider status.
+        - `observations[]` are normalized risk signals — all
+          `reported`/`unverified`, never auto-verified. `exposures[]` are
+          indirect graph-derived exposures, kept strictly separate: a graph
+          path never implies ownership or direct attribution.
+        - `refresh` parses via `strconv.ParseBool`. When true it bypasses
+          the cache read (still writes through) **but is quota-guarded**:
+          one bypass per (source, network, address) per 60 s cooldown —
+          inside the cooldown the flag behaves as a normal request. A cache
+          miss always fetches regardless of the flag.
+        - Provider `Authorization` headers are never logged (spec §16).
+      parameters:
+        - { $ref: "#/components/parameters/Network" }
+        - { $ref: "#/components/parameters/Address" }
+        - name: refresh
+          in: query
+          schema: { type: boolean, default: false }
+          description: Bypass the cache read when the per-key cooldown
+            allows it (see description above).
+        - name: providers
+          in: query
+          schema: { type: string }
+          description: Comma-separated provider subset (e.g.
+            `goplus,publicaml`). Empty or absent means every registered
+            provider; an unknown name returns `400 BAD_REQUEST`.
+      responses:
+        "200":
+          description: Enrichment result — check per-provider statuses.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EnrichmentResult" }
+              example:
+                data:
+                  network: ethereum
+                  address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+                  normalized_address: "0x098b716b8aaf21512996dc57eb0615e2383e2f96"
+                  status: PARTIAL
+                  providers:
+                    - source: goplus
+                      enabled: true
+                      status: OK
+                      cached: false
+                      fetched_at: "2026-11-03T12:00:01Z"
+                      cache_expires_at: "2026-11-03T12:15:01Z"
+                      http_status: 200
+                      latency_ms: 340
+                      persisted: true
+                      observations:
+                        - category: SANCTIONED
+                          label: sanctioned
+                          entity: ""
+                          source_url: ""
+                          confidence: unknown
+                          verification_status: reported
+                          observed_at: "2026-11-03T12:00:01Z"
+                          evidence:
+                            { "field": "sanctioned", "value": "1",
+                              "data_source": "SlowMist,BlockSec" }
+                      signals: { data_source: "SlowMist,BlockSec" }
+                      exposures: []
+                    - source: publicaml
+                      enabled: true
+                      status: OK
+                      cached: false
+                      fetched_at: "2026-11-03T12:00:02Z"
+                      cache_expires_at: "2026-11-03T12:15:02Z"
+                      http_status: 200
+                      latency_ms: 812
+                      persisted: true
+                      provider_score: 100.0
+                      observations:
+                        - category: SANCTIONED
+                          label: sanction
+                          entity: "Lazarus Group"
+                          confidence: unknown
+                          verification_status: reported
+                          observed_at: "2026-11-03T12:00:02Z"
+                          evidence:
+                            category: sanction
+                            score: 100.0
+                            source: "ofac:sdn_advanced"
+                      signals:
+                        label: "Lazarus Group"
+                        category: sanction
+                        sanctioned: true
+                      exposures:
+                        - counterparty: "0x35fb6f6db4fb05e6a4ce86f2c93691425626d4b1"
+                          category: sanction
+                          hops: 1
+                          score: 90.0
+                          direction: outbound
+                    - source: chainabuse
+                      enabled: false
+                      status: DISABLED
+                      cached: false
+                      persisted: false
+                      error:
+                        code: disabled
+                        message: "provider not enabled — no outbound call made"
+                      observations: []
+                      signals: {}
+                      exposures: []
+                  enriched_at: "2026-11-03T12:00:03Z"
+        "400":
+          description: Invalid network/address, malformed `refresh`, or
+            unknown provider in `providers`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error:
+                  code: BAD_REQUEST
+                  message: unknown provider in providers filter
+                  request_id: "req_123"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
@@ -721,6 +881,87 @@ components:
         match_scope: { type: string }
         identifier_type: { type: string }
         source_code: { type: string }
+    EnrichmentResult:
+      type: object
+      description: |
+        Live multi-provider enrichment. `status` aggregates per-provider
+        outcomes; every provider block keeps its own typed status — a
+        failure is never hidden inside a verdict and `provider_score` is
+        never the internal risk score.
+      properties:
+        network: { type: string }
+        address: { type: string }
+        normalized_address: { type: string }
+        status:
+          type: string
+          enum: [COMPLETED, PARTIAL, FAILED, INSUFFICIENT_DATA]
+        providers:
+          type: array
+          items: { $ref: "#/components/schemas/EnrichmentProvider" }
+        enriched_at: { type: string, format: date-time }
+    EnrichmentProvider:
+      type: object
+      properties:
+        source: { type: string, enum: [goplus, publicaml, chainabuse] }
+        enabled: { type: boolean }
+        status:
+          type: string
+          enum: [OK, DEGRADED, RATE_LIMITED, TIMEOUT, UPSTREAM_5XX,
+                 CLIENT_4XX, MALFORMED, CIRCUIT_OPEN, DISABLED, TRANSPORT, ERROR]
+        cached: { type: boolean }
+        cache:
+          type: string
+          enum: [bypassed]
+          description: Present only when Redis was unreachable (fail-open).
+        fetched_at: { type: string, format: date-time }
+        cache_expires_at: { type: string, format: date-time }
+        http_status: { type: integer }
+        latency_ms: { type: integer }
+        persisted: { type: boolean }
+        error: { $ref: "#/components/schemas/ProviderError" }
+        provider_score:
+          type: number
+          description: The provider's own score — never the internal risk
+            score; 0 is data, not a safe verdict.
+        observations:
+          type: array
+          items: { $ref: "#/components/schemas/EnrichmentObservation" }
+        signals:
+          type: object
+          additionalProperties: true
+          description: Provider-native fields kept verbatim; always `{}` when empty.
+        exposures:
+          type: array
+          items: { $ref: "#/components/schemas/EnrichmentExposure" }
+    ProviderError:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        retry_after:
+          type: integer
+          description: Upstream Retry-After hint in seconds.
+    EnrichmentObservation:
+      type: object
+      description: One normalized provider signal — reported, never auto-verified.
+      properties:
+        category: { type: string }
+        label: { type: string }
+        entity: { type: string }
+        source_url: { type: string }
+        confidence: { type: string }
+        verification_status: { type: string, enum: [reported, unverified] }
+        observed_at: { type: string, format: date-time }
+        evidence: { type: object, additionalProperties: true }
+    EnrichmentExposure:
+      type: object
+      description: Indirect graph-derived exposure — never direct attribution.
+      properties:
+        counterparty: { type: string }
+        category: { type: string }
+        hops: { type: integer }
+        score: { type: number }
+        direction: { type: string, enum: [outbound, inbound, mixed] }
     WalletSanctionsLookup:
       type: object
       properties:

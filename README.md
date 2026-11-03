@@ -4,8 +4,8 @@ Go + PostgreSQL + Redis modular monolith that answers, with evidence:
 is this Ethereum/BSC wallet on the OFAC SDN list — under which entity,
 program, and official reference — and how fresh is that data?
 
-Scope: spec §19 phases 1–2 (foundation + OFAC sanctions intelligence).
-Later phases (labels, scoring, tracing) are intentionally absent.
+Scope: spec §19 phases 1–4 (foundation, OFAC sanctions, public labels,
+live enrichment). Later phases (scoring, tracing) are intentionally absent.
 
 ## Architecture
 
@@ -94,6 +94,36 @@ curl -H "X-API-Key: dev-reader-key" \
 `data_status`/`last_synced_at` reflect the latest published label snapshot
 (`UNAVAILABLE` before first publish; `STALE` after `LABELS_STALE_AFTER`,
 default 168h). The wallet endpoint's `data_status` stays sanctions-scoped.
+
+## Live enrichment
+
+`GET /api/v1/wallets/{network}/{address}/enrichment` fans out to three live
+providers and returns per-provider observations, signals, scores, and
+indirect exposures with typed failure statuses.
+
+| Provider | Auth | Notes |
+|---|---|---|
+| GoPlus Security | keyless (`GOPLUS_API_KEY` optional) | address-risk flags |
+| PublicAML | keyless (`PUBLICAML_API_KEY` optional) | `aml_score` + direct/indirect exposure graph |
+| Chainabuse (TRM) | **requires `CHAINABUSE_API_KEY`** | community reports; DISABLED (zero calls) without a key — the free tier is ~10 calls/month, unusable on-demand |
+
+Attribution & semantics (never violated): `provider_score` is the
+provider's own number (e.g. PublicAML `aml_score`) — never the internal
+risk score, and `0` is data, not a safe verdict; every observation is
+`reported`, never auto-verified; indirect `exposures[]` are graph-derived
+and never imply ownership; a failed provider surfaces a typed status
+(`RATE_LIMITED`, `TIMEOUT`, `UPSTREAM_5XX`, …) — never a clean result.
+Positive responses cache 15 min, negative/degraded ones 60 s (marked via
+`cached`/`cache_expires_at`); `?refresh=1` bypasses the read once per
+provider+address per 60 s cooldown; `?providers=` selects a subset. Every
+fetch persists a `provider_observations` audit row (verbatim payload,
+chain token sent upstream, status, latency; newest 25 kept per
+source+wallet). Provider `Authorization` headers are never logged.
+
+```bash
+curl -H "X-API-Key: dev-reader-key" \
+  'http://localhost:8080/api/v1/wallets/ethereum/0x098B716B8Aaf21512996dC57EB0615e2383E2f96/enrichment'
+```
 
 ## Example calls
 

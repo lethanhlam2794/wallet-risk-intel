@@ -1,0 +1,485 @@
+{
+ "entities": [
+  {
+   "aml_score": 100.0,
+   "aml_score_breakdown": {
+    "attributed_infra_by": {
+     "category": "sanction",
+     "rank": 100
+    },
+    "behavioral_risk": null,
+    "direct_attribution": {
+     "category": "sanction",
+     "score": 100.0,
+     "source": "ofac:sdn_advanced",
+     "source_confidence": 1.0
+    },
+    "direct_exposure": 100.0,
+    "exposure_direction": "mixed",
+    "frozen_direct": {
+     "issuers": [
+      "circle",
+      "ripple",
+      "tether"
+     ],
+     "score": null,
+     "scored_as": "issuer-freeze",
+     "tokens": [
+      "RLUSD",
+      "USDC",
+      "USDT"
+     ]
+    },
+    "incident_bonus": 5.0,
+    "indirect_exposure": 50.0,
+    "outbound_direct": {
+     "category": "sanction",
+     "reason": "paid a designated counterparty; priced by that category's own ladder at one hop, the same number a hop-1 recipient would score",
+     "score": 90.0,
+     "source": "ofac:sdn_advanced",
+     "source_confidence": 1.0
+    },
+    "outbound_exposure": {
+     "count": 7,
+     "items": [
+      {
+       "category": "sanction",
+       "direction": "outbound",
+       "hops": 1,
+       "score": 90.0,
+       "source": "ofac:sdn_advanced",
+       "source_confidence": 1.0,
+       "src": "0x35fb6f6db4fb05e6a4ce86f2c93691425626d4b1",
+       "value_usd": null,
+       "via": null,
+       "via_venue_deposit": null
+      },
+      {
+       "category": "sanction",
+       "direction": "outbound",
+       "hops": 1,
+       "score": 90.0,
+       "source": "ofac:sdn_advanced",
+       "source_confidence": 1.0,
+       "src": "0x3cffd56b47b7b41c56258d9c7731abadc360e073",
+       "value_usd": null,
+       "via": null,
+       "via_venue_deposit": null
+      },
+      {
+       "category": "sanction",
+       "direction": "outbound",
+       "hops": 1,
+       "score": 90.0,
+       "source": "ofac:sdn_advanced",
+       "source_confidence": 1.0,
+       "src": "0x3e37627deaa754090fbfbb8bd226c1ce66d255e9",
+       "value_usd": null,
+       "via": null,
+       "via_venue_deposit": null
+      }
+     ],
+     "max_score": 90.0,
+     "max_value_usd": null,
+     "reason": "this address paid a designated counterparty; a payment is the offence here, so it is reported on its own and does not enter the inbound exposure score"
+    },
+    "propagated_sources": [
+     {
+      "category": "sanction",
+      "collapsed_hops": 0,
+      "direction": "inbound",
+      "hops": 0,
+      "hops_economic": 0,
+      "reference": null,
+      "score": 100.0,
+      "severity": 100.0,
+      "source": "ofac:sdn_advanced",
+      "source_confidence": 1.0,
+      "source_kind": "feed",
+      "source_rank": 100,
+      "src": "0x098b716b8aaf21512996dc57eb0615e2383e2f96",
+      "src_label": "Lazarus Group",
+      "value_usd": null,
+      "via": null,
+      "via_label": null
+     },
+     {
+      "category": "phishing",
+      "collapsed_hops": 0,
+      "direction": "inbound",
+      "hops": 2,
+      "hops_economic": 2,
+      "reference": null,
+      "score": 15.13,
+      "severity": 70.0,
+      "source": "blockscout:scam-tags",
+      "source_confidence": 0.5,
+      "source_kind": "feed",
+      "source_rank": 50,
+      "src": "0x6581a31b012ea7517abe6e4381206b5d1f7cee1d",
+      "src_label": null,
+      "value_usd": 86.383055,
+      "via": "0xb66cd966670d962c227b3eaba30a872dbfb995db",
+      "via_label": null
+     },
+     {
+      "category": "phishing",
+      "collapsed_hops": 0,
+      "direction": "inbound",
+      "hops": 2,
+      "hops_economic": 2,
+      "reference": null,
+      "score": 15.13,
+      "severity": 70.0,
+      "source": "blockscout:scam-tags",
+      "source_confidence": 0.5,
+      "source_kind": "feed",
+      "source_rank": 50,
+      "src": "0xb520f068a908a1782a543aacc3847adb77a04778",
+      "src_label": "@CharlotteFang77",
+      "value_usd": 41101.09699400001,
+      "via": "0x00859b3baac525143bb8a3ee3e19ddf9daf2408c",
+      "via_label": null
+     },
+     {
+      "category": "issuer-freeze",
+      "collapsed_hops": 0,
+      "direction": "inbound",
+      "hops": 4,
+      "hops_economic": 4,
+      "reference": null,
+      "score": 50.0,
+      "severity": 90.0,
+      "source": "tether:blacklist",
+      "source_confidence": 1.0,
+      "source_kind": "feed",
+      "source_rank": 100,
+      "src": "0x50b6071561f068963bcfe2b341126cd6accafafb",
+      "src_label": null,
+      "value_usd": 34.085412999999996,
+      "via": "0x66973b6aafde73df3159ea0749b6a3f79c06e27e",
+      "via_label": null
+     },
+     {
+      "category": "issuer-freeze",
+      "collapsed_hops": 0,
+      "direction": "inbound",
+      "hops": 4,
+      "hops_economic": 4,
+      "reference": null,
+      "score": 50.0,
+      "severity": 90.0,
+      "source": "tether:blacklist",
+      "source_confidence": 1.0,
+      "source_kind": "feed",
+      "source_rank": 100,
+      "src": "0x6f35a5e6a7301627a090822895e5e7209ed72f77",
+      "src_label": null,
+      "value_usd": 33.916987,
+      "via": "0x5c154585caa1aecda5842f576fe76ef95bee7f75",
+      "via_label": null
+     },
+     {
+      "category": "hack",
+      "collapsed_hops": 0,
+      "direction": "inbound",
+      "hops": 4,
+      "hops_economic": 4,
+      "reference": null,
+      "score": 21.61,
+      "severity": 90.0,
+      "source": "incident:news-pipeline",
+      "source_confidence": 0.9,
+      "source_kind": "investigation",
+      "source_rank": 90,
+      "src": "0x75390be98104cd2f6a15a5a894cce8a926664d5f",
+      "src_label": "Upbit hack",
+      "value_usd": 33.916987,
+      "via": "0x1f8d5adb0308aa6d8f1002db5e78dba99bf8d493",
+      "via_label": null
+     },
+     {
+      "category": "sanction",
+      "collapsed_hops": 0,
+      "direction": "inbound",
+      "hops": 5,
+      "hops_economic": 5,
+      "reference": null,
+      "score": 40.0,
+      "severity": 100.0,
+      "source": "ofac:sdn_advanced",
+      "source_confidence": 1.0,
+      "source_kind": "feed",
+      "source_rank": 100,
+      "src": "0xdcbeffbecce100cce9e4b153c4e15cb885643193",
+      "src_label": "Semenov Roman",
+      "value_usd": 99.73037572877648,
+      "via": "0x00859b3baac525143bb8a3ee3e19ddf9daf2408c",
+      "via_label": null
+     },
+     {
+      "category": "sanction",
+      "collapsed_hops": 0,
+      "direction": "inbound",
+      "hops": 5,
+      "hops_economic": 5,
+      "reference": null,
+      "score": 40.0,
+      "severity": 100.0,
+      "source": "ofac:sdn_advanced",
+      "source_confidence": 1.0,
+      "source_kind": "feed",
+      "source_rank": 100,
+      "src": "0x4f47bc496083c727c5fbe3ce9cdf2b0f6496270c",
+      "src_label": "Sim Hyon Sop",
+      "value_usd": 182.50198332865298,
+      "via": "0x00859b3baac525143bb8a3ee3e19ddf9daf2408c",
+      "via_label": null
+     },
+     {
+      "category": "mixer",
+      "collapsed_hops": 0,
+      "direction": "inbound",
+      "hops": 5,
+      "hops_economic": 5,
+      "reference": null,
+      "score": 20.0,
+      "severity": 80.0,
+      "source": "entities-discoverer:privacy",
+      "source_confidence": 0.8,
+      "source_kind": "feed",
+      "source_rank": 80,
+      "src": "0xca0840578f57fe71599d29375e16783424023357",
+      "src_label": "Tornado.Cash",
+      "value_usd": 468.6536904643817,
+      "via": "0x00859b3baac525143bb8a3ee3e19ddf9daf2408c",
+      "via_label": null
+     },
+     {
+      "category": "hack",
+      "collapsed_hops": 0,
+      "direction": "inbound",
+      "hops": 5,
+      "hops_economic": 5,
+      "reference": null,
+      "score": 15.13,
+      "severity": 90.0,
+      "source": "incident:news-pipeline",
+      "source_confidence": 0.9,
+      "source_kind": "investigation",
+      "source_rank": 90,
+      "src": "0x5ebc7d1ff1687a75f76c3edfabcde89d1c09cd5f",
+      "src_label": "Hack",
+      "value_usd": 1259.447946,
+      "via": "0x7ef4c5f5e4e9cf35661f40638d49e8fe9ccb7c49",
+      "via_label": null
+     }
+    ],
+    "sanction_direct": {
+     "designation": {
+      "as_of": "2026-11-03",
+      "authority": "OFAC",
+      "entity_name": "Lazarus Group",
+      "feed": "SDN_ADVANCED.XML",
+      "jurisdiction": "US",
+      "list": "SDN",
+      "reference_url": "https://sanctionslist.ofac.treas.gov/Home/SdnList",
+      "verified_against": "ofac:sdn_advanced"
+     },
+     "label": "sanction",
+     "score": 100.0,
+     "source": "ofac:sdn_advanced",
+     "source_confidence": 1.0
+    }
+   },
+   "category": "sanction",
+   "category_axes": {
+    "account_type": null,
+    "actor": null,
+    "asset_control": {
+     "basis": "attribution",
+     "category": "issuer-freeze",
+     "confidence": null,
+     "source": "circle:blacklist",
+     "source_confidence": 1.0,
+     "source_rank": 100
+    },
+    "business": null,
+    "legal_status": {
+     "basis": "attribution",
+     "category": "sanction",
+     "confidence": 0.8,
+     "source": "ofac:sdn_advanced",
+     "source_confidence": 1.0,
+     "source_rank": 100
+    },
+    "membership": {
+     "anchor": null,
+     "basis": "attribution",
+     "category": "group-community",
+     "confidence": 0.5,
+     "group_id": "community:eth:c19",
+     "is_anchor": false,
+     "members": 391943,
+     "source": "p3_community",
+     "source_rank": 50
+    },
+    "structure": null
+   },
+   "category_basis": {
+    "confidence": 0.8,
+    "kind": "attribution",
+    "source": "ofac:sdn_advanced",
+    "source_confidence": 1.0,
+    "stated_as": "sanction"
+   },
+   "category_confidence": 0.95,
+   "chain": "ETH",
+   "cluster": {
+    "cluster_id": "community:eth:c19",
+    "cluster_type": "community",
+    "confidence": 0.5,
+    "source": "p3_community"
+   },
+   "cluster_id": "community:eth:c19",
+   "cluster_size": 391943,
+   "first_block": 14585983,
+   "freeze": {
+    "assets": [
+     {
+      "freeze_block": 14585983,
+      "freeze_tx": "0xfa36edd16968a8a2e0a35a6131e97bd283ffd2def134c2f5b7b2cbabbd873d05",
+      "frozen_at": "2022-04-14T21:32:53Z",
+      "issuer": "circle",
+      "state": "frozen",
+      "token": "USDC"
+     },
+     {
+      "freeze_block": 18749959,
+      "freeze_tx": "0x05713f962cde1c7985c1c0f432a9b265c0950d10f87c430f169f5ad9830ecf1e",
+      "frozen_at": "2023-12-09T16:47:47Z",
+      "issuer": "tether",
+      "state": "frozen",
+      "token": "USDT"
+     },
+     {
+      "freeze_block": 20492376,
+      "freeze_tx": "0xe7101be8aba411ea46c76dc85b537900edee254349d94a5dd5c93632d9a8e4da",
+      "frozen_at": "2024-08-09T16:56:23Z",
+      "issuer": "ripple",
+      "state": "frozen",
+      "token": "RLUSD"
+     }
+    ],
+    "state": "frozen"
+   },
+   "frozen": true,
+   "incidents": [
+    {
+     "category": "other",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Miscellaneous crypto scam",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2026-10-14",
+     "role": "perpetrator",
+     "slug": "chainabuse:dab727c3-9720-4c7a-8b6c-0617d0d2adda",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "Security research test: unexpected transfer request received.",
+       "names_addresses": true,
+       "published_at": "2026-10-14",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Miscellaneous crypto scam",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/dab727c3-9720-4c7a-8b6c-0617d0d2adda"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "Security research test: unexpected transfer request received."
+    }
+   ],
+   "incidents_total": 1,
+   "label": "Lazarus Group",
+   "last_block": 18749959,
+   "risk_contact": {
+    "category": "sanction",
+    "considered": [
+     "risk"
+    ],
+    "counterparty": "0x00859b3baac525143bb8a3ee3e19ddf9daf2408c",
+    "counterparty_label": null,
+    "direction": "inbound",
+    "first": {
+     "category": "issuer-freeze",
+     "counterparty": "0x5c154585caa1aecda5842f576fe76ef95bee7f75",
+     "counterparty_label": null,
+     "direction": "inbound",
+     "hops": 4
+    },
+    "first_block": 14482530,
+    "first_ts": 1648575927,
+    "hops": 5,
+    "last_block": 17796672,
+    "last_ts": 1690609223,
+    "looked_up": 0,
+    "neighbours": 13,
+    "ts_basis": "block",
+    "unlocated": 0
+   },
+   "risk_level": "CRITICAL",
+   "sanction": {
+    "confidence": 0.8,
+    "designation": {
+     "as_of": "2026-11-03",
+     "authority": "OFAC",
+     "entity_name": "Lazarus Group",
+     "feed": "SDN_ADVANCED.XML",
+     "jurisdiction": "US",
+     "list": "SDN",
+     "reference_url": "https://sanctionslist.ofac.treas.gov/Home/SdnList",
+     "verified_against": "ofac:sdn_advanced"
+    },
+    "jurisdictions": [
+     "US"
+    ],
+    "label": "sanction",
+    "source": "ofac:sdn_advanced",
+    "source_confidence": 1.0
+   },
+   "sanctioned": true,
+   "scored": true,
+   "source_of_funds": {
+    "basis": "usd",
+    "coverage": {
+     "complete": false,
+     "priced_edges": 237,
+     "seen_in": 197,
+     "unpriced_edges": 3,
+     "weighed_in": 179,
+     "window_complete": false
+    },
+    "inflow_risk": "low",
+    "risk_summary": "low",
+    "top_sources": [
+     {
+      "category": "unknown",
+      "label": null,
+      "percentage": 50.11
+     },
+     {
+      "category": "gaming",
+      "label": "Axie Infinity",
+      "percentage": 49.88
+     }
+    ]
+   },
+   "wallet_address": "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+  }
+ ]
+}

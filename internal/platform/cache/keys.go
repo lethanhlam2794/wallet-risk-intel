@@ -29,6 +29,12 @@ func Provider(source, network, normalizedAddress string) string {
 	return fmt.Sprintf("%s:%s:%s:%s", prefixProvider, source, network, normalizedAddress)
 }
 
+// ProviderRefresh keys the refresh=1 quota guard (F3): SET NX EX grants one
+// cache bypass per (source, network, address) per cooldown window.
+func ProviderRefresh(source, network, normalizedAddress string) string {
+	return fmt.Sprintf("%s:refresh:%s:%s:%s", prefixProvider, source, network, normalizedAddress)
+}
+
 // RateLimitClient keys the authenticated fixed-window bucket.
 func RateLimitClient(clientID string, window int64) string {
 	return fmt.Sprintf("%s:%s:%d", prefixRateLimit, clientID, window)

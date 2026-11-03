@@ -1,0 +1,458 @@
+{
+ "entities": [
+  {
+   "aml_score": 0.0,
+   "aml_score_breakdown": {
+    "behavioral_risk": null,
+    "direct_exposure": 0.0,
+    "exposure_direction": "inbound",
+    "indirect_exposure": 0.0,
+    "non_wallet": {
+     "reason": "mint/burn pseudo-address, cannot hold or spend funds",
+     "suppressed_direct": 0.0,
+     "suppressed_indirect": 0.0
+    }
+   },
+   "category": "burn",
+   "category_axes": {
+    "account_type": null,
+    "actor": null,
+    "asset_control": null,
+    "business": {
+     "basis": "attribution",
+     "category": "other",
+     "confidence": 0.95,
+     "source": "chainabuse:chainabuse",
+     "source_confidence": 0.25,
+     "source_rank": 25
+    },
+    "legal_status": null,
+    "membership": {
+     "anchor": "0x000000000000000000000000000000000000dead",
+     "basis": "attribution",
+     "category": "group-hub",
+     "confidence": 1.0,
+     "group_id": "unnamed:eth:0x000000000000000000000000000000000000dead",
+     "is_anchor": true,
+     "members": 299,
+     "source": "p1_unnamed",
+     "source_rank": 50
+    },
+    "structure": {
+     "basis": "attribution",
+     "category": "hub",
+     "confidence": null,
+     "source": "publicaml:clustering",
+     "source_confidence": 0.5,
+     "source_rank": 50
+    }
+   },
+   "category_basis": {
+    "confidence": 1.0,
+    "kind": "attribution",
+    "source": "publicaml:protocol",
+    "stated_as": "mint/burn pseudo-address"
+   },
+   "category_confidence": 1.0,
+   "chain": "ETH",
+   "cluster": {
+    "anchor": "0x000000000000000000000000000000000000dead",
+    "basis": "structural",
+    "cluster_id": "unnamed:eth:0x000000000000000000000000000000000000dead",
+    "cluster_type": "unnamed",
+    "confidence": 1.0,
+    "kind": "hub",
+    "method": "p1-hub-discovery",
+    "source": "p1_unnamed"
+   },
+   "cluster_id": "unnamed:eth:0x000000000000000000000000000000000000dead",
+   "cluster_size": 299,
+   "first_block": null,
+   "incidents": [
+    {
+     "category": "phishing",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Phishing",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2025-06-12",
+     "role": "perpetrator",
+     "slug": "chainabuse:0fcf8229-0fa3-4684-8f44-fc25cc5b3ac2",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "crypto phishing site",
+       "names_addresses": true,
+       "published_at": "2025-06-12",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Phishing",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/0fcf8229-0fa3-4684-8f44-fc25cc5b3ac2"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "crypto phishing site"
+    },
+    {
+     "category": "phishing",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Phishing",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2026-09-04",
+     "role": "perpetrator",
+     "slug": "chainabuse:10814803-e906-48ee-a42e-25a1a1339258",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "On 08/19/25 Instagram @ChadsDarrin.5 impersonated SafePal support. Told me to enter seed phrase in fake SafePal wallet for verification.\n\n\n\nAfter that my 1730 XRP was drained to scam wallet rJzNqvafEN6mPXykTTWz7f2Xfz5uXHA3m Tag 1770016183\n\n\n\nSame wallet on Bithomp shows $1.5M / 1.1M XRP stolen from many victims. Still active TODAY 09/04/26: 09:13 +150 XRP, 09:58 +400 XRP, 13:40 +2000 XRP (~$2794), 13:44 +142, +139, +81 XRP\n\n\n\nDestination tags used to cash out: 1925841944, 3955303606, 3177951997,\u2026",
+       "names_addresses": true,
+       "published_at": "2026-09-04",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Phishing",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/10814803-e906-48ee-a42e-25a1a1339258"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "On 08/19/25 Instagram @ChadsDarrin.5 impersonated SafePal support. Told me to enter seed phrase in fake SafePal wallet for verification.\n\n\n\nAfter that my 1730 XRP was drained to scam wallet rJzNqvafEN6mPXykTTWz7f2Xfz5uXHA3m Tag 1770016183\n\n\n\nSame wallet on Bithomp shows $1.5M / 1.1M XRP stolen from many victims. Still active TODAY 09/04/26: 09:13 +150 XRP, 09:58 +400 XRP, 13:40 +2000 XRP (~$2794), 13:44 +142, +139, +81 XRP\n\n\n\nDestination tags used to cash out: 1925841944, 3955303606, 3177951997,\u2026"
+    },
+    {
+     "category": "phishing",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Phishing",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2025-06-16",
+     "role": "perpetrator",
+     "slug": "chainabuse:14ebb8db-163a-4977-9451-9349b1738d14",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "crypto phishing site",
+       "names_addresses": true,
+       "published_at": "2025-06-16",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Phishing",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/14ebb8db-163a-4977-9451-9349b1738d14"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "crypto phishing site"
+    },
+    {
+     "category": "hack",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Hack",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2025-06-30",
+     "role": "perpetrator",
+     "slug": "chainabuse:28e05c7f-34c4-4259-971a-7ce3123f5bec",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "Saya sebelumnya swap token $TAG ke token $Y kemudian saya klik swap dan setelah swap tidak lama token di dompet sudah terkirim",
+       "names_addresses": true,
+       "published_at": "2025-06-30",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Hack",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/28e05c7f-34c4-4259-971a-7ce3123f5bec"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "Saya sebelumnya swap token $TAG ke token $Y kemudian saya klik swap dan setelah swap tidak lama token di dompet sudah terkirim"
+    },
+    {
+     "category": "phishing",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Phishing",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2025-06-10",
+     "role": "perpetrator",
+     "slug": "chainabuse:3fab0cbf-c5e8-4320-8f2b-9f8af5a09dc5",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "crypto phishing site",
+       "names_addresses": true,
+       "published_at": "2025-06-10",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Phishing",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/3fab0cbf-c5e8-4320-8f2b-9f8af5a09dc5"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "crypto phishing site"
+    },
+    {
+     "category": "phishing",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Phishing",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2025-06-17",
+     "role": "perpetrator",
+     "slug": "chainabuse:3fd091b3-6deb-47c1-9020-ee0bb9f010d7",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "crypto phishing site",
+       "names_addresses": true,
+       "published_at": "2025-06-17",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Phishing",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/3fd091b3-6deb-47c1-9020-ee0bb9f010d7"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "crypto phishing site"
+    },
+    {
+     "category": "phishing",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Phishing",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2025-06-12",
+     "role": "perpetrator",
+     "slug": "chainabuse:80036090-e16f-4da3-8249-e856ba0a0ba1",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "crypto phishing site",
+       "names_addresses": true,
+       "published_at": "2025-06-12",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Phishing",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/80036090-e16f-4da3-8249-e856ba0a0ba1"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "crypto phishing site"
+    },
+    {
+     "category": "phishing",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Phishing",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2026-09-04",
+     "role": "perpetrator",
+     "slug": "chainabuse:8681b8d9-02d1-4c27-b67d-3817a8deac0c",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "On 08/19/25 I was contacted on Instagram by @ChadsDarrin.5 who impersonated SafePal support. He directed me to download a fake SafePal wallet / enter my seed phrase for \"verification\". \n\n\n\nImmediately after, my 1,730 XRP (approx $5,190) was drained to scam wallet:\n\nrJzNqvafEN6mPXykTTWz7f2Xfz5uXHA3m\n\nTag 1770016183\n\n\n\nI tracked the same wallet on Bithomp and it shows $1.5M / 1.1M XRP total stolen from multiple victims. It is still active TODAY 09/04/26:\n\n- 09:13 +150 XRP\n\n- 09:58 +400 XRP  \n\n- 13\u2026",
+       "names_addresses": true,
+       "published_at": "2026-09-04",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Phishing",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/8681b8d9-02d1-4c27-b67d-3817a8deac0c"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "On 08/19/25 I was contacted on Instagram by @ChadsDarrin.5 who impersonated SafePal support. He directed me to download a fake SafePal wallet / enter my seed phrase for \"verification\". \n\n\n\nImmediately after, my 1,730 XRP (approx $5,190) was drained to scam wallet:\n\nrJzNqvafEN6mPXykTTWz7f2Xfz5uXHA3m\n\nTag 1770016183\n\n\n\nI tracked the same wallet on Bithomp and it shows $1.5M / 1.1M XRP total stolen from multiple victims. It is still active TODAY 09/04/26:\n\n- 09:13 +150 XRP\n\n- 09:58 +400 XRP  \n\n- 13\u2026"
+    },
+    {
+     "category": "other",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Miscellaneous crypto scam",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2025-07-17",
+     "role": "perpetrator",
+     "slug": "chainabuse:88b5f417-a714-4f3b-9965-48549e7e7664",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "I was scammed through a P2P trade on Gate.io. I sold 2971 USDT via bank transfer, but the buyer never sent the money. The funds were immediately withdrawn by the scammer after the trade was marked as completed. I provided full evidence to Gate.io support showing that no payment was received, including screenshots and videos. Gate.io has restricted the scammer\u2019s account but has not yet returned my funds.\n\n\n\nThe scammer used a fake bank transfer confirmation to mislead the system and stole my cryp\u2026",
+       "names_addresses": true,
+       "published_at": "2025-07-17",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Miscellaneous crypto scam",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/88b5f417-a714-4f3b-9965-48549e7e7664"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "I was scammed through a P2P trade on Gate.io. I sold 2971 USDT via bank transfer, but the buyer never sent the money. The funds were immediately withdrawn by the scammer after the trade was marked as completed. I provided full evidence to Gate.io support showing that no payment was received, including screenshots and videos. Gate.io has restricted the scammer\u2019s account but has not yet returned my funds.\n\n\n\nThe scammer used a fake bank transfer confirmation to mislead the system and stole my cryp\u2026"
+    },
+    {
+     "category": "hack",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Contract exploit",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2025-11-21",
+     "role": "perpetrator",
+     "slug": "chainabuse:926a9ed3-0ee3-457e-992f-92d407fe09c8",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "uiauiuuisusis",
+       "names_addresses": true,
+       "published_at": "2025-11-21",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Contract exploit",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/926a9ed3-0ee3-457e-992f-92d407fe09c8"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "uiauiuuisusis"
+    },
+    {
+     "category": "investment",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Rug pull",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2025-12-29",
+     "role": "perpetrator",
+     "slug": "chainabuse:b5e28fd7-0219-4e58-9158-69a51d235b2c",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "Basic auth test from Postman",
+       "names_addresses": true,
+       "published_at": "2025-12-29",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Rug pull",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/b5e28fd7-0219-4e58-9158-69a51d235b2c"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "Basic auth test from Postman"
+    },
+    {
+     "category": "phishing",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Phishing",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2025-06-21",
+     "role": "perpetrator",
+     "slug": "chainabuse:bee2c4fd-7193-4b59-8c5f-f526b6804dda",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "crypto phishing site",
+       "names_addresses": true,
+       "published_at": "2025-06-21",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Phishing",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/bee2c4fd-7193-4b59-8c5f-f526b6804dda"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "crypto phishing site"
+    },
+    {
+     "category": "phishing",
+     "implicates_address": true,
+     "link": "direct",
+     "name": "Chainabuse report: Phishing",
+     "named_in_source": true,
+     "note": null,
+     "occurred_at": "2026-09-23",
+     "role": "perpetrator",
+     "slug": "chainabuse:ce9a004c-2c0e-440f-aea1-7594cda4d232",
+     "sources": [
+      {
+       "archive_url": null,
+       "content_sha256": null,
+       "excerpt": "The website https://nfts2me.network/ is a phishing site impersonating NFTs2Me (https://nfts2me.com), a legitimate NFT collection creation platform. It copies the branding, layout, and design of the official site, specifically replicating the legitimate collection-creation page at https://nfts2me.com/create/edition/. Unlike the real page, when a visitor interacts with elements on nfts2me.network, a \"Connect Wallet\" pop-up appears, listing options such as MetaMask, Trust Wallet, and Phantom. This\u2026",
+       "names_addresses": true,
+       "published_at": "2026-09-23",
+       "publisher": "Chainabuse",
+       "tier": "social",
+       "title": "Chainabuse report: Phishing",
+       "updated_at": null,
+       "url": "https://chainabuse.com/report/ce9a004c-2c0e-440f-aea1-7594cda4d232"
+      }
+     ],
+     "status": "alleged",
+     "stream": "community",
+     "summary": "The website https://nfts2me.network/ is a phishing site impersonating NFTs2Me (https://nfts2me.com), a legitimate NFT collection creation platform. It copies the branding, layout, and design of the official site, specifically replicating the legitimate collection-creation page at https://nfts2me.com/create/edition/. Unlike the real page, when a visitor interacts with elements on nfts2me.network, a \"Connect Wallet\" pop-up appears, listing options such as MetaMask, Trust Wallet, and Phantom. This\u2026"
+    }
+   ],
+   "incidents_total": 13,
+   "label": "burn",
+   "last_block": null,
+   "risk_contact": null,
+   "risk_level": "LOW",
+   "scored": true,
+   "source_of_funds": {
+    "coverage": {
+     "complete": true,
+     "priced_edges": 0,
+     "seen_in": 0,
+     "unpriced_edges": 0,
+     "weighed_in": 0,
+     "window_complete": true
+    },
+    "risk_summary": "low",
+    "top_sources": []
+   },
+   "wallet_address": "0x000000000000000000000000000000000000dEaD"
+  }
+ ]
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "id": 998877,
+    "createdAt": "2025-09-14T12:34:56Z",
+    "addresses": [
+      { "address": "0x098b716b8aaf21512996dc57eb0615e2383e2f96", "chain": "ETH" }
+    ],
+    "category": "Scam",
+    "subcategory": "Impersonation",
+    "description": "Reported as impersonation scam collecting deposits.",
+    "trusted": false,
+    "url": "https://www.chainabuse.com/report/998877"
+  },
+  {
+    "id": 998878,
+    "createdAt": "2025-10-02T08:00:00Z",
+    "addresses": [
+      { "address": "0x098b716b8aaf21512996dc57eb0615e2383e2f96", "chain": "ETH" }
+    ],
+    "category": "Ransomware",
+    "subcategory": "Payment address",
+    "description": "Alleged ransom payment collection address.",
+    "trusted": true,
+    "url": "https://www.chainabuse.com/report/998878"
+  }
+]

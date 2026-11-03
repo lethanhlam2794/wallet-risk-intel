@@ -7,7 +7,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"sort"
+	"time"
+
+	"checkwallet/internal/network"
 )
 
 // File is one validated artifact file on local disk.
@@ -77,4 +82,126 @@ type ImportResult struct {
 // SnapshotSource is the spec §13 file-based bulk-source contract.
 type SnapshotSource interface {
 	Download(ctx context.Context) (Snapshot, error)
+}
+
+// ---- On-demand provider contracts (spec §13, extended — see LookupResult) ----
+
+// Observation is one normalized risk signal extracted from a provider
+// response (spec §13 field list). VerificationStatus is always "reported"
+// or "unverified" for live provider data — never auto-verified.
+type Observation struct {
+	Network            string
+	Address            string
+	Category           string
+	Label              string
+	Entity             string
+	Source             string
+	OriginalSource     string
+	SourceURL          string
+	Confidence         string
+	VerificationStatus string
+	ObservedAt         time.Time
+	Evidence           json.RawMessage
+}
+
+// Exposure summarizes an indirect (graph-derived) exposure reported by a
+// provider. It is never a direct attribution and never implies ownership —
+// spec §4.6 keeps direct attribution and indirect exposure strictly
+// separated, and a graph path cannot prove shared ownership.
+type Exposure struct {
+	Counterparty string
+	Category     string
+	Hops         int
+	Score        *float64
+	Direction    string
+}
+
+// LookupResult is the result envelope for an on-demand lookup. It is a
+// deliberate, documented extension of the spec §13 contract: spec §13's
+// bare []Observation cannot carry the verbatim raw payload (§4.6 "lưu
+// nguyên response"), the provider-computed score (§4.6 provider risk score
+// — never the internal risk score), the literal chain token sent upstream
+// (§4.6 "lưu chain requested"), or the fetch timestamp that §4.6 requires
+// persisting.
+type LookupResult struct {
+	Source         string
+	Network        string
+	Address        string
+	RequestedChain string // literal chain token sent upstream (§4.6)
+	Observations   []Observation
+	Signals        map[string]any // provider-native flags; unmapped kept raw
+	// ProviderScore is the provider's own score (e.g. PublicAML aml_score).
+	// It is never the internal risk score and a 0 value is not a safe
+	// verdict, especially under a non-OK status.
+	ProviderScore *float64
+	Exposures     []Exposure // indirect-only, never folded into Observations
+	Raw           json.RawMessage
+	FetchedAt     time.Time
+	HTTPStatus    int // upstream HTTP status of the successful exchange (0 = unknown)
+}
+
+// Provider is the on-demand lookup contract (spec §13 extended, see
+// LookupResult). Enabled() reports whether the adapter may emit outbound
+// traffic — a disabled provider must never call upstream and reports
+// LookupError{Kind: ErrDisabled} (spec §4.5: use an API only with access).
+type Provider interface {
+	Name() string
+	Enabled() bool
+	LookupAddress(ctx context.Context, net network.Network, normalized string) (*LookupResult, error)
+}
+
+// ErrKind is the closed vocabulary of typed provider failures. It maps
+// 1:1 to provider_status codes and persisted observation statuses.
+type ErrKind string
+
+const (
+	ErrRateLimited ErrKind = "rate_limited" // 429 or bounded limiter wait exceeded
+	ErrTimeout     ErrKind = "timeout"      // ctx deadline or attempt timeout
+	ErrUpstream5xx ErrKind = "upstream_5xx" // 5xx after retries exhausted
+	ErrClient4xx   ErrKind = "client_4xx"   // other 4xx — non-retriable
+	ErrMalformed   ErrKind = "malformed"    // unparseable/oversized response body
+	ErrCircuitOpen ErrKind = "circuit_open" // breaker open — no attempt made
+	ErrDisabled    ErrKind = "disabled"     // provider not enabled — no attempt made
+	ErrDegraded    ErrKind = "degraded"     // upstream answered but signalled degraded
+	ErrTransport   ErrKind = "transport"    // dial/DNS/TLS — no HTTP exchange
+	ErrInternal    ErrKind = "internal"     // catch-all: request build, unexpected status
+)
+
+// LookupError is the typed provider failure. RetryAfter carries the
+// upstream Retry-After hint to the caller (bounded by the client) — the
+// resilience client never sleeps on a 429 in-request (F2). Response holds
+// a truncated upstream error body when one was sent, so adapters can
+// surface the provider's own error text without leaking internals.
+type LookupError struct {
+	Kind       ErrKind
+	HTTPStatus int
+	RetryAfter time.Duration
+	Msg        string
+	Response   []byte
+	// RequestedChain carries the literal chain token the adapter resolved
+	// before dispatching — preserved on post-build failures so the audit
+	// row records what §4.6 requires. Empty when no token was resolved.
+	RequestedChain string
+}
+
+func (e *LookupError) Error() string {
+	if e.Msg != "" {
+		return e.Msg
+	}
+	return string(e.Kind)
+}
+
+// Errorf builds a typed LookupError with a formatted message — the way
+// adapters report parse/degraded failures the transport cannot see.
+func Errorf(kind ErrKind, format string, args ...any) *LookupError {
+	return &LookupError{Kind: kind, Msg: fmt.Sprintf(format, args...)}
+}
+
+// StampRequestedChain records the literal chain token on a typed error in
+// place — adapters call it on their Do-path failures so audit rows keep
+// the real requested_chain (§4.6) instead of a network-code fallback.
+func StampRequestedChain(err error, chain string) {
+	if le, ok := err.(*LookupError); ok {
+		le.RequestedChain = chain
+	}
 }
