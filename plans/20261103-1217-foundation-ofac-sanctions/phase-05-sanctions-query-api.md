@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Sanctions Query API + Snapshot-Versioned Cache"
-status: pending
+status: completed
 priority: P1
 dependencies: [4]
 ---
@@ -105,13 +105,13 @@ version.
 
 ## Success Criteria
 
-- [ ] Exact-match E2E proven on `_test` db (fixture → ingest → GET 200).
-- [ ] ETH listing never satisfies a BSC direct match (negative test).
-- [ ] Reason never invented; three statuses each covered by a test.
-- [ ] Cache key contains snapshot version; post-publish invalidation proven.
-- [ ] `data_status` covers AVAILABLE/STALE/UNAVAILABLE paths.
-- [ ] Response keys match spec example contract.
-- [ ] `go test ./...` green; build/vet/fmt clean.
+- [x] Exact-match E2E proven on `_test` db (fixture → ingest → GET 200).
+- [x] ETH listing never satisfies a BSC direct match (negative test).
+- [x] Reason never invented; three statuses each covered by a test.
+- [x] Cache key contains snapshot version; post-publish invalidation proven.
+- [x] `data_status` covers AVAILABLE/STALE/UNAVAILABLE paths.
+- [x] Response keys match spec example contract.
+- [x] `go test ./...` green; build/vet/fmt clean.
 
 ## Risk Assessment
 

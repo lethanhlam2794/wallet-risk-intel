@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS api_clients;
+DROP TABLE IF EXISTS ingestion_runs;
+DROP TABLE IF EXISTS sanctions_references;
+DROP TABLE IF EXISTS sanctions_wallets;
+DROP TABLE IF EXISTS sanctions_entity_programs;
+DROP TABLE IF EXISTS sanctions_programs;
+DROP TABLE IF EXISTS sanctions_entities;
+DROP TABLE IF EXISTS entities;
+DROP TABLE IF EXISTS data_sources;
+DROP TABLE IF EXISTS wallets;
+DROP TABLE IF EXISTS blockchain_networks;

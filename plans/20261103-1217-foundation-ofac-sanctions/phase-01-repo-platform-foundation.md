@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Repository & Platform Foundation"
-status: pending
+status: completed
 priority: P1
 dependencies: []
 ---
@@ -83,12 +83,12 @@ migration 0001 (core + sanctions schema). No HTTP surface yet.
 
 ## Success Criteria
 
-- [ ] `docker compose up -d` healthy; `psql` to 5433 works as `wallet`.
-- [ ] Migration up/down/up replays cleanly on both DBs (P-018 sanity).
-- [ ] `\dt check_wallet` shows all 11 domain tables + schema_migrations.
-- [ ] `check_wallet_test` exists and `testutil` rejects `check_wallet` as test db.
-- [ ] `go build ./...` exit 0; `go test ./internal/config` green.
-- [ ] `gofmt -l .` empty; `go vet ./...` clean.
+- [x] `docker compose up -d` healthy; `psql` to 5433 works as `wallet`.
+- [x] Migration up/down/up replays cleanly on both DBs (P-018 sanity).
+- [x] `\dt check_wallet` shows all 11 domain tables + schema_migrations.
+- [x] `check_wallet_test` exists and `testutil` rejects `check_wallet` as test db.
+- [x] `go build ./...` exit 0; `go test ./internal/config` green.
+- [x] `gofmt -l .` empty; `go vet ./...` clean.
 
 ## Risk Assessment
 

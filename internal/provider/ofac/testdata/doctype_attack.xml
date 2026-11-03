@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE Sanctions [
+  <!ENTITY lol "lol">
+  <!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+]>
+<Sanctions xmlns="https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ADVANCED_XML" Version="3">
+  <DateOfIssue><Year>2026</Year><Month>10</Month><Day>28</Day></DateOfIssue>
+  <DistinctParties>&lol2;</DistinctParties>
+</Sanctions>

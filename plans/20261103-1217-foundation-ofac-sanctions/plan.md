@@ -1,7 +1,7 @@
 ---
 plan: foundation-ofac-sanctions
 title: "MVP Foundation + OFAC Sanctions Intelligence (Spec §19 Phases 1-2)"
-status: pending
+status: completed
 risk: R3
 created: 2026-11-03
 source-spec: docs/tailieu.md (Technical Design Specification v2.0)

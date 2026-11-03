@@ -1,0 +1,635 @@
+openapi: 3.1.0
+info:
+  title: Blockchain Wallet Risk Intelligence API
+  version: "0.2.0"
+  description: |
+    REST API for wallet risk signals over published OFAC SDN sanctions data.
+
+    Implemented scope (spec §19 phases 1–2): network catalog, wallet
+    normalization, sanctions wallet/entity/program lookups, admin ingestion,
+    health probes, and metrics. Later-phase endpoints (screenings, labels,
+    tracing) are intentionally absent.
+
+    **Semantics**: a non-match is data, never a safety verdict. `matched:false`
+    means "no listing on this network in the current snapshot" — see
+    `cross_chain_observations` and `unresolved_network_listings` for listings
+    of the same address that cannot count as a direct match.
+  contact:
+    name: Engineering
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: system
+  - name: reference
+  - name: wallets
+  - name: sanctions
+  - name: admin
+
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Process alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+              example: { "status": "ok" }
+
+  /readyz:
+    get:
+      tags: [system]
+      summary: Readiness probe (Postgres + Redis)
+      security: []
+      responses:
+        "200":
+          description: All dependencies reachable.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadyStatus" }
+              example: { "postgres": "ok", "redis": "ok" }
+        "503":
+          description: At least one dependency is down.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadyStatus" }
+              example: { "postgres": "ok", "redis": "down" }
+
+  /metrics:
+    get:
+      tags: [system]
+      summary: Prometheus scrape endpoint
+      description: Requires a reader or admin API key.
+      responses:
+        "200":
+          description: Prometheus exposition format.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/networks:
+    get:
+      tags: [reference]
+      summary: List supported blockchain networks
+      responses:
+        "200":
+          description: Active networks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Network" }
+              example:
+                data:
+                  - { code: ethereum, name: Ethereum, chain_id: "eip155:1", namespace: eip155 }
+                  - { code: bsc, name: BNB Smart Chain, chain_id: "eip155:56", namespace: eip155 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/wallets/{network}/{address}:
+    get:
+      tags: [wallets]
+      summary: Get-or-create a wallet record
+      description: |
+        Normalizes the address (EIP-55/hex), resolves the network, and
+        returns the wallet with freshness metadata. `labels` is reserved
+        and always empty in this phase.
+      parameters:
+        - { $ref: "#/components/parameters/Network" }
+        - { $ref: "#/components/parameters/Address" }
+      responses:
+        "200":
+          description: Wallet record.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Wallet" }
+              example:
+                data:
+                  network: ethereum
+                  address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+                  normalized_address: "0x098b716b8aaf21512996dc57eb0615e2383e2f96"
+                  address_type: evm
+                  labels: []
+                  data_status: AVAILABLE
+                  last_synced_at: "2026-10-28T12:00:00Z"
+                  first_seen_at: "2026-10-28T12:00:01Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/sanctions/wallets/{network}/{address}:
+    get:
+      tags: [sanctions]
+      summary: Sanctions listing lookup for a wallet
+      description: |
+        Exact match requires the normalized address to be listed on the
+        resolved network in the current published snapshot.
+
+        - `sanctions[]` — deduplicated by `sanctions_entity_id`.
+        - `cross_chain_observations[]` — same address evidenced on a
+          *different* network; never counted in `matched`.
+        - `unresolved_network_listings[]` — same address listed with no
+          resolvable network (`network_id IS NULL`); always surfaced so a
+          listed address can never read as "no data".
+        - `reason.summary` is only populated from official source text;
+          it is `null` otherwise — reasons are never synthesized.
+      parameters:
+        - { $ref: "#/components/parameters/Network" }
+        - { $ref: "#/components/parameters/Address" }
+      responses:
+        "200":
+          description: Lookup result (match or non-match — both are data).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/WalletSanctionsLookup" }
+              examples:
+                matched:
+                  summary: Address listed on the queried network
+                  value:
+                    data:
+                      network: ethereum
+                      address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+                      normalized_address: "0x098b716b8aaf21512996dc57eb0615e2383e2f96"
+                      matched: true
+                      match_type: WALLET_EXACT
+                      match_scope: CHAIN_SPECIFIC
+                      sanctions:
+                        - sanctions_entity_id: 1
+                          external_entity_id: "31940"
+                          entity_name: LAZARUS GROUP
+                          entity_type: Entity
+                          listed_address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+                          currency_code: ETH
+                          identifier_type: "Digital Currency Address - ETH"
+                          match_scope: CHAIN_SPECIFIC
+                          programs:
+                            - { code: CYBER2, name: null, description: null, source_url: null }
+                            - { code: DPRK3, name: null, description: null, source_url: null }
+                          reason: { summary: null, status: PROGRAM_CONTEXT_ONLY }
+                          source: { code: ofac_sdn, name: "OFAC SDN Advanced XML", url: null }
+                      cross_chain_observations: []
+                      unresolved_network_listings:
+                        - network_code: null
+                          currency_code: USDT
+                          listed_address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+                          sanctions_entity_id: 1
+                          entity_name: LAZARUS GROUP
+                          match_scope: UNRESOLVED
+                          identifier_type: "Digital Currency Address - USDT"
+                          source_code: ofac_sdn
+                      data_status: AVAILABLE
+                      last_synced_at: "2026-10-28T12:00:00Z"
+                non_match:
+                  summary: Address not listed on the queried network
+                  value:
+                    data:
+                      network: bsc
+                      address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+                      normalized_address: "0x098b716b8aaf21512996dc57eb0615e2383e2f96"
+                      matched: false
+                      match_type: null
+                      match_scope: null
+                      sanctions: []
+                      cross_chain_observations:
+                        - network_code: ethereum
+                          currency_code: ETH
+                          listed_address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+                          sanctions_entity_id: 1
+                          entity_name: LAZARUS GROUP
+                          match_scope: CHAIN_SPECIFIC
+                          identifier_type: "Digital Currency Address - ETH"
+                          source_code: ofac_sdn
+                      unresolved_network_listings:
+                        - network_code: null
+                          currency_code: USDT
+                          listed_address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+                          sanctions_entity_id: 1
+                          entity_name: LAZARUS GROUP
+                          match_scope: UNRESOLVED
+                          identifier_type: "Digital Currency Address - USDT"
+                          source_code: ofac_sdn
+                      data_status: AVAILABLE
+                      last_synced_at: "2026-10-28T12:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/sanctions/entities/{id}:
+    get:
+      tags: [sanctions]
+      summary: Sanctions entity detail
+      description: "`{id}` is the internal `sanctions_entities.id` primary key; `external_entity_id` (the OFAC `Profile@ID`) is returned in the body."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Entity detail with programs, listings, references.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EntityDetail" }
+              example:
+                data:
+                  sanctions_entity_id: 1
+                  external_entity_id: "31940"
+                  entity_name: LAZARUS GROUP
+                  entity_type: Entity
+                  source_url: null
+                  revoked: false
+                  programs:
+                    - { code: CYBER2, name: null, description: null, source_url: null }
+                    - { code: DPRK3, name: null, description: null, source_url: null }
+                  reason: { summary: null, status: PROGRAM_CONTEXT_ONLY }
+                  digital_currency_addresses:
+                    - listed_address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+                      normalized_address: "0x098b716b8aaf21512996dc57eb0615e2383e2f96"
+                      currency_code: ETH
+                      network_id: 1
+                      identifier_type: "Digital Currency Address - ETH"
+                      source_identifier_id: "40577"
+                      match_scope: CHAIN_SPECIFIC
+                      revoked: false
+                  official_references: []
+                  details: {}
+                  source: { code: ofac_sdn, name: "OFAC SDN Advanced XML", url: "https://ofac.treasury.gov/" }
+                  last_synced_at: "2026-10-28T12:00:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/sanctions/programs/{code}:
+    get:
+      tags: [sanctions]
+      summary: Sanctions program detail
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string, example: DPRK3 }
+      responses:
+        "200":
+          description: Program detail with live entity count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ProgramDetail" }
+              example:
+                data:
+                  code: DPRK3
+                  name: null
+                  description: null
+                  source_url: null
+                  source_code: ofac_sdn
+                  associated_entities_count: 2
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/admin/ingestion-runs:
+    post:
+      tags: [admin]
+      summary: Trigger an ingestion run (async)
+      description: |
+        Starts a snapshot ingestion for the given source. Exactly one run
+        per source may be in flight: a second trigger while one runs
+        returns `409 INGESTION_RUNNING`. The run executes asynchronously;
+        poll `GET /api/v1/admin/ingestion-runs/{id}` for status.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source: { type: string, example: ofac_sdn }
+            example: { source: ofac_sdn }
+      responses:
+        "202":
+          description: Run accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      run_id: { type: string, format: uuid }
+                      status: { type: string, enum: [RUNNING] }
+                      source: { type: string }
+              example:
+                data:
+                  run_id: "7d0f6a1e-2b3c-4d5e-8f9a-0b1c2d3e4f5a"
+                  status: RUNNING
+                  source: ofac_sdn
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: An ingestion run is already in progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: INGESTION_RUNNING, message: "an ingestion run is already in progress", request_id: "req_..." }
+
+  /api/v1/admin/ingestion-runs/{id}:
+    get:
+      tags: [admin]
+      summary: Ingestion run status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Run record.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/IngestionRun" }
+              example:
+                data:
+                  run_id: "7d0f6a1e-2b3c-4d5e-8f9a-0b1c2d3e4f5a"
+                  source_id: 1
+                  status: COMPLETED
+                  started_at: "2026-10-28T11:59:00Z"
+                  completed_at: "2026-10-28T12:00:00Z"
+                  records_fetched: 19500
+                  records_inserted: 19500
+                  records_updated: 19480
+                  records_rejected: 0
+                  triggered_by: bootstrap-admin
+                  snapshot_checksum: "ab12cd34..."
+                  snapshot_version: "ofac-ab12cd34ef56-1730126400"
+                  error_message: null
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  parameters:
+    Network:
+      name: network
+      in: path
+      required: true
+      description: Network code.
+      schema: { type: string, enum: [ethereum, bsc] }
+    Address:
+      name: address
+      in: path
+      required: true
+      description: EVM address (20-byte hex, 0x prefix optional).
+      schema:
+        type: string
+        pattern: "^(0x)?[0-9a-fA-F]{40}$"
+        example: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status: { type: string, enum: [ok] }
+    ReadyStatus:
+      type: object
+      properties:
+        postgres: { type: string, enum: [ok, down] }
+        redis: { type: string, enum: [ok, down] }
+    Network:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        chain_id: { type: string, description: "CAIP-2 identifier" }
+        namespace: { type: string }
+    Wallet:
+      type: object
+      properties:
+        network: { type: string }
+        address: { type: string }
+        normalized_address: { type: string }
+        address_type: { type: string }
+        labels:
+          type: array
+          items: { type: object }
+          description: Reserved; always empty in this phase.
+        data_status: { $ref: "#/components/schemas/DataStatus" }
+        last_synced_at: { type: ["string", "null"], format: date-time }
+        first_seen_at: { type: string, format: date-time }
+    DataStatus:
+      type: string
+      enum: [AVAILABLE, STALE, UNAVAILABLE]
+      description: Snapshot freshness recomputed at serve time.
+    Reason:
+      type: object
+      properties:
+        summary:
+          type: ["string", "null"]
+          description: Only populated from official source text; never synthesized.
+        status:
+          type: string
+          enum: [OFFICIAL_EXPLICIT, PROGRAM_CONTEXT_ONLY, NOT_AVAILABLE]
+    ProgramRef:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: ["string", "null"] }
+        description: { type: ["string", "null"] }
+        source_url: { type: ["string", "null"], format: uri }
+    SourceRef:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        url: { type: ["string", "null"], format: uri }
+    SanctionEntry:
+      type: object
+      properties:
+        sanctions_entity_id: { type: integer }
+        external_entity_id: { type: string }
+        entity_name: { type: string }
+        entity_type: { type: ["string", "null"] }
+        listed_address: { type: string }
+        currency_code: { type: ["string", "null"] }
+        identifier_type: { type: string }
+        match_scope: { type: string, enum: [CHAIN_SPECIFIC, UNRESOLVED] }
+        programs:
+          type: array
+          items: { $ref: "#/components/schemas/ProgramRef" }
+        reason: { $ref: "#/components/schemas/Reason" }
+        source: { $ref: "#/components/schemas/SourceRef" }
+    Observation:
+      type: object
+      description: A listing of the same address that cannot count as a direct match.
+      properties:
+        network_code: { type: ["string", "null"] }
+        currency_code: { type: ["string", "null"] }
+        listed_address: { type: string }
+        sanctions_entity_id: { type: integer }
+        entity_name: { type: string }
+        match_scope: { type: string }
+        identifier_type: { type: string }
+        source_code: { type: string }
+    WalletSanctionsLookup:
+      type: object
+      properties:
+        network: { type: string }
+        address: { type: string }
+        normalized_address: { type: string }
+        matched: { type: boolean }
+        match_type: { type: ["string", "null"], enum: [WALLET_EXACT, null] }
+        match_scope: { type: ["string", "null"], enum: [CHAIN_SPECIFIC, null] }
+        sanctions:
+          type: array
+          items: { $ref: "#/components/schemas/SanctionEntry" }
+        cross_chain_observations:
+          type: array
+          items: { $ref: "#/components/schemas/Observation" }
+        unresolved_network_listings:
+          type: array
+          items: { $ref: "#/components/schemas/Observation" }
+        data_status: { $ref: "#/components/schemas/DataStatus" }
+        last_synced_at: { type: ["string", "null"], format: date-time }
+    EntityAddress:
+      type: object
+      properties:
+        listed_address: { type: string }
+        normalized_address: { type: string }
+        currency_code: { type: ["string", "null"] }
+        network_id: { type: ["integer", "null"] }
+        identifier_type: { type: string }
+        source_identifier_id: { type: ["string", "null"] }
+        match_scope: { type: string }
+        revoked: { type: boolean }
+    EntityReference:
+      type: object
+      properties:
+        reference_type: { type: string }
+        title: { type: ["string", "null"] }
+        reference_url: { type: ["string", "null"], format: uri }
+        published_at: { type: ["string", "null"], format: date-time }
+    EntityDetail:
+      type: object
+      properties:
+        sanctions_entity_id: { type: integer }
+        external_entity_id: { type: string }
+        entity_name: { type: string }
+        entity_type: { type: ["string", "null"] }
+        source_url: { type: ["string", "null"], format: uri }
+        revoked: { type: boolean }
+        programs:
+          type: array
+          items: { $ref: "#/components/schemas/ProgramRef" }
+        reason: { $ref: "#/components/schemas/Reason" }
+        digital_currency_addresses:
+          type: array
+          items: { $ref: "#/components/schemas/EntityAddress" }
+        official_references:
+          type: array
+          items: { $ref: "#/components/schemas/EntityReference" }
+        details: { type: object }
+        source: { $ref: "#/components/schemas/SourceRef" }
+        last_synced_at: { type: ["string", "null"], format: date-time }
+    ProgramDetail:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: ["string", "null"] }
+        description: { type: ["string", "null"] }
+        source_url: { type: ["string", "null"], format: uri }
+        source_code: { type: string }
+        associated_entities_count: { type: integer }
+    IngestionRun:
+      type: object
+      properties:
+        run_id: { type: string, format: uuid }
+        source_id: { type: integer }
+        status: { type: string, enum: [RUNNING, COMPLETED, FAILED] }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: ["string", "null"], format: date-time }
+        records_fetched: { type: integer }
+        records_inserted: { type: integer }
+        records_updated: { type: integer }
+        records_rejected: { type: integer }
+        triggered_by: { type: ["string", "null"] }
+        snapshot_checksum: { type: ["string", "null"] }
+        snapshot_version: { type: ["string", "null"] }
+        error_message: { type: ["string", "null"] }
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            request_id: { type: ["string", "null"] }
+
+  responses:
+    BadRequest:
+      description: Invalid input (unknown network, malformed address, bad id).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: INVALID_ADDRESS, message: "invalid address", request_id: "req_..." }
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: UNAUTHORIZED, message: "valid API key required", request_id: "req_..." }
+    Forbidden:
+      description: Insufficient role (admin required).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: FORBIDDEN, message: "insufficient role", request_id: "req_..." }
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: NOT_FOUND, message: "not found", request_id: "req_..." }
+    RateLimited:
+      description: Rate limit exceeded; retry after `Retry-After` seconds.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+security:
+  - ApiKeyAuth: []

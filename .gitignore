@@ -1,0 +1,13 @@
+# Secrets / local env — never committed
+.env
+.env.*
+!.env.example
+
+# Build output
+/bin/
+*.test
+*.out
+
+# Downloaded sanctions snapshots (never commit bulk data)
+sdn_advanced*.xml
+SDN_ADVANCED*.XML

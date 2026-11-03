@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Address Normalization, HTTP Platform & Auth"
-status: pending
+status: completed
 priority: P1
 dependencies: [1]
 ---
@@ -89,14 +89,14 @@ envelope, health endpoints, and the first two read APIs (`/networks`,
 
 ## Success Criteria
 
-- [ ] Unit tests green for normalization/resolver/middleware.
-- [ ] `GET /api/v1/wallets/ethereum/0x098B...` returns 200 JSON, wallet
+- [x] Unit tests green for normalization/resolver/middleware.
+- [x] `GET /api/v1/wallets/ethereum/0x098B...` returns 200 JSON, wallet
       persisted once (verified via SQL count on `_test` db).
-- [ ] 400/401/403/404/429 return the stable envelope with `request_id`.
-- [ ] `/healthz` liveness OK; `/readyz` fails when DB down (verify manually
+- [x] 400/401/403/404/429 return the stable envelope with `request_id`.
+- [x] `/healthz` liveness OK; `/readyz` fails when DB down (verify manually
       or via test).
-- [ ] API key never appears in logs (grep test or review).
-- [ ] `go build ./...` clean; gofmt/vet clean.
+- [x] API key never appears in logs (grep test or review).
+- [x] `go build ./...` clean; gofmt/vet clean.
 
 ## Risk Assessment
 

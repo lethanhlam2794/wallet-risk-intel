@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Sanctions xmlns="https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ADVANCED_XML" Version="3">
+  <DateOfIssue CalendarTypeID="1"><Year>2026</Year><Month>10</Month><Day>28</Day></DateOfIssue>
+  <ReferenceValueSets>
+    <PartySubTypeValues>
+      <PartySubType ID="6" PartyTypeID="2">Unknown</PartySubType>
+    </PartySubTypeValues>
+    <PartyTypeValues><PartyType ID="2">Entity</PartyType></PartyTypeValues>
+    <FeatureTypeValues>
+      <FeatureType ID="345">Digital Currency Address - ETH</FeatureType>
+    </FeatureTypeValues>
+  </ReferenceValueSets>
+  <DistinctParties>
+    <DistinctParty FixedRef="1">
+      <Profile ID="1" PartySubTypeID="6">
+        <Identity ID="1" Primary="true">
+          <Alias Primary="true">
+            <DocumentedName><DocumentedNamePart><NamePartValue>DUP CO</NamePartValue></DocumentedNamePart></DocumentedName>
+          </Alias>
+        </Identity>
+        <Feature ID="100" FeatureTypeID="345">
+          <FeatureVersion ID="1"><VersionDetail>0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</VersionDetail></FeatureVersion>
+          <FeatureVersion ID="2"><VersionDetail>0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</VersionDetail></FeatureVersion>
+        </Feature>
+        <Feature ID="101" FeatureTypeID="345">
+          <FeatureVersion ID="3"><VersionDetail>0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</VersionDetail></FeatureVersion>
+        </Feature>
+      </Profile>
+    </DistinctParty>
+  </DistinctParties>
+</Sanctions>

@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "OFAC SnapshotSource — Download, Stream-Parse, Map"
-status: pending
+status: completed
 priority: P1
 dependencies: [1, 2]
 ---
@@ -124,13 +124,13 @@ Mapping rules:
 
 ## Success Criteria
 
-- [ ] Parser streams (no `ioutil.ReadAll`+Unmarshal of whole doc) — code
+- [x] Parser streams (no `ioutil.ReadAll`+Unmarshal of whole doc) — code
       review assertion + test on multi-MB generated fixture.
-- [ ] All failure fixtures produce errors and **zero** staging writes.
-- [ ] Checksum/size/HTTP-status validation proven by tests.
-- [ ] Currency→network mapping unit-tested incl. NULL-network cases.
-- [ ] `records_fetched/inserted/rejected` counters emitted per run.
-- [ ] `go test ./internal/provider/...` green; build/vet/fmt clean.
+- [x] All failure fixtures produce errors and **zero** staging writes.
+- [x] Checksum/size/HTTP-status validation proven by tests.
+- [x] Currency→network mapping unit-tested incl. NULL-network cases.
+- [x] `records_fetched/inserted/rejected` counters emitted per run.
+- [x] `go test ./internal/provider/...` green; build/vet/fmt clean.
 
 ## Risk Assessment
 

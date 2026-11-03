@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<Sanctions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Version="3" xsi:schemaLocation="https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ADVANCED_XML https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ADVANCED_XML.xsd" xmlns="https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ADVANCED_XML">
+  <DateOfIssue CalendarTypeID="1">
+    <Year>2026</Year>
+    <Month>10</Month>
+    <Day>28</Day>
+  </DateOfIssue>
+  <ReferenceValueSets>
+    <AliasTypeValues>
+      <AliasType ID="1403" AliasTypeGroupID="1">aka</AliasType>
+    </AliasTypeValues>
+    <PartyTypeValues>
+      <PartyType ID="1">Individual</PartyType>
+      <PartyType ID="2">Entity</PartyType>
+    </PartyTypeValues>
+    <PartySubTypeValues>
+      <PartySubType ID="1" PartyTypeID="1">Unknown</PartySubType>
+      <PartySubType ID="6" PartyTypeID="2">Unknown</PartySubType>
+    </PartySubTypeValues>
+    <FeatureTypeValues>
+      <FeatureType ID="1" FeatureTypeGroupID="1">Other Feature</FeatureType>
+      <FeatureType ID="344" FeatureTypeGroupID="1">Digital Currency Address - XBT</FeatureType>
+      <FeatureType ID="345" FeatureTypeGroupID="1">Digital Currency Address - ETH</FeatureType>
+      <FeatureType ID="887" FeatureTypeGroupID="1">Digital Currency Address - USDT</FeatureType>
+      <FeatureType ID="989" FeatureTypeGroupID="1">Digital Currency Address - BNB</FeatureType>
+      <FeatureType ID="1008" FeatureTypeGroupID="1">Digital Currency Address - BSC</FeatureType>
+    </FeatureTypeValues>
+    <LegalBasisTypeValues>
+      <LegalBasisType ID="1">Unknown</LegalBasisType>
+      <LegalBasisType ID="92049">Executive Order 14024</LegalBasisType>
+    </LegalBasisTypeValues>
+    <SanctionsTypeValues>
+      <SanctionsType ID="1705">Block</SanctionsType>
+    </SanctionsTypeValues>
+    <ListValues>
+      <List ID="1550">SDN List</List>
+    </ListValues>
+  </ReferenceValueSets>
+  <DistinctParties>
+    <DistinctParty FixedRef="31940">
+      <Profile ID="31940" PartySubTypeID="6">
+        <Identity ID="23584" FixedRef="31940" Primary="true" False="false">
+          <Alias FixedRef="31940" AliasTypeID="1403" Primary="true" LowQuality="false">
+            <DocumentedName ID="44581" DocNameStatusID="1">
+              <DocumentedNamePart>
+                <NamePartValue NamePartGroupID="84641" ScriptID="215">LAZARUS GROUP</NamePartValue>
+              </DocumentedNamePart>
+            </DocumentedName>
+          </Alias>
+          <Alias FixedRef="31940" AliasTypeID="1403" Primary="false" LowQuality="false">
+            <DocumentedName ID="44582" DocNameStatusID="1">
+              <DocumentedNamePart>
+                <NamePartValue NamePartGroupID="84642" ScriptID="215">APT38</NamePartValue>
+              </DocumentedNamePart>
+            </DocumentedName>
+          </Alias>
+        </Identity>
+        <Feature ID="40577" FeatureTypeID="345">
+          <FeatureVersion ID="38296" ReliabilityID="1">
+            <Comment/>
+            <VersionDetail DetailTypeID="1432">0x098B716B8Aaf21512996dC57EB0615e2383E2f96</VersionDetail>
+          </FeatureVersion>
+          <IdentityReference IdentityID="23584" IdentityFeatureLinkTypeID="1"/>
+        </Feature>
+        <Feature ID="40578" FeatureTypeID="887">
+          <FeatureVersion ID="38297" ReliabilityID="1">
+            <VersionDetail DetailTypeID="1432">0x098B716B8Aaf21512996dC57EB0615e2383E2f96</VersionDetail>
+          </FeatureVersion>
+        </Feature>
+        <Feature ID="40579" FeatureTypeID="344">
+          <FeatureVersion ID="38298" ReliabilityID="1">
+            <VersionDetail DetailTypeID="1432">1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa</VersionDetail>
+          </FeatureVersion>
+        </Feature>
+      </Profile>
+    </DistinctParty>
+    <DistinctParty FixedRef="40243">
+      <Profile ID="40243" PartySubTypeID="1">
+        <Identity ID="40001" FixedRef="40243" Primary="true" False="false">
+          <Alias FixedRef="40243" AliasTypeID="1403" Primary="true" LowQuality="false">
+            <DocumentedName ID="44591" DocNameStatusID="1">
+              <DocumentedNamePart>
+                <NamePartValue NamePartGroupID="84651" ScriptID="215">KIM</NamePartValue>
+              </DocumentedNamePart>
+              <DocumentedNamePart>
+                <NamePartValue NamePartGroupID="84652" ScriptID="215">SOK IL</NamePartValue>
+              </DocumentedNamePart>
+            </DocumentedName>
+          </Alias>
+        </Identity>
+        <Feature ID="50577" FeatureTypeID="989">
+          <FeatureVersion ID="48296" ReliabilityID="1">
+            <VersionDetail DetailTypeID="1432">0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa</VersionDetail>
+          </FeatureVersion>
+        </Feature>
+        <Feature ID="50578" FeatureTypeID="1008">
+          <FeatureVersion ID="48297" ReliabilityID="1">
+            <VersionDetail DetailTypeID="1432">0xBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBb</VersionDetail>
+          </FeatureVersion>
+        </Feature>
+      </Profile>
+    </DistinctParty>
+  </DistinctParties>
+  <SanctionsEntries>
+    <SanctionsEntry ID="31940" ProfileID="31940" ListID="1550">
+      <EntryEvent ID="31940" EntryEventTypeID="1" LegalBasisID="92049">
+        <Date CalendarTypeID="1"><Year>2022</Year><Month>9</Month><Day>13</Day></Date>
+      </EntryEvent>
+      <SanctionsMeasure ID="32781" SanctionsTypeID="1705"><DatePeriod/></SanctionsMeasure>
+      <SanctionsMeasure ID="168367" SanctionsTypeID="1">
+        <Comment>DPRK3</Comment>
+      </SanctionsMeasure>
+      <SanctionsMeasure ID="168368" SanctionsTypeID="1">
+        <Comment>CYBER2</Comment>
+      </SanctionsMeasure>
+    </SanctionsEntry>
+    <SanctionsEntry ID="40243" ProfileID="40243" ListID="1550">
+      <EntryEvent ID="40243" EntryEventTypeID="1" LegalBasisID="92049">
+        <Date CalendarTypeID="1"><Year>2022</Year><Month>4</Month><Day>24</Day></Date>
+      </EntryEvent>
+      <SanctionsMeasure ID="168400" SanctionsTypeID="1">
+        <Comment>DPRK3</Comment>
+      </SanctionsMeasure>
+    </SanctionsEntry>
+  </SanctionsEntries>
+</Sanctions>

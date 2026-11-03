@@ -1,0 +1,122 @@
+-- Atomic publish: staged run → live tables in ONE transaction.
+-- $1 = source_id, $2 = run_id. Every step is set-based; no interpolated SQL.
+
+-- name: PublishUpsertEntities :execrows
+INSERT INTO sanctions_entities
+    (source_id, external_entity_id, primary_name, entity_type, source_url, details, revoked_at)
+SELECT $1, e.external_entity_id, e.primary_name, e.entity_type, e.source_url, e.details, NULL
+FROM stg_sanctions_entities e
+WHERE e.run_id = $2
+ON CONFLICT (source_id, external_entity_id) DO UPDATE SET
+    primary_name = EXCLUDED.primary_name,
+    entity_type = EXCLUDED.entity_type,
+    source_url = EXCLUDED.source_url,
+    details = EXCLUDED.details,
+    last_seen_at = NOW(),
+    revoked_at = NULL;
+
+-- name: PublishUpsertPrograms :execrows
+INSERT INTO sanctions_programs (source_id, code, name, description, source_url)
+SELECT $1, p.code, p.name, p.description, p.source_url
+FROM stg_sanctions_programs p
+WHERE p.run_id = $2
+ON CONFLICT (source_id, code) DO NOTHING;
+
+-- name: PublishDeleteEntityProgramsForSource :exec
+DELETE FROM sanctions_entity_programs
+WHERE sanctions_entity_id IN (
+    SELECT id FROM sanctions_entities WHERE source_id = $1::bigint
+);
+
+-- name: PublishInsertEntityPrograms :execrows
+INSERT INTO sanctions_entity_programs (sanctions_entity_id, program_id)
+SELECT se.id, sp.id
+FROM stg_sanctions_entity_programs ep
+JOIN sanctions_entities se
+    ON se.source_id = $1 AND se.external_entity_id = ep.external_entity_id
+JOIN sanctions_programs sp
+    ON sp.source_id = $1 AND sp.code = ep.program_code
+WHERE ep.run_id = $2
+ON CONFLICT DO NOTHING;
+
+-- name: PublishEnsureWallets :execrows
+INSERT INTO wallets (network_id, address, normalized_address, address_type)
+SELECT DISTINCT sw.network_id, sw.listed_address, sw.normalized_address, 'evm'
+FROM stg_sanctions_wallets sw
+WHERE sw.run_id = $1 AND sw.network_id IS NOT NULL
+ON CONFLICT (network_id, normalized_address)
+DO UPDATE SET updated_at = wallets.updated_at;
+
+-- name: PublishUpsertSanctionsWallets :execrows
+INSERT INTO sanctions_wallets
+    (sanctions_entity_id, wallet_id, listed_address, normalized_address,
+     currency_code, network_id, identifier_type, source_identifier_id,
+     match_scope, evidence, revoked_at)
+SELECT se.id, w.id, sw.listed_address, sw.normalized_address, sw.currency_code,
+       sw.network_id, sw.identifier_type, sw.source_identifier_id,
+       sw.match_scope, sw.evidence, NULL
+FROM stg_sanctions_wallets sw
+JOIN sanctions_entities se
+    ON se.source_id = $1 AND se.external_entity_id = sw.external_entity_id
+LEFT JOIN wallets w
+    ON w.network_id = sw.network_id AND w.normalized_address = sw.normalized_address
+WHERE sw.run_id = $2
+ON CONFLICT (
+    sanctions_entity_id, normalized_address, identifier_type,
+    COALESCE(currency_code, ''), COALESCE(source_identifier_id, '')
+) DO UPDATE SET
+    listed_address = EXCLUDED.listed_address,
+    currency_code = EXCLUDED.currency_code,
+    network_id = EXCLUDED.network_id,
+    source_identifier_id = EXCLUDED.source_identifier_id,
+    match_scope = EXCLUDED.match_scope,
+    evidence = EXCLUDED.evidence,
+    wallet_id = EXCLUDED.wallet_id,
+    last_seen_at = NOW(),
+    revoked_at = NULL;
+
+-- name: PublishRevokeAbsentWallets :execrows
+UPDATE sanctions_wallets sw SET revoked_at = NOW()
+FROM sanctions_entities se
+WHERE sw.sanctions_entity_id = se.id
+  AND se.source_id = $1
+  AND sw.revoked_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM stg_sanctions_wallets s
+      WHERE s.run_id = $2
+        AND s.external_entity_id = se.external_entity_id
+        AND s.normalized_address = sw.normalized_address
+        AND s.identifier_type = sw.identifier_type
+        AND COALESCE(s.currency_code, '') = COALESCE(sw.currency_code, '')
+        AND COALESCE(s.source_identifier_id, '') = COALESCE(sw.source_identifier_id, '')
+  );
+
+-- name: PublishRevokeAbsentEntities :execrows
+UPDATE sanctions_entities se SET revoked_at = NOW()
+WHERE se.source_id = $1
+  AND se.revoked_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM stg_sanctions_entities s
+      WHERE s.run_id = $2 AND s.external_entity_id = se.external_entity_id
+  );
+
+-- name: PublishDeleteReferencesForSource :exec
+DELETE FROM sanctions_references
+WHERE sanctions_entity_id IN (
+    SELECT id FROM sanctions_entities WHERE source_id = $1::bigint
+);
+
+-- name: PublishInsertReferences :execrows
+INSERT INTO sanctions_references
+    (sanctions_entity_id, reference_type, title, reference_url, published_at, details)
+SELECT se.id, r.reference_type, r.title, r.reference_url, r.published_at, r.details
+FROM stg_sanctions_references r
+JOIN sanctions_entities se
+    ON se.source_id = $1 AND se.external_entity_id = r.external_entity_id
+WHERE r.run_id = $2;
+
+-- name: InsertSnapshot :one
+INSERT INTO sanctions_snapshots
+    (source_id, version, checksum, entity_count, wallet_count, program_count, date_of_issue)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING *;

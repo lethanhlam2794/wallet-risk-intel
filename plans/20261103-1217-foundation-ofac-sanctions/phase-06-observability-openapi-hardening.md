@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "Observability, OpenAPI & Failure-Mode Hardening"
-status: pending
+status: completed
 priority: P2
 dependencies: [4, 5]
 ---
@@ -74,11 +74,11 @@ and `docs/` + README updates.
 
 ## Success Criteria
 
-- [ ] `/metrics` serves all declared collectors with real values.
-- [ ] Every spec-§18.3 failure case in scope has a failing-then-green test.
-- [ ] openapi.yaml valid; examples match live responses byte-shape.
-- [ ] No secrets in logs; request_id present on all request-scoped lines.
-- [ ] `go test ./... -race` exit 0; README commands verified verbatim.
+- [x] `/metrics` serves all declared collectors with real values.
+- [x] Every spec-§18.3 failure case in scope has a failing-then-green test.
+- [x] openapi.yaml valid; examples match live responses byte-shape.
+- [x] No secrets in logs; request_id present on all request-scoped lines.
+- [x] `go test ./... -race` exit 0; README commands verified verbatim.
 
 ## Risk Assessment
 

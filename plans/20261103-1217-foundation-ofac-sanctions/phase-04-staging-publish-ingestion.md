@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Staging Validation, Atomic Publish & Admin Ingestion API"
-status: pending
+status: completed
 priority: P1
 dependencies: [3]
 ---
@@ -101,15 +101,15 @@ versioning for the cache, and the admin trigger/status endpoints.
 
 ## Success Criteria
 
-- [ ] Atomic publish verified: kill-safety — validation failure leaves live
+- [x] Atomic publish verified: kill-safety — validation failure leaves live
       tables byte-identical.
-- [ ] Revocation only post-validation, absent-only, never deletes.
-- [ ] Advisory lock proven: concurrent run rejected, no double publish.
-- [ ] `ingestion_runs` counters accurate per stage outcome.
-- [ ] `sanctions:current_snapshot` updated exactly once per publish; version
+- [x] Revocation only post-validation, absent-only, never deletes.
+- [x] Advisory lock proven: concurrent run rejected, no double publish.
+- [x] `ingestion_runs` counters accurate per stage outcome.
+- [x] `sanctions:current_snapshot` updated exactly once per publish; version
       embedded in snapshot row.
-- [ ] Admin endpoints enforce role; non-admin → 403.
-- [ ] Tests green on `_test` db; build/vet/fmt clean.
+- [x] Admin endpoints enforce role; non-admin → 403.
+- [x] Tests green on `_test` db; build/vet/fmt clean.
 
 ## Risk Assessment
 
