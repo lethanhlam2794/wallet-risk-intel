@@ -87,7 +87,7 @@ func New(d Deps) *gin.Engine {
 	}
 	walletSvc := wallet.NewService(d.Queries)
 	api.GET("/networks", networksHandler(d.Resolver))
-	api.GET("/wallets/:network/:address", walletHandler(d.Resolver, walletSvc, fresh, d.Labels))
+	api.GET("/wallets/:network/:address", walletHandler(d.Resolver, walletSvc, fresh, d.Labels, d.Logger))
 
 	if d.Labels != nil {
 		lh := label.NewHandler(d.Labels, d.Resolver)
@@ -172,7 +172,7 @@ func networksHandler(resolver *network.Resolver) gin.HandlerFunc {
 }
 
 func walletHandler(resolver *network.Resolver, svc *wallet.Service,
-	fresh FreshnessProvider, labels *label.Service) gin.HandlerFunc {
+	fresh FreshnessProvider, labels *label.Service, log *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		net, normalized, err := wallet.ResolveAndNormalize(resolver, c.Param("network"), c.Param("address"))
 		if err != nil {
@@ -204,6 +204,9 @@ func walletHandler(resolver *network.Resolver, svc *wallet.Service,
 				for _, it := range items {
 					labelsOut = append(labelsOut, it)
 				}
+			} else if log != nil {
+				log.Warn("wallet label summary failed",
+					"wallet_id", w.ID, "error", err)
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{

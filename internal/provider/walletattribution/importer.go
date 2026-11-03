@@ -56,7 +56,18 @@ func (imp *Importer) importFile(ctx context.Context, q *db.Queries,
 	}
 	defer fh.Close()
 
-	fileNetwork := "" // set by the first emitted row; all rows must share it
+	// The filename asserts the chain when its stem is a known network
+	// (ethereum.csv → ethereum); otherwise it is derived from the first
+	// emitted row. Rows disagreeing with the asserted network are rejected
+	// per-row, and a fully-mismatched file fails the run at validation
+	// (zero staged rows for a provided file = FAILED).
+	fileNetwork := ""
+	if stem, ok := strings.CutSuffix(f.Name, ".csv"); ok {
+		if _, known := imp.networks[strings.ToLower(stem)]; known {
+			fileNetwork = strings.ToLower(stem)
+			st.NetworkCode = fileNetwork
+		}
+	}
 	emit := func(r CSVRow) error {
 		if fileNetwork == "" {
 			code := strings.ToLower(r.Network)

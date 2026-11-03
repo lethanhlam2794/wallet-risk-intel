@@ -46,7 +46,7 @@ func (h *AdminHandler) TriggerRun(c *gin.Context) {
 		body.Source = "ofac_sdn"
 	}
 	if !h.svc.HasPipeline(body.Source) {
-		middleware.RespondError(c, http.StatusBadRequest, "INVALID_SOURCE",
+		middleware.RespondError(c, http.StatusBadRequest, middleware.CodeInvalidSource,
 			"unknown source")
 		return
 	}
@@ -64,7 +64,7 @@ func (h *AdminHandler) TriggerRun(c *gin.Context) {
 			middleware.RespondError(c, http.StatusConflict, "INGESTION_RUNNING",
 				"an ingestion run is already in progress")
 		case errors.Is(err, pgx.ErrNoRows):
-			middleware.RespondError(c, http.StatusBadRequest, "INVALID_SOURCE",
+			middleware.RespondError(c, http.StatusBadRequest, middleware.CodeInvalidSource,
 				"unknown source")
 		default:
 			middleware.InternalError(c)

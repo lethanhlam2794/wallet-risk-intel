@@ -154,7 +154,7 @@ func (s *Service) ListLabels(ctx context.Context, networkID int64,
 		out = []Item{}
 	}
 	res := &ListResult{Items: out}
-	res.Count = countMatches(set.Items, f, cursorID)
+	res.Count = countMatches(set.Items, f)
 	if more {
 		res.NextCursor = encodeCursor(lastID)
 	}
@@ -246,15 +246,6 @@ func (s *Service) Summary(ctx context.Context, walletID int64) ([]SummaryItem, i
 	return out, count, nil
 }
 
-// DataStatus reports labels freshness for a response envelope.
-func (s *Service) DataStatus(ctx context.Context) (string, *time.Time) {
-	_, snap, err := s.currentSnapshot(ctx)
-	if err != nil {
-		return "UNAVAILABLE", nil
-	}
-	return freshness(snap, s.staleAfter, time.Now())
-}
-
 func matches(it Item, f Filters) bool {
 	if f.Category != "" && !strings.EqualFold(it.Category, f.Category) {
 		return false
@@ -275,10 +266,12 @@ func matches(it Item, f Filters) bool {
 	return true
 }
 
-func countMatches(items []Item, f Filters, cursorID int64) int64 {
+// countMatches returns the total matching the active filter set —
+// cursor-independent, per the documented labels_count contract.
+func countMatches(items []Item, f Filters) int64 {
 	var n int64
 	for _, it := range items {
-		if matches(it, f) && it.WalletLabelID > cursorID {
+		if matches(it, f) {
 			n++
 		}
 	}

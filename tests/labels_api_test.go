@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 	"time"
 
@@ -285,5 +284,4 @@ func TestLabelsAPI_StaleAfterPublish(t *testing.T) {
 	w := get(t, srv, "/api/v1/wallets/ethereum/"+lblAddr+"/labels", key)
 	d := bodyData(t, w)
 	assert.Equal(t, "STALE", d["data_status"])
-	_ = strconv.Itoa(0)
 }

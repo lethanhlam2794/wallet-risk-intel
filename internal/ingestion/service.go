@@ -326,6 +326,7 @@ func (s *Service) execute(ctx context.Context, conn *pgxpool.Conn, qc *db.Querie
 		"SET LOCAL statement_timeout = '120s'",
 	} {
 		if _, err := tx.Exec(ctx, stmt); err != nil {
+			_ = tx.Rollback(context.Background())
 			s.finish(qc, runID, "FAILED", res, publishStats{}, snap.Checksum, "", fmt.Sprintf("publish tx tuning: %s", err))
 			return
 		}

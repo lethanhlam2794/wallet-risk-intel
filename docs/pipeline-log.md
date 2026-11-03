@@ -131,3 +131,18 @@ Plan: `plans/20261103-1530-public-wallet-labels/`
   - Critic (`devin -p` dangerous read-only mode, tree-hash verified unchanged — 245 files) reported 17 findings: F1/F2 blocking (OFAC-hardcoded dispatch seams, single-path Snapshot), F3 network-blind soft-revoke, F4 fingerprint DB-id instability, F5 OFAC-shaped ImportResult, F6-F17 medium/low (entity dedup hygiene, staging collision semantics, data_status spec, wallet endpoint labels, source_field filter, purge keep-set, CSV hardening)
   - All amendments applied to phase files; `reports/critique.md`
 - **Self-Audit Commitment**: plan grounded in live-verified CSV facts (quoted commas, empty entities, 'Null' literals, mixed-case addresses, uniform rebuild date) — not assumptions.
+
+### [P3_STAGE_2_VERIFICATION] - Stage 2: Devin Cook Implementation
+- **Completion Timestamp**: 2026-11-03 17:10:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Cook (session `devin -p` dangerous mode) executed TDD across all 5 phases
+  - [x] Real import verified end-to-end: 108,792 labels (105,267 eth + 3,525 bsc), 14 categories, checksum no-op <1s
+  - [x] Cook caught & fixed a scale-only defect: `NOT IN` revoke hit 120s statement_timeout on unstatisticed staging (10^10 tuple visits) — replaced by `last_seen_at < NOW()` structural fix + finish-ordering fix (real publish error no longer masked)
+- **Machine Evidence**:
+  - `gofmt -l .` clean · `go vet`/`go build` 0 · `go test -count=1 ./...` all PASS · `-race` all PASS (tests 78.2s)
+  - Orchestrator-verified: F3 revoke network-scoped (`labels_publish.sql:96-99`), F4 fingerprint code-strings (`mapper.go:17-21`), F1 `pipelines`/`fetchers` registry (`service.go`), F10 wallet labels summary live
+  - Live API verified: `GET /wallets/ethereum/0x46ce…/labels` → FTX 10 EXCHANGE label, `reported`/`medium`, full provenance
+  - DB: 108,792 active labels, 2,748 linked entities, top cats ENTITY/EXCHANGE/DEFI/SCAM
+  - Commit: `c71db06` (55 files, +4,344)
+- **Documented deviations**: `data_source_snapshots.checksum` column added; revoke via `last_seen_at` instead of fingerprint anti-join; finish-ordering fix.

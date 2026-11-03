@@ -156,7 +156,7 @@ func (q *Queries) StgLabelMaxLastUpdated(ctx context.Context, runID pgtype.UUID)
 }
 
 const stgLabelNewCategories = `-- name: StgLabelNewCategories :many
-SELECT DISTINCT UPPER(s.upstream_category) AS code
+SELECT DISTINCT UPPER(s.upstream_category)::text AS code
 FROM stg_wallet_labels s
 WHERE s.run_id = $1
   AND NOT EXISTS (
@@ -165,15 +165,15 @@ WHERE s.run_id = $1
   )
 `
 
-func (q *Queries) StgLabelNewCategories(ctx context.Context, runID pgtype.UUID) ([]interface{}, error) {
+func (q *Queries) StgLabelNewCategories(ctx context.Context, runID pgtype.UUID) ([]string, error) {
 	rows, err := q.db.Query(ctx, stgLabelNewCategories, runID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []interface{}{}
+	items := []string{}
 	for rows.Next() {
-		var code interface{}
+		var code string
 		if err := rows.Scan(&code); err != nil {
 			return nil, err
 		}

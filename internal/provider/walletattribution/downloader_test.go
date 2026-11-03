@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -88,7 +89,7 @@ func TestDownloader_MultiFileDeterministicChecksum(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, f := range snap.Files {
-			defer func(p string) { _ = p }(f.Path)
+			defer os.Remove(f.Path)
 		}
 		return snap
 	}
@@ -127,7 +128,7 @@ func TestDownloader_RetriesOn5xx_PermanentOn4xx(t *testing.T) {
 		t.Fatalf("attempts = %d, want 2", n)
 	}
 	for _, f := range snap.Files {
-		t.Cleanup(func() { _ = f })
+		t.Cleanup(func() { os.Remove(f.Path) })
 	}
 
 	var m int

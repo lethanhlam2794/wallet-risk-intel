@@ -21,7 +21,7 @@ WHERE s.run_id = $1
   );
 
 -- name: StgLabelNewCategories :many
-SELECT DISTINCT UPPER(s.upstream_category) AS code
+SELECT DISTINCT UPPER(s.upstream_category)::text AS code
 FROM stg_wallet_labels s
 WHERE s.run_id = $1
   AND NOT EXISTS (
