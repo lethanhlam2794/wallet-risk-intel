@@ -1,0 +1,4 @@
+interface:
+  display_name: "DevOps Workflow"
+  short_description: "Safe CI Docker deploy workflow"
+  default_prompt: "Use devops-workflow for CI, Docker, deploy, logs, env, secrets, rollback, and infrastructure tasks."
