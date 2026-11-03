@@ -1,0 +1,12 @@
+{
+    "data": {
+        "code": "CYBER2",
+        "name": null,
+        "description": null,
+        "source_url": null,
+        "source_code": "ofac_sdn",
+        "associated_entities_count": 260,
+        "data_status": "AVAILABLE",
+        "last_synced_at": "2026-11-03T06:39:22.391136Z"
+    }
+}

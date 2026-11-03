@@ -1,0 +1,54 @@
+{
+    "data": {
+        "address": "0x2f389ce8bd8ff92de3402ffce4691d17fc4f6535",
+        "cross_chain_observations": [],
+        "data_status": "AVAILABLE",
+        "last_synced_at": "2026-11-03T06:39:22.391136Z",
+        "match_scope": "CHAIN_SPECIFIC",
+        "match_type": "WALLET_EXACT",
+        "matched": true,
+        "network": "ethereum",
+        "normalized_address": "0x2f389ce8bd8ff92de3402ffce4691d17fc4f6535",
+        "sanctions": [
+            {
+                "sanctions_entity_id": 7435,
+                "external_entity_id": "33151",
+                "entity_name": "SUEX OTC, S.R.O.",
+                "entity_type": "Entity",
+                "listed_address": "0x2f389ce8bd8ff92de3402ffce4691d17fc4f6535",
+                "currency_code": "ETH",
+                "identifier_type": "Digital Currency Address - ETH",
+                "match_scope": "CHAIN_SPECIFIC",
+                "programs": [
+                    {
+                        "code": "CYBER2",
+                        "name": null,
+                        "description": null,
+                        "source_url": null
+                    }
+                ],
+                "reason": {
+                    "summary": null,
+                    "status": "PROGRAM_CONTEXT_ONLY"
+                },
+                "source": {
+                    "code": "ofac_sdn",
+                    "name": "OFAC SDN Advanced XML",
+                    "url": null
+                }
+            }
+        ],
+        "unresolved_network_listings": [
+            {
+                "network_code": null,
+                "currency_code": "USDT",
+                "listed_address": "0x2f389ce8bd8ff92de3402ffce4691d17fc4f6535",
+                "sanctions_entity_id": 7435,
+                "entity_name": "SUEX OTC, S.R.O.",
+                "match_scope": "UNRESOLVED",
+                "identifier_type": "Digital Currency Address - USDT",
+                "source_code": "ofac_sdn"
+            }
+        ]
+    }
+}

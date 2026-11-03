@@ -1,0 +1,17 @@
+{
+    "data": {
+        "completed_at": "2026-11-03T06:39:28.035627Z",
+        "error_message": null,
+        "records_fetched": 43886,
+        "records_inserted": 43886,
+        "records_rejected": 0,
+        "records_updated": 44010,
+        "run_id": "f57a9812-faa2-4ebe-a10b-bce47d2f78a5",
+        "snapshot_checksum": "c1279a38fa180fe79fe1ed263618d1ceb63f5bcca3bc24771f2e69fd1d0b5eb9",
+        "snapshot_version": "ofac-c1279a38fa18-1793687967",
+        "source_id": 1,
+        "started_at": "2026-11-03T06:38:14.640693Z",
+        "status": "COMPLETED",
+        "triggered_by": "worker"
+    }
+}

@@ -1,0 +1,15 @@
+{
+    "data": {
+        "address": "0x000000000000000000000000000000000000dEaD",
+        "cross_chain_observations": [],
+        "data_status": "AVAILABLE",
+        "last_synced_at": "2026-11-03T06:39:22.391136Z",
+        "match_scope": null,
+        "match_type": null,
+        "matched": false,
+        "network": "ethereum",
+        "normalized_address": "0x000000000000000000000000000000000000dead",
+        "sanctions": [],
+        "unresolved_network_listings": []
+    }
+}

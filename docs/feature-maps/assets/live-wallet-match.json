@@ -1,0 +1,49 @@
+{
+    "data": {
+        "address": "0x252a8bd2319d8a555b872990601221b3a2053bce",
+        "cross_chain_observations": [],
+        "data_status": "AVAILABLE",
+        "last_synced_at": "2026-11-03T06:39:22.391136Z",
+        "match_scope": "CHAIN_SPECIFIC",
+        "match_type": "WALLET_EXACT",
+        "matched": true,
+        "network": "ethereum",
+        "normalized_address": "0x252a8bd2319d8a555b872990601221b3a2053bce",
+        "sanctions": [
+            {
+                "sanctions_entity_id": 4703,
+                "external_entity_id": "24003",
+                "entity_name": "MESRI Behzad",
+                "entity_type": "Individual",
+                "listed_address": "0x252a8bd2319d8a555b872990601221b3a2053bce",
+                "currency_code": "ETH",
+                "identifier_type": "Digital Currency Address - ETH",
+                "match_scope": "CHAIN_SPECIFIC",
+                "programs": [
+                    {
+                        "code": "CYBER2",
+                        "name": null,
+                        "description": null,
+                        "source_url": null
+                    },
+                    {
+                        "code": "HRIT-IR",
+                        "name": null,
+                        "description": null,
+                        "source_url": null
+                    }
+                ],
+                "reason": {
+                    "summary": null,
+                    "status": "PROGRAM_CONTEXT_ONLY"
+                },
+                "source": {
+                    "code": "ofac_sdn",
+                    "name": "OFAC SDN Advanced XML",
+                    "url": null
+                }
+            }
+        ],
+        "unresolved_network_listings": []
+    }
+}

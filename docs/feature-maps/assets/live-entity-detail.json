@@ -1,0 +1,194 @@
+{
+    "data": {
+        "data_status": "AVAILABLE",
+        "details": {
+            "fixed_ref": "24003",
+            "non_primary_names": [
+                "Skote Vahshat"
+            ]
+        },
+        "digital_currency_addresses": [
+            {
+                "listed_address": "12aNKp2iDKuhEde2YfPdd4DFGenRUTKupL",
+                "normalized_address": "12aNKp2iDKuhEde2YfPdd4DFGenRUTKupL",
+                "currency_code": "XBT",
+                "network_id": null,
+                "identifier_type": "Digital Currency Address - XBT",
+                "source_identifier_id": "96516",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0x252a8bd2319d8a555b872990601221b3a2053bce",
+                "normalized_address": "0x252a8bd2319d8a555b872990601221b3a2053bce",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96530",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0x1CAb8177ACe78b1B6B1c393371F4f2dCAE40CbEB",
+                "normalized_address": "0x1cab8177ace78b1b6b1c393371f4f2dcae40cbeb",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96531",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0",
+                "normalized_address": "0x6fac4d18c912343bf86fa7049364dd4e424ab9c0",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96535",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0xA40cFBFc8534FFC84E20a7d8bBC3729B26a35F6f",
+                "normalized_address": "0xa40cfbfc8534ffc84e20a7d8bbc3729b26a35f6f",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96536",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0x7F03679B56d8772530EFA516b58Bb83d4829E881",
+                "normalized_address": "0x7f03679b56d8772530efa516b58bb83d4829e881",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96537",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0x8ac5381FCD9e7395D14e02986c344aADA84B4bC6",
+                "normalized_address": "0x8ac5381fcd9e7395d14e02986c344aada84b4bc6",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96540",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0x9697749A9e8D6C119D8EEb0d6268a1b99C40684c",
+                "normalized_address": "0x9697749a9e8d6c119d8eeb0d6268a1b99c40684c",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96541",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0x9DD7fA4B4950154F7e75BdD8A77266B99b94Ec08",
+                "normalized_address": "0x9dd7fa4b4950154f7e75bdd8a77266b99b94ec08",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96543",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0xb5A69Da691670F62510793F79a9B36c7db1A7b7c",
+                "normalized_address": "0xb5a69da691670f62510793f79a9b36c7db1a7b7c",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96544",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0x6B0736Fed0634e15E19CC57fBA19cd179c13AbCA",
+                "normalized_address": "0x6b0736fed0634e15e19cc57fba19cd179c13abca",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96546",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0xd81414ABc631C6CADAe1C6198b0c2b15a9B4fDe5",
+                "normalized_address": "0xd81414abc631c6cadae1c6198b0c2b15a9b4fde5",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96547",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "0xF45Ecc3a59C7911181C659cE9115854c6175Be91",
+                "normalized_address": "0xf45ecc3a59c7911181c659ce9115854c6175be91",
+                "currency_code": "ETH",
+                "network_id": 1,
+                "identifier_type": "Digital Currency Address - ETH",
+                "source_identifier_id": "96548",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "TAbbVaBKgH4VBLXgWqACuwoKF4cH1HinQh",
+                "normalized_address": "TAbbVaBKgH4VBLXgWqACuwoKF4cH1HinQh",
+                "currency_code": "TRX",
+                "network_id": null,
+                "identifier_type": "Digital Currency Address - TRX",
+                "source_identifier_id": "96556",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            },
+            {
+                "listed_address": "TEsxMcVocweTM82Mdmc5diKC6qyCWqSpPv",
+                "normalized_address": "TEsxMcVocweTM82Mdmc5diKC6qyCWqSpPv",
+                "currency_code": "TRX",
+                "network_id": null,
+                "identifier_type": "Digital Currency Address - TRX",
+                "source_identifier_id": "96558",
+                "match_scope": "CHAIN_SPECIFIC",
+                "revoked": false
+            }
+        ],
+        "entity_name": "MESRI Behzad",
+        "entity_type": "Individual",
+        "external_entity_id": "24003",
+        "last_synced_at": "2026-11-03T06:39:22.391136Z",
+        "official_references": [],
+        "programs": [
+            {
+                "code": "CYBER2",
+                "name": null,
+                "description": null,
+                "source_url": null
+            },
+            {
+                "code": "HRIT-IR",
+                "name": null,
+                "description": null,
+                "source_url": null
+            }
+        ],
+        "reason": {
+            "summary": null,
+            "status": "PROGRAM_CONTEXT_ONLY"
+        },
+        "revoked": false,
+        "sanctions_entity_id": 4703,
+        "source": {
+            "code": "ofac_sdn",
+            "name": "OFAC SDN Advanced XML",
+            "url": "https://sanctionslistservice.ofac.treas.gov/"
+        },
+        "source_url": null
+    }
+}

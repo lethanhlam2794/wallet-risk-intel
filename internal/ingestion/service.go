@@ -34,10 +34,6 @@ var ErrIngestionRunning = errors.New("ingestion already running for source")
 // diagnosis; older staging is purged at run start.
 const failedStagingKeep = 5
 
-// staleRunAfter is how long a run's heartbeat may go silent before the
-// sweep reaps the row as a crashed worker.
-const staleRunAfter = time.Hour
-
 // defaultRunTimeout bounds a detached async run (Enqueue). Long enough for
 // 3 download attempts + parse + publish of the ~128MB SDN file; short
 // enough that a wedged run cannot hold the single-flight gate forever.
@@ -198,8 +194,13 @@ func (s *Service) execute(ctx context.Context, conn *pgxpool.Conn, qc *db.Querie
 
 	// Liveness heartbeat: the stale-run sweep keys off heartbeat_at, so a
 	// slow-but-alive run (large download, long publish) is never reaped.
+	// Beats go through the pool (not the pinned conn — pgx conns forbid
+	// concurrent use) and the goroutine is joined before execute returns
+	// so it can never outlive the pinned conn's Release().
 	hbStop := make(chan struct{})
+	hbDone := make(chan struct{})
 	go func() {
+		defer close(hbDone)
 		t := time.NewTicker(heartbeatInterval)
 		defer t.Stop()
 		for {
@@ -207,12 +208,12 @@ func (s *Service) execute(ctx context.Context, conn *pgxpool.Conn, qc *db.Querie
 			case <-hbStop:
 				return
 			case <-t.C:
-				_ = qc.TouchRunHeartbeat(context.Background(),
+				_ = s.q().TouchRunHeartbeat(context.Background(),
 					pgtype.UUID{Bytes: runID, Valid: true})
 			}
 		}
 	}()
-	defer close(hbStop)
+	defer func() { close(hbStop); <-hbDone }()
 
 	// 1. Obtain the snapshot (download or file mode).
 	var snap provider.Snapshot

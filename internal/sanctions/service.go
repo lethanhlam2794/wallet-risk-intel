@@ -383,15 +383,6 @@ type ProgramDetail struct {
 	LastSyncedAt            *time.Time `json:"last_synced_at"`
 }
 
-func programRef(p db.SanctionsProgram) ProgramRef {
-	return ProgramRef{
-		Code:        p.Code,
-		Name:        textPtr(p.Name),
-		Description: textPtr(p.Description),
-		SourceURL:   textPtr(p.SourceUrl),
-	}
-}
-
 func textPtr(t pgtype.Text) *string {
 	if !t.Valid {
 		return nil
