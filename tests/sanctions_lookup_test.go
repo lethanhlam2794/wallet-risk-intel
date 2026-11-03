@@ -257,6 +257,7 @@ func TestSanctions_EntityAndProgramEndpoints(t *testing.T) {
 	assert.Len(t, d["digital_currency_addresses"].([]any), 3)
 	assert.Equal(t, "PROGRAM_CONTEXT_ONLY",
 		d["reason"].(map[string]any)["status"])
+	assert.Equal(t, "AVAILABLE", d["data_status"])
 	assert.NotNil(t, d["last_synced_at"])
 
 	w = get(t, srv, "/api/v1/sanctions/entities/999999", key)
@@ -267,6 +268,8 @@ func TestSanctions_EntityAndProgramEndpoints(t *testing.T) {
 	d = bodyData(t, w)
 	assert.Equal(t, "DPRK3", d["code"])
 	assert.Equal(t, float64(2), d["associated_entities_count"])
+	assert.Equal(t, "AVAILABLE", d["data_status"])
+	assert.NotNil(t, d["last_synced_at"])
 
 	w = get(t, srv, "/api/v1/sanctions/programs/NOPE", key)
 	assert.Equal(t, http.StatusNotFound, w.Code)

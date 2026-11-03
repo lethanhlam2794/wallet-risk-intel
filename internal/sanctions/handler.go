@@ -86,7 +86,6 @@ func (h *Handler) Entity(c *gin.Context) {
 		middleware.InternalError(c)
 		return
 	}
-	_, lastSynced := h.svc.DataStatus(c.Request.Context())
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
 		"sanctions_entity_id":        detail.EntityID,
 		"external_entity_id":         detail.ExternalEntityID,
@@ -100,7 +99,8 @@ func (h *Handler) Entity(c *gin.Context) {
 		"official_references":        detail.OfficialReferences,
 		"details":                    jsonOrNull(detail.Details),
 		"source":                     detail.Source,
-		"last_synced_at":             lastSynced,
+		"data_status":                detail.DataStatus,
+		"last_synced_at":             detail.LastSyncedAt,
 	}})
 }
 
