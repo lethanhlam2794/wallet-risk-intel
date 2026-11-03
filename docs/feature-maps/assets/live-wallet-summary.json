@@ -1,0 +1,26 @@
+{
+    "data": {
+        "address": "0x46ce2da01290ea2d1bced39bba149d017df34cb9",
+        "address_type": "evm",
+        "data_status": "AVAILABLE",
+        "first_seen_at": "2026-11-03T09:58:12.818578Z",
+        "labels": [
+            {
+                "wallet_label_id": 326499,
+                "category": "EXCHANGE",
+                "category_type": "ENTITY_TYPE",
+                "label": "FTX 10",
+                "entity": {
+                    "id": 11149,
+                    "name": "ftx"
+                },
+                "confidence": "medium",
+                "verification_status": "reported"
+            }
+        ],
+        "labels_count": 1,
+        "last_synced_at": "2026-11-03T06:39:22.391136Z",
+        "network": "ethereum",
+        "normalized_address": "0x46ce2da01290ea2d1bced39bba149d017df34cb9"
+    }
+}

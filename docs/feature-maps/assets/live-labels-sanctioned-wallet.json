@@ -1,0 +1,45 @@
+{
+    "data": {
+        "address": "0x0330070fd38ec3bb94f58fa55d40368271e9e54a",
+        "data_status": "AVAILABLE",
+        "labels": [
+            {
+                "wallet_label_id": 429638,
+                "category": "SANCTIONED",
+                "category_type": "LEGAL",
+                "label": "OFAC sanctioned (ETH)",
+                "entity": {
+                    "id": 11521,
+                    "name": "OFAC SDN"
+                },
+                "source": {
+                    "code": "wallet_attribution",
+                    "name": "Wallet Attribution (prettydeath)"
+                },
+                "source_field": "ofac-sdn+graphsense+tether-blacklist+circle-blacklist",
+                "source_url": "https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses",
+                "upstream_category": "sanctioned",
+                "confidence": "high",
+                "verification_status": "reported",
+                "evidence": {
+                    "observed_at": "2026-10-01T00:00:00Z",
+                    "source_field": "ofac-sdn+graphsense+tether-blacklist+circle-blacklist",
+                    "upstream_record": {
+                        "label": "OFAC sanctioned (ETH)",
+                        "entity": "OFAC SDN"
+                    },
+                    "fetch_checksum_part": "0392efcc458a60260dad72d08717ff46ad62df5e147bf551be7db3d1b27b81d6"
+                },
+                "observed_at": "2026-10-01T00:00:00Z",
+                "first_seen_at": "2026-11-03T09:58:12.818578Z",
+                "last_seen_at": "2026-11-03T09:58:12.818578Z",
+                "revoked_at": null
+            }
+        ],
+        "labels_count": 1,
+        "last_synced_at": "2026-11-03T09:58:12.818578Z",
+        "network": "ethereum",
+        "next_cursor": "",
+        "normalized_address": "0x0330070fd38ec3bb94f58fa55d40368271e9e54a"
+    }
+}

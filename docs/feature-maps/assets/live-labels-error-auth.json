@@ -1,0 +1,7 @@
+{
+    "error": {
+        "code": "UNAUTHORIZED",
+        "message": "valid API key required",
+        "request_id": "ec41cf5a-0d92-4e53-bf14-fe7dadd7ea21"
+    }
+}

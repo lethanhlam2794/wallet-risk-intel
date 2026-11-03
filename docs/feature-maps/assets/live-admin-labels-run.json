@@ -1,0 +1,17 @@
+{
+    "data": {
+        "completed_at": "2026-11-03T09:59:42.286217Z",
+        "error_message": null,
+        "records_fetched": 108792,
+        "records_inserted": 108792,
+        "records_rejected": 0,
+        "records_updated": 108792,
+        "run_id": "5ecb15de-9634-4321-a011-855caa52b098",
+        "snapshot_checksum": "304b40821630f343942d8eaf851f2ec25d290d88e901043f1bb4940e29ed2783",
+        "snapshot_version": "wattr-304b40821630-1793699980",
+        "source_id": 2,
+        "started_at": "2026-11-03T09:55:59.131547Z",
+        "status": "COMPLETED",
+        "triggered_by": "worker"
+    }
+}

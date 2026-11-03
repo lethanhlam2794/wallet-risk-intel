@@ -1,0 +1,7 @@
+{
+    "error": {
+        "code": "INVALID_CURSOR",
+        "message": "invalid cursor",
+        "request_id": "fbd5a552-3028-46af-9de7-df468d19e766"
+    }
+}

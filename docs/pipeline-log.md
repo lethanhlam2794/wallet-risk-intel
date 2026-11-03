@@ -146,3 +146,35 @@ Plan: `plans/20261103-1530-public-wallet-labels/`
   - DB: 108,792 active labels, 2,748 linked entities, top cats ENTITY/EXCHANGE/DEFI/SCAM
   - Commit: `c71db06` (55 files, +4,344)
 - **Documented deviations**: `data_source_snapshots.checksum` column added; revoke via `last_seen_at` instead of fingerprint anti-join; finish-ordering fix.
+
+### [P3_STAGE_3_REVIEW] - Stage 3: Independent Review (Devin Review)
+- **Completion Timestamp**: 2026-11-03 17:45:00
+- **Status**: APPROVED
+- **Reviewer**: `devin -p` dangerous mode, read-only mandate (auto/smart sessions die on exec rejection — established downgrade path)
+- **Findings**:
+  - All 17 Critic amendments verified in code and live DB (incl. independent sha256 fingerprint recomputation)
+  - 5 new LOW issues, none blocking: N-1 `SET LOCAL` finish-ordering, N-2 `labels_count` cursor-dependent, N-3 swallowed label-summary errors, N-4 filename↔network identity, N-5 clock-dependent revocation (accepted — documented)
+- **Report**: `plans/20261103-1530-public-wallet-labels/reports/review-round-1.md`
+
+### [P3_STAGE_4_REMEDIATION] - Stage 4: Remediation + Saturation
+- **Completion Timestamp**: 2026-11-03 18:05:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] N-1..N-4 + trivial nits fixed (commit `519a1b1`): rollback-before-finish on SET LOCAL, cursor-independent count, summary error logging, filename-asserted network, dead-code/constant/cast/cleanup
+  - [x] Saturation: baseline run 8/10 — both failures were `TestDownload_RetryAfterCapped` wall-clock flake (<2s bound vs parallel-load scheduling; cap logic `min(hint, 20ms)` provably correct). Bound raised to 30s — a verbatim-hint regression still fails via hang/timeout, detection power unchanged
+  - [x] Re-run after flake fix: **SCORE: 10/10**
+  - [x] `go test -count=1 -race ./...` all PASS post-remediation
+- **Machine Evidence**: gofmt/vet/build clean; full suite + race green on `519a1b1`+flake-fix
+
+### [P3_STAGE_5_BROWSER_E2E] - Stage 5: Browser E2E
+- **Status**: SKIPPED-NO-UI — backend-only deliverable (same decision as OFAC phase)
+- **Substitution**: live-server captures of every Phase-3 route incl. error envelopes:
+  `live-labels-list.json`, `live-labels-filter-category.json`, `live-labels-filter-empty.json`,
+  `live-labels-error-cursor.json`, `live-labels-error-auth.json`,
+  `live-wallet-summary.json`, `live-wallet-sanctioned-labeled.json`,
+  `live-labels-sanctioned-wallet.json`, `live-admin-labels-run.json`
+- **Highlight**: `0x0330…e54a` returns OFAC match (AMNOKGANG, DPRK4) AND a `SANCTIONED` label still `reported` — "reported ≠ verified" invariant live
+
+### [P3_STAGE_6_DOCS] - Stage 6: Guidebook + Feature Map
+- **Status**: PASSED
+- **Deliverables**: `docs/guidebook-wallet-labels.md` (8 sections, real captures only, SQL verification queries, ops notes), `docs/feature-maps/public-wallet-labels.md` (data flow, structures, invariants, remediated findings, known limits)

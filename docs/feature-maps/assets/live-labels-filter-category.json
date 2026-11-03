@@ -1,0 +1,45 @@
+{
+    "data": {
+        "address": "0x46ce2da01290ea2d1bced39bba149d017df34cb9",
+        "data_status": "AVAILABLE",
+        "labels": [
+            {
+                "wallet_label_id": 326499,
+                "category": "EXCHANGE",
+                "category_type": "ENTITY_TYPE",
+                "label": "FTX 10",
+                "entity": {
+                    "id": 11149,
+                    "name": "ftx"
+                },
+                "source": {
+                    "code": "wallet_attribution",
+                    "name": "Wallet Attribution (prettydeath)"
+                },
+                "source_field": "eth-labels",
+                "source_url": "https://github.com/dawsbot/eth-labels",
+                "upstream_category": "exchange",
+                "confidence": "medium",
+                "verification_status": "reported",
+                "evidence": {
+                    "observed_at": "2026-10-01T00:00:00Z",
+                    "source_field": "eth-labels",
+                    "upstream_record": {
+                        "label": "FTX 10",
+                        "entity": "ftx"
+                    },
+                    "fetch_checksum_part": "0392efcc458a60260dad72d08717ff46ad62df5e147bf551be7db3d1b27b81d6"
+                },
+                "observed_at": "2026-10-01T00:00:00Z",
+                "first_seen_at": "2026-11-03T09:58:12.818578Z",
+                "last_seen_at": "2026-11-03T09:58:12.818578Z",
+                "revoked_at": null
+            }
+        ],
+        "labels_count": 1,
+        "last_synced_at": "2026-11-03T09:58:12.818578Z",
+        "network": "ethereum",
+        "next_cursor": "",
+        "normalized_address": "0x46ce2da01290ea2d1bced39bba149d017df34cb9"
+    }
+}

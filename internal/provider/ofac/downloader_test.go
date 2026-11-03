@@ -225,5 +225,8 @@ func TestDownload_RetryAfterCapped(t *testing.T) {
 	require.NoError(t, err)
 	defer os.Remove(snap.Files[0].Path)
 	assert.Equal(t, int32(2), calls.Load())
-	assert.Less(t, time.Since(start), 2*time.Second, "Retry-After hint must be capped, not honored verbatim")
+	// The bound only needs to be absurdly smaller than the 1-year hint — a
+	// regression that honors it verbatim hangs and fails via test timeout.
+	// A tight bound (e.g. 2s) flakes under parallel-suite scheduling load.
+	assert.Less(t, time.Since(start), 30*time.Second, "Retry-After hint must be capped, not honored verbatim")
 }

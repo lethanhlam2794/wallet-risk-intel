@@ -1,0 +1,26 @@
+{
+    "data": {
+        "address": "0x0330070FD38Ec3bB94F58FA55D40368271E9e54A",
+        "address_type": "evm",
+        "data_status": "AVAILABLE",
+        "first_seen_at": "2026-11-03T06:39:22.391136Z",
+        "labels": [
+            {
+                "wallet_label_id": 429638,
+                "category": "SANCTIONED",
+                "category_type": "LEGAL",
+                "label": "OFAC sanctioned (ETH)",
+                "entity": {
+                    "id": 11521,
+                    "name": "OFAC SDN"
+                },
+                "confidence": "high",
+                "verification_status": "reported"
+            }
+        ],
+        "labels_count": 1,
+        "last_synced_at": "2026-11-03T06:39:22.391136Z",
+        "network": "ethereum",
+        "normalized_address": "0x0330070fd38ec3bb94f58fa55d40368271e9e54a"
+    }
+}
