@@ -70,3 +70,49 @@ Sanctions Intelligence (spec §19 Phases 1-2).
   - W5: stale-run sweep lacks liveness check
 - **Self-Audit Commitment**:
   - Review conducted by independent Devin session; orchestrator independently verified tree integrity post-audit.
+
+### [STAGE_4_VERIFICATION] - Stage 4: Remediation & Anonymous/Blind Test Saturation
+- **Completion Timestamp**: 2026-11-03 14:35:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] All 3 critical findings remediated (redirect SSRF, http:// scheme, unbounded Retry-After + detached-run timeout)
+  - [x] All 5 warnings remediated (Redis pointer removed, soft-revoke provenance, detail data_status, contract deviation recorded, heartbeat liveness)
+  - [x] 4 observation-level fixes applied (recovery envelope, GetRun 404/500 split, JSON bind 400, fail-open metric)
+  - [x] Blind/property saturation added: randomized EVM normalization tests (~15,000 cases) + `scripts/saturation-loop.sh` — 10/10 iterations PASS, `SCORE: 10/10`
+  - [x] Race suite clean post-remediation incl. heartbeat goroutine
+  - [x] Migration 000004 down/up replay verified; `check_wallet_test` v4 dirty=f
+- **Machine Evidence**:
+  - Remediation commit: `15638cd fix(ingestion): remediate Devin Review round-1 findings` (33 files, +1,049/−193)
+  - `gofmt -l .` clean · `go vet ./...` 0 · `go build ./...` 0 · `go test -count=1 ./...` all PASS · `go test -race ./...` all PASS
+  - Saturation: `SCORE: 10/10` across 10 shuffled fresh-cache iterations
+  - New tests: `TestDownload_RedirectToNonAllowlistedHostRejected`, `TestDownload_AllowlistedRedirectWorks`, `TestDownload_RetryAfterCapped`, `TestNewDownloader_RequiresHTTPS`, `TestIngestion_ProvenanceSoftRevoke`, property tests in `internal/wallet/address_property_test.go`
+
+### [STAGE_3_ROUND2_VERIFICATION] - Stage 3 Re-Review (Remediation Audit)
+- **Completion Timestamp**: 2026-11-03 14:33:00
+- **Reviewer Verdict**: APPROVED
+- **Machine Evidence**:
+  - Devin Review session id: `vanilla-wildebeest` (dangerous mode, read-only mandate)
+  - Report: `plans/20261103-1217-foundation-ofac-sanctions/reports/review-round-2.md`
+  - All 7 round-1 findings verified fixed with file:line + live psql/test evidence; reviewer ran fresh `go build/vet/test` at HEAD and inspected live `check_wallet_test` schema
+  - Reviewer independently caught a mid-audit gap (`data_status` dropped by entity handler's explicit response map) — fixed in `2a5710e`, verified by reviewer before verdict
+- **Post-verdict follow-ups** (LOW/TRIVIAL, non-blocking — remediated anyway):
+  - `edf8590`: heartbeat beats moved to pool conn (pgx conns forbid concurrent use) + goroutine joined via done channel — removes nanosecond-scale use-after-Release panic window; dead `staleRunAfter`/`programRef` removed
+  - Re-verified: build/vet/fmt clean, `go test -count=1` + `-race` all PASS
+
+### [STAGE_5_VERIFICATION] - Stage 5: Real-Browser E2E
+- **Completion Timestamp**: 2026-11-03 14:35:00
+- **Status**: SKIPPED-NO-UI
+- **Rationale**: Deliverable is a backend REST API + worker with no browser-rendered surface; no UI exists to drive real-browser E2E against. Substituted with equivalent live evidence instead:
+  - Real binary (`go build ./cmd/api`) serving against live Postgres/Redis
+  - Live endpoint captures for every public route: health/readiness, sanctioned match, non-match, mixed direct+unresolved scopes, entity detail, program detail, and all error envelopes (401/400/403) — saved under `docs/feature-maps/assets/live-*.json`
+  - Live admin route (`GET /admin/ingestion-runs/{id}`) captured against the real completed run
+- **Machine Evidence**: `docs/guidebook-ofac-sanctions.md` §§1-8 reproduces every response verbatim from the running server.
+
+### [STAGE_6_VERIFICATION] - Stage 6: Guidebook & Technical Feature Map
+- **Completion Timestamp**: 2026-11-03 14:40:00
+- **Status**: PASSED
+- **Deliverables**:
+  - Illustrated guidebook: `docs/guidebook-ofac-sanctions.md` — 10 sections, every example a real capture (no fabricated output), incl. SQL verification queries and ops runbook
+  - Technical feature map: `docs/feature-maps/foundation-ofac-sanctions.md` — module map, ingestion flow, NULL-safe match partitioning, reason model, freshness/caching, provenance, security posture, verification entry points, accepted deviations
+  - Evidence assets: `docs/feature-maps/assets/live-*.json` (9 real response captures)
+- **Machine Evidence**: real OFAC import `ofac-c1279a38fa18-1793687967` (19,484 entities / 1,075 listings / 72 programs); live API verified `data_status` on all detail endpoints post-fix.
