@@ -316,3 +316,18 @@ substitution, S6 docs published. Working tree intentionally uncommitted.
   - Report: `plans/20261104-1100-tx-provider-expansion/reports/review-round-1.md`; raw log `reports/review-round-1-raw.log`; prompt `reports/prompt-review.md`
   - Findings: B1 claim-release wipes `indexed_until_block`/`history_truncated` (service.go two sites); M1 tokenview 50-page cap fakes joined coverage; m1 bitquery NFT rows in token stream; m2 source-ID errors swallowed→srcID=0; m3 moralis `atoi` accepts "12x"; m4 stale cook-report header; n1 `Kinds` unused by callers; n2 missing regression tests
 - **Self-Audit Commitment**: reviewer session independent of Cook sessions; all findings evidence-cited with file:line; verdict blocks Stage 4 sign-off until remediated.
+
+### [TXP_STAGE_3_VERIFICATION_R2] - Stage 3: Devin Review Re-Audit (round 2)
+- **Completion Timestamp**: 2026-11-04 17:05:00
+- **Reviewer Verdict**: APPROVED (DONE_WITH_CONCERNS — 1 advisory Minor + 5 nits, none blocking)
+- **Audited Dimensions**:
+  - [x] All 8 round-1 findings re-verified FIXED against diff `8f41439..0726414`
+  - [x] New-issue audit of remediation diff (releaseClaim CAS semantics, Kinds consumer impact, tokenview state machine)
+  - [x] Regression-test honesty: real DB seeds + real wire shapes, defect-condition assertions, all PASS
+  - [x] Full suite re-run by reviewer: 40 pkgs green
+- **Machine Evidence**:
+  - Review session: fresh independent Devin CLI session; tree-hash `4c8bcf63…` identical before/after → read-only honored
+  - Report: `plans/20261104-1100-tx-provider-expansion/reports/review-round-2.md`; raw log `review-round-2-raw.log`; prompt `prompt-review-round-2.md`
+  - Remediation commit: `0726414`
+  - Advisory (non-blocking): advisory-claim TOCTOU — conditional-release `WHERE status='indexing'` noted as optional hardening; pre-existing hazard class
+- **Self-Audit Commitment**: re-review conducted by an independent session; verdict APPROVED clears the Stage 3 gate.

@@ -1,0 +1,67 @@
+I'll start by invoking the code review skill and reading the mandatory compliance inputs in parallel.Now let me examine the actual remediation diff for the core code files.Critical detail to check — whether `UpsertWalletIndexState` assigns `rows_indexed`/`rows_skipped_*` unconditionally (releaseClaim doesn't carry them).Now let me check all call sites of `UpsertWalletIndexState` (any other claim-release path) and how `Kinds` is consumed across adapters.`Kinds` is consumed by alchemy, nodereal, chainscan. Now let me check tatum/chainbase partitioning semantics and the other adapters' Kinds handling.tatum/chainbase don't read `opts.Kinds` — remediation report's justification is inaccurate but harmless. Let me verify alchemy's category set (could `[NATIVE,TOKEN]` now exclude "internal"/"external" categories it fetched before?).Alchemy maps `[NATIVE,TOKEN]` to `wantNative=wantToken=true` — identical to empty Kinds. Now the tokenview adapter in full, focusing on the state machine.Critical detail confirmed: `scanState` lives in `a.scans` map keyed `net|wallet|fetchFrom` — `headStalled` survives across calls in-process. Now the new test to check honesty.The tokenview fix looks structurally sound. Now let me check the `Budget` mechanics (a 50-page stall inside one `LookupTransfers` call settles against a pool that pre-paid 1) and the failover test file.Tests look honest — real DB seeds, verbatim assertions. Now the bitquery/moralis test diffs and the cook-report reconciliation.Moralis verified — strict atoi rejects "12x"/""/negatives; both call sites handle `ok`. Now the bitquery mapper context.Build/vet/fmt clean, bitquery selects `Fungible` on the wire. Now running the test suite.All provider/transaction tests pass. While the full suite runs, let me check how `EnsureIndexed` errors (the new `sourceID` failure return) surface on the wire, and verify the test DB tests aren't skipped.The `sourceID` error path surfaces as an error return through `ListTransactions`/`Exposures` — never a clean verdict. Let me check the generated sqlc params and scan the remaining remediation hunks.The generated upsert uses `+ EXCLUDED` accumulation for `rows_*` — releaseClaim's zero deltas preserve them. Let me verify the migration's schema defaults and check the remaining diff files.Schema confirms all releaseClaim writes satisfy CHECK/NOT NULL constraints. Now let me run the new regression tests explicitly for evidence.All new regression tests pass. Checking the full suite background run.Let me do a final check on the cook-report reconciliation and sweep for anything else in the remediation diff.Cook report is now internally consistent. One subtle race to evaluate: `MarkWalletIndexing` is an unconditional upsert (not a CAS), so let me trace the load→claim→release window for cross-process clobber risk, plus check the remaining test diff.Let me check the `Kinds` contract docs and verify the main.go chain wiring briefly.All verification complete. Compiling the final review.
+
+**Verified state of findings:**
+
+- **B1**: `releaseClaim` (service.go:566-585) restores all pre-claim fields verbatim; `rows_*` are delta-accumulated (`+ EXCLUDED`) in the generated upsert so zero params preserve them; both release sites (prepay-fail :346, head-lag :383) use it; `!exists` writes an honest empty `not_indexed` row; `indexing`→`not_indexed` for stale claims. Only other writers are `writeDisabled`/`writeTerminal` (carry coverage fields deliberately) and `MarkWalletIndexing` (the claim itself). ✓
+- **M1**: `headStalled` records the minimum unprovable `fetchTo`; cap path no longer sets `st.head`; `fin` requires `st.head >= opts.ToBlock` (join only via boundary row/empty page); `headBlocked()` guards entry + drain loop + token issuance; state lives in `a.scans` (keyed `net|wallet|fetchFrom`), so it honestly survives across calls in-process — no token carries it because a stalled call issues no token. ✓
+- **m1/m2/m3/m4/n1/n2**: all verified below.
+
+**New-issue audit**: One genuine residual — `MarkWalletIndexing` is an unconditional upsert, not a claim-CAS, so a racing process that loaded state before a concurrent claim can have its `releaseClaim` stale-restore overwrite the other process's terminal write (watermark 900→400 regression). Narrow window, cross-process only (singleflight covers intra-process), and strictly *understates* coverage (fail-safe, never over-claims). Pre-existing hazard class — the remediation made the same race *less* destructive than the old NULL-wipe.
+
+---
+
+## Verdict: **APPROVED**
+
+### Executive Summary
+
+Commit `0726414` remediates all 8 round-1 findings faithfully. `releaseClaim` restores the per-source coverage row verbatim (watermark, indexed_at, error, history_truncated, prior status) on both release paths — the exact defect that wiped state now preserves it, including the `!exists` honest-empty-row case. Tokenview's `headStalled` boundary eliminates the unearned join: `fin` requires a *proven* `st.head >= ToBlock`, stalled scans emit nothing, carry no continuation, and don't re-burn at the same/larger window. The three regression tests are honest — real DB rows, real wire shapes, defect-condition assertions — and all pass. The only new finding is a narrow pre-existing TOCTOU: `releaseClaim` can stale-restore over a concurrent terminal write (understate-only, fail-safe direction).
+
+### Round-1 finding verification
+
+| Finding | Verdict | Evidence |
+|---|---|---|
+| B1 claim-release wipes coverage | **FIXED** | `releaseClaim` restores `IndexedUntilBlock`/`IndexedAt`/`Error`/`HistoryTruncated`/`Status` verbatim (service.go:573-582); `indexing`→`not_indexed`; `!exists`→honest empty row; `rows_*` preserved via `+EXCLUDED` accumulation (transactions.sql:113-120). Both sites use it; no other wipe path. `TestFailover_HeadLagReleasePreservesCoverage` + `TestService_ReleaseClaimRestoresPreclaimRow` assert verbatim restore on real DB — PASS |
+| M1 tokenview cap fake-joins | **FIXED** | `st.headPage >= maxPage` now records `headStalled=opts.ToBlock`, zeroes headPage, never advances `st.head` (adapter.go:414-422); `fin` requires proven `head>=ToBlock` (:461); `headBlocked()` blocks entry/drain/token (:374-389,485). `TestHeadCatchupCapDeadEnd` pins 50 drained calls, zero emissions, no token, `UpstreamCalls=0` re-burn, smaller-window join — PASS (26s) |
+| m1 bitquery NFT in token stream | **FIXED** | `stream == streamToken && !tr.Currency.Fungible` → skip (mapper.go:88-92); query selects `Fungible` on the wire (:276); NFT fixture row pinned dropped in `TestMapping` |
+| m2 sourceID errors swallowed | **FIXED** | `return fmt.Errorf("source lookup %q: %w")` (service.go:210-216) — surfaces through `EnsureIndexed`→`ListTransactions`/`Exposures` as an error, never a clean verdict |
+| m3 moralis atoi prefix-truncates | **FIXED** | strict all-digits `(int64,bool)` — rejects `"12x"`, `""`, negatives (mapper.go:42-54); both call sites handle `ok` (adapter.go:220,240) |
+| m4 stale cook-report header | **FIXED** | header now "phases 01–12 implemented, tested, and committed"; checkpoint table labeled "phases 01–05 session checkpoint"; continuation table authoritative for 06–12 |
+| n1 `Kinds` dead contract field | **FIXED** | service passes `[NATIVE,TOKEN]` (service.go:413); verified all consumers — alchemy/nodereal/chainscan map both-listed ≡ both-true ≡ empty default (no behavior change); all other adapters ignore `Kinds` — semantic no-op, no regression |
+| n2 missing regression tests | **FIXED** | 3 new tests assert the actual defect conditions (verbatim field restore, zero-emission under unproven coverage, no re-burn) and pass on real DB/wire shapes |
+
+### New findings
+
+**[Minor] `releaseClaim` stale-restore can regress a concurrent terminal write (advisory-claim TOCTOU)** — `MarkWalletIndexing` is an unconditional upsert (`ON CONFLICT DO UPDATE SET status='indexing'`), not a claim-CAS. A second process that read state before a concurrent claim proceeds to `attemptFetch`; its `releaseClaim` then writes its stale pre-claim `st.row` over the first process's terminal write (e.g., watermark 900→400). Window: loadState→release (~1 head call). Direction is strictly *understate* — coverage regresses, never over-claims — so it self-heals on next refresh. Intra-process is closed by `singleflight`; exposure needs multi-replica deployment + head-lag. The same TOCTOU class exists at every write site and predates this remediation (the old code NULL-wiped in the same race — strictly worse). If multi-replica operation is planned, a conditional release (`UPDATE ... WHERE status='indexing'`) would close it. Not a blocker.
+
+**[Nit]** Moralis strict `atoi` has no dedicated regression test (minor fix; "12x"/""/negative rows).
+
+**[Nit]** `headBlocked` calls still consume 1 prepaid budget unit for 0 upstream calls — conservative over-charge, bounded.
+
+**[Nit]** `case srcID == 0: continue` (service.go:256) is now unreachable (srcID==0 only when `adapter==nil`, caught by the earlier gate) — harmless defensive residue.
+
+**[Nit]** Remediation report n1 claims tatum/chainbase "partition on Kinds" — they don't read `opts.Kinds` (consumers are alchemy/nodereal/chainscan). The code fix is correct; the justification names wrong adapters.
+
+**[Nit]** Bitquery test fixture marks native rows `Fungible: !native` = false — real BNB rows are fungible. Inert: the filter only gates the token stream.
+
+### Verification Evidence
+
+| Command | Result |
+|---|---|
+| `git log 914185d..0726414` | 16 commits; remediation = 1 commit (`0726414`) over `8f41439` |
+| `git diff --stat 8f41439..0726414` | 16 files, +657/−45 — code confined to service.go + 3 adapters + tests/docs |
+| `go build ./...` | clean |
+| `go vet ./...` | clean |
+| `gofmt -l .` | empty |
+| `go test -count=1 ./internal/provider/... ./internal/transaction/...` | **all ok** — 19 pkgs (tokenview 52s, transaction 14s) |
+| `go test -count=1 ./...` | **all ok** — 40 pkgs incl. `tests/` 45.7s (dedicated test DB), `tracing` 16.1s |
+| `go test -v -run TestHeadCatchupCapDeadEnd` + release tests | **PASS** — all 3 new regression tests + bitquery `TestMapping` |
+| Migration 000019 up/down SQL | unchanged; verified live in round 1 |
+| `git status` | no tracked modifications; read-only mandate honored |
+
+### Required Actions to Approve
+
+None. All round-1 required actions are implemented and verified. The Minor TOCTOU and nits may be documented/scheduled for hardening at owner discretion.
+
+Status: DONE_WITH_CONCERNS
+Summary: All 8 round-1 findings verified FIXED with honest regression tests that pass on real DB/wire shapes; the remediation introduces no blocking defects — only a narrow pre-existing cross-process stale-restore race (fail-safe direction) plus minor nits.
+Concerns/Blockers: Minor — `releaseClaim` inherits the advisory-claim TOCTOU (unconditional `MarkWalletIndexing` upsert): a racing process's release can stale-restore over a concurrent terminal write, regressing (never inflating) the per-source watermark; relevant only for multi-replica deployments.
