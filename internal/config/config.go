@@ -78,6 +78,11 @@ type Config struct {
 	BlockscoutEnabledChains  string
 	IndexingBudgetBlockscout int
 
+	AnkrAPIKey         string
+	AnkrBaseURL        string
+	AnkrEnabledChains  string
+	IndexingBudgetAnkr int
+
 	IndexingFreshTTL     time.Duration // fresh-serve horizon for index state
 	IndexingStaleAfter   time.Duration // stale 'indexing' claim retry horizon
 	IndexingPageSize     int
@@ -138,6 +143,9 @@ func Load() (*Config, error) {
 		AlchemyEnabledChains:      envOr("ALCHEMY_ENABLED_CHAINS", "ethereum,bsc"),
 		BlockscoutBaseURL:         envOr("BLOCKSCOUT_BASE_URL", "https://eth.blockscout.com"),
 		BlockscoutEnabledChains:   envOr("BLOCKSCOUT_ENABLED_CHAINS", "ethereum"),
+		AnkrAPIKey:                os.Getenv("ANKR_API_KEY"),
+		AnkrBaseURL:               envOr("ANKR_BASE_URL", "https://rpc.ankr.com/multichain"),
+		AnkrEnabledChains:         envOr("ANKR_ENABLED_CHAINS", "ethereum,bsc"),
 		IndexingFreshTTL:          envDur("TXINDEX_FRESH_TTL", 10*time.Minute),
 		IndexingStaleAfter:        envDur("TXINDEX_STALE_AFTER", 15*time.Minute),
 		IndexingWindowCapBSC:      envInt64Default("TXINDEX_WINDOW_CAP_BSC", 100000),
@@ -202,6 +210,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if cfg.IndexingBudgetBlockscout, err = envInt("TXINDEX_BUDGET_BLOCKSCOUT", 8); err != nil {
+		return nil, err
+	}
+	if cfg.IndexingBudgetAnkr, err = envInt("TXINDEX_BUDGET_ANKR", 8); err != nil {
 		return nil, err
 	}
 	if cfg.TracingMaxNodes, err = envInt("TRACING_MAX_NODES", 50); err != nil {

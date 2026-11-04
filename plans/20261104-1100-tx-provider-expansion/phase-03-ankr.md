@@ -1,7 +1,7 @@
 ---
 phase: 03
 title: Ankr transaction-history adapter
-status: pending
+status: completed
 priority: P1
 dependencies: [phase-02]
 ---
@@ -53,18 +53,32 @@ Follow internal/provider/nodereal + internal/provider/chainscan:
 6. Live-verify gate: BLOCKED (no ANKR_API_KEY).
 
 ## Success Criteria
-- [ ] TxProvider implemented; Enabled() gating correct
-- [ ] Streams report Finished per real upstream partition; ascending block order
-- [ ] UpstreamCalls accurate; budget charged correctly
-- [ ] data_sources row via migration (up+down apply)
-- [ ] Unit tests green with real-wire-shape mock
-- [ ] `Name()` == `data_sources.code` pinned by wiring test or boot check (swallowed `sourceID()` error → reset never fires)
-- [ ] `Budget[Name()] > 0` enforced (missing/typo'd `TXINDEX_BUDGET_<NAME>` env → pool 0 = unlimited)
-- [ ] if live-verify BLOCKED: adapter absent from ALL default `TX_PROVIDER_*` selectors
-- [ ] Gates pass; one conventional commit `feat(provider): add ankr transaction-history adapter`
-- [ ] Live-verify evidence = ALL of: upstream HeadBlock + upstream LookupTransfers on a real address + booted `GET /api/v1/wallets/<net>/<addr>/transactions?refresh=1` showing `provider_status:"ok"` (curl a lone HeadBlock does NOT count) — OR `live-verify: BLOCKED (no key)` reported
+- [x] TxProvider implemented; Enabled() gating correct
+- [x] Streams report Finished per real upstream partition; ascending block order
+- [x] UpstreamCalls accurate; budget charged correctly
+- [x] data_sources row via migration (up+down apply)
+- [x] Unit tests green with real-wire-shape mock
+- [x] `Name()` == `data_sources.code` pinned by wiring test or boot check (swallowed `sourceID()` error → reset never fires)
+- [x] `Budget[Name()] > 0` enforced (missing/typo'd `TXINDEX_BUDGET_<NAME>` env → pool 0 = unlimited)
+- [x] if live-verify BLOCKED: adapter absent from ALL default `TX_PROVIDER_*` selectors
+- [x] Gates pass; one conventional commit `feat(provider): add ankr transaction-history adapter`
+- [x] Live-verify evidence = ALL of: upstream HeadBlock + upstream LookupTransfers on a real address + booted `GET /api/v1/wallets/<net>/<addr>/transactions?refresh=1` showing `provider_status:"ok"` (curl a lone HeadBlock does NOT count) — OR `live-verify: BLOCKED (no key)` reported
 
 ## Risk Assessment
 - Contract drift: docs-first verification + real-shape mock.
 - Native-transfer gap: probe confirms coverage or NOT-VIABLE.
 - Rate limits: conservative client rate like nodereal.
+
+## Phase Report
+- Docs verified (api-docs.ankr.com OpenAPI): `ankr_getTransactionsByAddress`
+  on `rpc.ankr.com/multichain/{key}`, params is an OBJECT (NOT positional
+  array — deviation from alchemy/nodereal shape, pinned by request-shape
+  test); `blockchain:["eth"|"bsc"]`, `includeLogs:true`, `descOrder:false`
+  → ascending; hex-quantity fields; `nextPageToken`; `syncStatus`.
+- Streams: single `tx` stream — the upstream list is unified (from-or-to,
+  native+logs); partitioning it would fake coverage. TOKEN rows derive
+  from ERC-20 Transfer logs (topics[0]==Transfer sig, wallet in topics).
+- HeadBlock via chain-scoped Node API (rpc.ankr.com/{eth|bsc}/{key}) —
+  multichain serves Query-API methods only.
+- `syncStatus.status=="outOfSync"` → degraded (honest signal, never rows).
+- live-verify: BLOCKED (no ANKR_API_KEY) — absent from defaults.
