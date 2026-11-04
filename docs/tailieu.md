@@ -1941,30 +1941,30 @@ Do not implement without approval.
 
 The MVP is complete when:
 
-- [ ] Ethereum and BSC addresses can be validated.
-- [ ] OFAC Advanced XML can be downloaded.
-- [ ] XML can be parsed without loading the entire file into RAM.
-- [ ] OFAC entities can be imported into PostgreSQL.
-- [ ] OFAC wallet identifiers can be imported.
-- [ ] OFAC programs can be linked to entities.
-- [ ] Official source references are preserved.
-- [ ] Sanctions lookup returns direct matches.
-- [ ] Sanctions lookup returns entity information.
-- [ ] Sanctions lookup returns program information.
-- [ ] Missing reason details are explicitly represented.
-- [ ] Snapshot updates are atomic.
-- [ ] Failed snapshots do not destroy existing data.
-- [ ] Public wallet labels can be imported.
-- [ ] Multiple labels can coexist for one wallet.
-- [ ] Unknown addresses are not marked safe.
-- [ ] Screening requests are idempotent.
-- [ ] Provider outages do not corrupt local data.
-- [ ] Risk scores use a versioned policy.
-- [ ] Direct attribution and transaction exposure are separate.
-- [ ] Transaction paths retain supporting hashes.
-- [ ] Ingestion can recover after interruption.
-- [ ] Database constraints prevent duplicates.
-- [ ] Integration and failure tests pass.
+- [x] Ethereum and BSC addresses can be validated.
+- [x] OFAC Advanced XML can be downloaded.
+- [x] XML can be parsed without loading the entire file into RAM.
+- [x] OFAC entities can be imported into PostgreSQL.
+- [x] OFAC wallet identifiers can be imported.
+- [x] OFAC programs can be linked to entities.
+- [x] Official source references are preserved.
+- [x] Sanctions lookup returns direct matches.
+- [x] Sanctions lookup returns entity information.
+- [x] Sanctions lookup returns program information.
+- [x] Missing reason details are explicitly represented.
+- [x] Snapshot updates are atomic.
+- [x] Failed snapshots do not destroy existing data.
+- [x] Public wallet labels can be imported.
+- [x] Multiple labels can coexist for one wallet.
+- [x] Unknown addresses are not marked safe.
+- [x] Screening requests are idempotent.
+- [x] Provider outages do not corrupt local data.
+- [x] Risk scores use a versioned policy.
+- [x] Direct attribution and transaction exposure are separate.
+- [x] Transaction paths retain supporting hashes.
+- [x] Ingestion can recover after interruption.
+- [x] Database constraints prevent duplicates.
+- [x] Integration and failure tests pass.
 
 ---
 
