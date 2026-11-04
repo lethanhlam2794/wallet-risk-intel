@@ -36,6 +36,7 @@ import (
 	"checkwallet/internal/provider/bitquery"
 	"checkwallet/internal/provider/blockscout"
 	"checkwallet/internal/provider/chainabuse"
+	"checkwallet/internal/provider/chainbase"
 	"checkwallet/internal/provider/chainscan"
 	"checkwallet/internal/provider/covalent"
 	"checkwallet/internal/provider/goplus"
@@ -335,6 +336,16 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	if cfg.TokenviewAPIKey == "" {
 		log.Info("tokenview disabled: TOKENVIEW_API_KEY not configured")
 	}
+	cb, err := chainbase.New(cfg.ChainbaseBaseURL, cfg.ChainbaseAPIKey,
+		strings.Split(cfg.ChainbaseEnabledChains, ","),
+		chainbase.WithHooks(hooksFor(chainbase.SourceCode)),
+		chainbase.WithDurationFunc(m.ProviderDurationHook(chainbase.SourceCode)))
+	if err != nil {
+		return nil, nil, err
+	}
+	if cfg.ChainbaseAPIKey == "" {
+		log.Info("chainbase disabled: CHAINBASE_API_KEY not configured")
+	}
 
 	// Registry of every selectable provider; TX_PROVIDER_<NET> picks the
 	// serving adapter per network (first entry — failover lands phase-12).
@@ -350,6 +361,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		bitquery.SourceCode:   bq,
 		oklink.SourceCode:     ok,
 		tokenview.SourceCode:  tv,
+		chainbase.SourceCode:  cb,
 	}
 	ethAdapter, err := selectTxProvider("TX_PROVIDER_ETH", cfg.TxProviderETH,
 		chainscan.SourceCode, registry, log)
@@ -374,6 +386,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		bitquery.SourceCode:   cfg.IndexingBudgetBitquery,
 		oklink.SourceCode:     cfg.IndexingBudgetOklink,
 		tokenview.SourceCode:  cfg.IndexingBudgetTokenview,
+		chainbase.SourceCode:  cfg.IndexingBudgetChainbase,
 	}
 	// Boot checks (plan invariants): every registered provider must resolve
 	// a data_sources row — a typo'd Name() silently disables the

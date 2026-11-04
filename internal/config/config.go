@@ -113,6 +113,11 @@ type Config struct {
 	TokenviewEnabledChains  string
 	IndexingBudgetTokenview int
 
+	ChainbaseAPIKey         string
+	ChainbaseBaseURL        string
+	ChainbaseEnabledChains  string
+	IndexingBudgetChainbase int
+
 	IndexingFreshTTL     time.Duration // fresh-serve horizon for index state
 	IndexingStaleAfter   time.Duration // stale 'indexing' claim retry horizon
 	IndexingPageSize     int
@@ -194,6 +199,9 @@ func Load() (*Config, error) {
 		TokenviewAPIKey:           os.Getenv("TOKENVIEW_API_KEY"),
 		TokenviewBaseURL:          envOr("TOKENVIEW_BASE_URL", "https://services.tokenview.io"),
 		TokenviewEnabledChains:    envOr("TOKENVIEW_ENABLED_CHAINS", "ethereum,bsc"),
+		ChainbaseAPIKey:           os.Getenv("CHAINBASE_API_KEY"),
+		ChainbaseBaseURL:          envOr("CHAINBASE_BASE_URL", "https://api.chainbase.online"),
+		ChainbaseEnabledChains:    envOr("CHAINBASE_ENABLED_CHAINS", "ethereum,bsc"),
 		IndexingFreshTTL:          envDur("TXINDEX_FRESH_TTL", 10*time.Minute),
 		IndexingStaleAfter:        envDur("TXINDEX_STALE_AFTER", 15*time.Minute),
 		IndexingWindowCapBSC:      envInt64Default("TXINDEX_WINDOW_CAP_BSC", 100000),
@@ -279,6 +287,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if cfg.IndexingBudgetTokenview, err = envInt("TXINDEX_BUDGET_TOKENVIEW", 8); err != nil {
+		return nil, err
+	}
+	if cfg.IndexingBudgetChainbase, err = envInt("TXINDEX_BUDGET_CHAINBASE", 8); err != nil {
 		return nil, err
 	}
 	if cfg.TracingMaxNodes, err = envInt("TRACING_MAX_NODES", 50); err != nil {
