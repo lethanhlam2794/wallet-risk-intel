@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/joho/godotenv"
 
 	"checkwallet/internal/config"
 	"checkwallet/internal/db"
@@ -38,6 +39,7 @@ func main() {
 }
 
 func run(source, file string) error {
+	_ = godotenv.Load() // .env optional; real env always wins
 	cfg, err := config.Load()
 	if err != nil {
 		return err

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 
 	"checkwallet/internal/config"
@@ -53,6 +54,7 @@ func main() {
 }
 
 func run() error {
+	_ = godotenv.Load() // .env optional; real env always wins
 	cfg, err := config.Load()
 	if err != nil {
 		return err

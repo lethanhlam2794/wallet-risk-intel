@@ -7,6 +7,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.4
+	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/stretchr/testify v1.11.1

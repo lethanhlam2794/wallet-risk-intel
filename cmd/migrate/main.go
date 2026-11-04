@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/joho/godotenv"
+
 	"checkwallet/internal/platform/database"
 )
 
 func main() {
+	_ = godotenv.Load() // .env optional; real env always wins
 	dsn := os.Getenv("DATABASE_URL")
 	if len(os.Args) > 1 {
 		dsn = os.Args[1]
