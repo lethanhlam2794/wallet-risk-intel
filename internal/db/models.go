@@ -71,6 +71,27 @@ type IngestionRun struct {
 	HeartbeatAt      pgtype.Timestamptz `json:"heartbeat_at"`
 }
 
+type ProviderConfig struct {
+	SourceCode    string             `json:"source_code"`
+	ApiKey        pgtype.Text        `json:"api_key"`
+	BaseUrl       pgtype.Text        `json:"base_url"`
+	EnabledChains []byte             `json:"enabled_chains"`
+	Status        string             `json:"status"`
+	UpdatedBy     pgtype.Text        `json:"updated_by"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ProviderConfigChange struct {
+	ID            pgtype.UUID        `json:"id"`
+	SourceCode    string             `json:"source_code"`
+	ActorID       pgtype.Text        `json:"actor_id"`
+	ActorType     string             `json:"actor_type"`
+	Field         string             `json:"field"`
+	PreviousValue []byte             `json:"previous_value"`
+	NewValue      []byte             `json:"new_value"`
+	ChangedAt     pgtype.Timestamptz `json:"changed_at"`
+}
+
 type ProviderObservation struct {
 	ID             int64              `json:"id"`
 	SourceID       int64              `json:"source_id"`
