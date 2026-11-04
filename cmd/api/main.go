@@ -46,6 +46,7 @@ import (
 	"checkwallet/internal/provider/publicaml"
 	"checkwallet/internal/provider/resilience"
 	"checkwallet/internal/provider/tatum"
+	"checkwallet/internal/provider/tokenview"
 	"checkwallet/internal/provider/walletattribution"
 	"checkwallet/internal/sanctions"
 	"checkwallet/internal/screening"
@@ -324,6 +325,16 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	if cfg.OklinkAPIKey == "" {
 		log.Info("oklink disabled: OKLINK_API_KEY not configured")
 	}
+	tv, err := tokenview.New(cfg.TokenviewBaseURL, cfg.TokenviewAPIKey,
+		strings.Split(cfg.TokenviewEnabledChains, ","),
+		tokenview.WithHooks(hooksFor(tokenview.SourceCode)),
+		tokenview.WithDurationFunc(m.ProviderDurationHook(tokenview.SourceCode)))
+	if err != nil {
+		return nil, nil, err
+	}
+	if cfg.TokenviewAPIKey == "" {
+		log.Info("tokenview disabled: TOKENVIEW_API_KEY not configured")
+	}
 
 	// Registry of every selectable provider; TX_PROVIDER_<NET> picks the
 	// serving adapter per network (first entry — failover lands phase-12).
@@ -338,6 +349,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		tatum.SourceCode:      ta,
 		bitquery.SourceCode:   bq,
 		oklink.SourceCode:     ok,
+		tokenview.SourceCode:  tv,
 	}
 	ethAdapter, err := selectTxProvider("TX_PROVIDER_ETH", cfg.TxProviderETH,
 		chainscan.SourceCode, registry, log)
@@ -361,6 +373,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		tatum.SourceCode:      cfg.IndexingBudgetTatum,
 		bitquery.SourceCode:   cfg.IndexingBudgetBitquery,
 		oklink.SourceCode:     cfg.IndexingBudgetOklink,
+		tokenview.SourceCode:  cfg.IndexingBudgetTokenview,
 	}
 	// Boot checks (plan invariants): every registered provider must resolve
 	// a data_sources row — a typo'd Name() silently disables the
