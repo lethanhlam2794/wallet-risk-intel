@@ -237,7 +237,9 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network, wall
 		}
 		page.UpstreamCalls++
 		for _, tr := range out.Result {
-			page.Transfers = append(page.Transfers, mapToken(tr, opts.HeadBlock))
+			if t, ok := mapToken(tr, opts.HeadBlock); ok {
+				page.Transfers = append(page.Transfers, t)
+			}
 		}
 		if out.Cursor != "" && len(out.Result) > 0 {
 			tok.Token = out.Cursor

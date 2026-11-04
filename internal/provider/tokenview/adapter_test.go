@@ -25,6 +25,7 @@ type srv struct {
 	lastPath string
 	pages    map[int][]txRow // normal-tx-list pages, 1-based
 	head     int64
+	phase    int64 // test-only fixture phase selector
 }
 
 func newSrv(t *testing.T, pages map[int][]txRow, head int64) *srv {
@@ -240,5 +241,103 @@ func TestDisabled(t *testing.T) {
 	}
 	if s.calls != 0 {
 		t.Fatal("disabled adapter emitted traffic")
+	}
+}
+
+// Head catch-up exhausting the upstream page cap is a dead end: the
+// head segment can never be proven joined, so the scan emits nothing,
+// reports unfinished, carries no token, and never re-burns the 50 pages
+// on later calls. A smaller window can still join honestly.
+func TestHeadCatchupCapDeadEnd(t *testing.T) {
+	s := &srv{}
+	s.Server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		s.calls++
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		pg, _ := strconv.Atoi(parts[len(parts)-2])
+		var rows []txRow
+		switch s.phase {
+		case 0: // initial scan at head 100
+			if pg == 1 {
+				rows = []txRow{{Height: 100, Time: 1, TxID: "0xbase",
+					From: w, To: w, Value: "1"}}
+			}
+		case 1:
+			// Catch-up pages: newest-first rows all strictly above the
+			// proven boundary — a wallet busier than 50 pages can prove.
+			rows = []txRow{{Height: 4001 - int64(pg), Time: 1,
+				TxID: "0xc" + strconv.Itoa(pg), From: w, To: w, Value: "1"}}
+		case 2: // smaller-window retry: boundary row joins immediately
+			if pg == 1 {
+				rows = []txRow{{Height: 95, Time: 1, TxID: "0xbnd",
+					From: w, To: w, Value: "1"}}
+			}
+		}
+		json.NewEncoder(rw).Encode(map[string]any{
+			"code": 1, "data": []map[string]any{{"txs": rows}}})
+	}))
+	t.Cleanup(s.Server.Close)
+	u, _ := url.Parse(s.URL)
+	a, err := New(s.URL, "KEY", []string{"bsc"},
+		WithInsecureHTTP(), WithAllowedHosts(u.Host),
+		WithScanLimits(60, 0, 0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// Call 1: initial scan completes at head 100.
+	p1, err := a.LookupTransfers(ctx, bsc, w,
+		provider.TransferLookupOpts{FromBlock: 1, ToBlock: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p1.Transfers) != 1 {
+		t.Fatalf("initial emit: %+v", p1.Transfers)
+	}
+
+	// Call 2: head drift to 4000 — catch-up drains all 50 pages without
+	// a boundary row → dead end, NOT a fake join.
+	s.phase = 1
+	s.calls = 0
+	p2, err := a.LookupTransfers(ctx, bsc, w,
+		provider.TransferLookupOpts{FromBlock: 1, ToBlock: 4000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p2.Transfers) != 0 || p2.NextPageToken != "" {
+		t.Fatalf("unproven head segment must emit nothing: %+v", p2)
+	}
+	for _, ss := range p2.Streams {
+		if ss.Finished {
+			t.Fatalf("stalled catch-up must not claim coverage: %+v", p2.Streams)
+		}
+	}
+	if p2.UpstreamCalls != 50 {
+		t.Fatalf("calls %d, want 50 drained pages honestly counted", p2.UpstreamCalls)
+	}
+
+	// Call 3: same window — headBlocked → zero re-burn.
+	s.calls = 0
+	p3, err := a.LookupTransfers(ctx, bsc, w,
+		provider.TransferLookupOpts{FromBlock: 1, ToBlock: 4000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p3.UpstreamCalls != 0 || len(p3.Transfers) != 0 {
+		t.Fatalf("stalled boundary must not re-drain: %+v", p3)
+	}
+
+	// Call 4: smaller window below the stalled boundary CAN still join.
+	s.phase = 2
+	p4, err := a.LookupTransfers(ctx, bsc, w,
+		provider.TransferLookupOpts{FromBlock: 1, ToBlock: 150})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p4.Transfers) != 1 || p4.Transfers[0].BlockNumber != 100 {
+		t.Fatalf("joined smaller window emits proven rows only: %+v", p4.Transfers)
+	}
+	if p4.UpstreamCalls != 1 {
+		t.Fatalf("boundary row joins in one page: %d", p4.UpstreamCalls)
 	}
 }

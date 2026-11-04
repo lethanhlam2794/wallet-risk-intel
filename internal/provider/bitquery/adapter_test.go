@@ -136,7 +136,8 @@ func TestMapping(t *testing.T) {
 			Transaction: tx{Hash: hash},
 			Transfer: transfer{
 				Sender: sender, Receiver: receiver, Amount: amount, Success: true,
-				Currency: currency{SmartContract: smartContract, Decimals: decimals, Native: native},
+				Currency: currency{SmartContract: smartContract, Decimals: decimals,
+					Native: native, Fungible: !native},
 			},
 		}
 	}
@@ -147,6 +148,15 @@ func TestMapping(t *testing.T) {
 		map[string][]transferRow{"0": {
 			mk("0xH3", 102, w, "0xcccccccccccccccccccccccccccccccccccccccc",
 				"12.34", 2, false, "0xTOKEN"),
+			// NFT rows must be dropped from the token stream.
+			transferRow{
+				Block:       block{Number: "103", Time: "2024-01-01T00:00:01Z"},
+				Transaction: tx{Hash: "0xNFT"},
+				Transfer: transfer{Sender: w,
+					Receiver: "0xdddddddddddddddddddddddddddddddddddddddd",
+					Amount:   "1", Success: true,
+					Currency: currency{SmartContract: "0xNFT", Fungible: false}},
+			},
 		}}, 0)
 	a := newAdapter(t, s, "KEY", []string{"bsc"})
 	p, err := a.LookupTransfers(context.Background(), bsc, w,

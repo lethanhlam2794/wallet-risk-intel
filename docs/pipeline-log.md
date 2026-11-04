@@ -285,3 +285,34 @@ substitution, S6 docs published. Working tree intentionally uncommitted.
   - Tree integrity: `git status` shows zero production-code writes by critic (only plan-dir + this log)
 - **Debate summary**: 6 rounds total (R1:14 findings, R3:8, R4:7, R5:2, R6:consensus). Key concessions: no honest newest-first prefix ⇒ drain/buffer-only emission; schema re-key ripples must be answered before failover code; probe-BLOCKED ≠ NOT-VIABLE.
 - **Self-Audit Commitment**: plan fully grounded in verified code realities (TxProvider shape, coverage derivation service.go:385-388, request-scoped token :301, wallet_index_state PK, identity.go counts); zero speculative assumptions survive to Cook.
+
+### [TXP_STAGE_2_VERIFICATION] - Stage 2: Devin Cook Implementation (tx-provider-expansion)
+- **Completion Timestamp**: 2026-11-04 15:37:00
+- **Status**: PASSED (orchestrator-verified gates, not Cook-claimed)
+- **Completed Tasks**:
+  - [x] Cook session `broadleaf-sort` (dangerous): phases 01–05 TDD; context-budget checkpoint at cook-report.md
+  - [x] Cook session `cyber-date` (dangerous): phases 06–12; blockchair honestly NOT-VIABLE (no BSC coverage, probe evidence); phase-12 design doc D1–D5 + re-key migration + chain walk
+  - [x] Per-phase conventional commits (13 impl + 1 closeout); strict Red→Green visible in session log
+  - [x] Orchestrator independently ran all gates at HEAD `8f41439`
+- **Machine Evidence**:
+  - `gofmt -l .` → empty · `go vet ./...` → clean · `go build ./...` → clean
+  - `go test -count=1 ./...` → ALL PASS: 39 packages, incl. 10 new adapter suites + failover suite; `tests/` 45.6s
+  - Commits `b9d3a7c..8f41439` (14): alchemy, blockscout (live-verify PASSED), ankr, covalent, moralis, tatum, bitquery, oklink, tokenview, chainbase adapters; blockchair NOT-VIABLE doc; `7e9e730` failover chain + migration 000019 re-key `(network_id,wallet_id,source_id)`
+  - Diff stat `914185d..8f41439`: 97 files, +11,657/−198
+  - Blockscout live-verify: booted API `provider_status:"ok"`, `indexed_until_block:26340033`, 7 real rows (ERC-20, 2017-era)
+  - Cook report: `plans/20261104-1100-tx-provider-expansion/reports/cook-report.md`; design doc `reports/phase-12-design.md`; viability `reports/blockchair-viability.md`
+- **Self-Audit Commitment**: no test weakening observed in diffs; all keyed adapters honestly `live-verify: BLOCKED` and absent from default selectors; per-source watermarks structural post-re-key.
+
+### [TXP_STAGE_3_VERIFICATION] - Stage 3: Devin Review Independent Code Audit (round 1)
+- **Completion Timestamp**: 2026-11-04 16:20:00
+- **Reviewer Verdict**: CHANGES_REQUESTED (1 Blocker + 1 Major + 3 Minors + 2 Nits)
+- **Audited Dimensions**:
+  - [x] Complete diff audit `914185d..8f41439` (97 files, +11,657/−198)
+  - [x] Build/vet/gofmt/full suite independently re-verified by reviewer
+  - [x] Migration 000019 up+down inspected; failover semantics audited against plan D1–D5
+  - [x] Test integrity: no weakened assertions found; 2 regression-test gaps flagged
+- **Machine Evidence**:
+  - Review session: independent fresh Devin CLI session, read-only mandate (established downgrade path); tree-hash verified zero production writes
+  - Report: `plans/20261104-1100-tx-provider-expansion/reports/review-round-1.md`; raw log `reports/review-round-1-raw.log`; prompt `reports/prompt-review.md`
+  - Findings: B1 claim-release wipes `indexed_until_block`/`history_truncated` (service.go two sites); M1 tokenview 50-page cap fakes joined coverage; m1 bitquery NFT rows in token stream; m2 source-ID errors swallowed→srcID=0; m3 moralis `atoi` accepts "12x"; m4 stale cook-report header; n1 `Kinds` unused by callers; n2 missing regression tests
+- **Self-Audit Commitment**: reviewer session independent of Cook sessions; all findings evidence-cited with file:line; verdict blocks Stage 4 sign-off until remediated.

@@ -85,6 +85,11 @@ func mapRow(row transferRow, stream string, head int64) (provider.Transfer, bool
 	if row.Transaction.Hash == "" || tr.Sender == "" || tr.Receiver == "" {
 		return provider.Transfer{}, false
 	}
+	if stream == streamToken && !tr.Currency.Fungible {
+		// The token query selects Native:false, which admits ERC-721
+		// transfers — non-fungible rows are not token transfers.
+		return provider.Transfer{}, false
+	}
 	blockNum, err := row.Block.Number.Int64()
 	if err != nil {
 		return provider.Transfer{}, false

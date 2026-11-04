@@ -1,10 +1,13 @@
 # Cook Report — tx-provider expansion (phases 01–12)
 
-Status at this checkpoint: **phases 01–05 implemented, tested, and committed;
-phases 06–12 not yet started** (context budget exhausted mid-run — execution
-continues sequentially from phase 06).
+Status: **phases 01–12 implemented, tested, and committed.** The first
+Cook session checkpointed after phase-05 (context budget); a fresh
+continuation session completed phases 06–12 — see the continuation
+section below for outcomes, commits, and findings. The phase table and
+commit list under "phases 01–05 session" reflect that first checkpoint;
+the continuation table is authoritative for phases 06–12.
 
-## Per-phase outcomes
+## Per-phase outcomes (phases 01–05 session checkpoint)
 
 | Phase | Adapter | Outcome | Live-verify |
 |---|---|---|---|
@@ -13,13 +16,7 @@ continues sequentially from phase 06).
 | 03 | ankr (eth+bsc) | implemented | BLOCKED (no ANKR_API_KEY) |
 | 04 | covalent (bsc) | implemented | BLOCKED (no COVALENT_API_KEY) |
 | 05 | moralis (bsc) | implemented | BLOCKED (no MORALIS_API_KEY) |
-| 06 | tatum (bsc) | not started | — |
-| 07 | bitquery probe | not started | — |
-| 08 | oklink probe | not started | — |
-| 09 | blockchair probe | not started | — |
-| 10 | tokenview probe | not started | — |
-| 11 | chainbase probe | not started | — |
-| 12 | failover chain | not started | — |
+| 06–12 | see continuation section | all implemented & committed | — |
 
 ## Commits (phase order)
 

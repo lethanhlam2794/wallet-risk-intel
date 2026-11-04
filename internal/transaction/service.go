@@ -207,9 +207,14 @@ func (s *Service) ensure(ctx context.Context, net network.Network,
 	for i, adapter := range chain {
 		var srcID int64
 		if adapter != nil {
-			if id, err := s.sourceID(ctx, adapter.Name()); err == nil {
-				srcID = id
+			id, err := s.sourceID(ctx, adapter.Name())
+			if err != nil {
+				// Resolution failure is infrastructure error, not a
+				// skippable source — silent skip would mask a DB outage
+				// behind a stale verdict.
+				return nil, fmt.Errorf("source lookup %q: %w", adapter.Name(), err)
 			}
+			srcID = id
 		}
 		st := &ixState{}
 		if srcID != 0 {
@@ -336,12 +341,9 @@ func (s *Service) attemptFetch(ctx context.Context, net network.Network,
 	}
 	if !prepay() {
 		// Raced drain between the exhausted check and the prepay —
-		// release the claim (not_indexed) then report never-attempted.
-		if _, uerr := s.q.UpsertWalletIndexState(ctx, db.UpsertWalletIndexStateParams{
-			NetworkID: net.ID, WalletID: walletID, SourceID: srcID,
-			IndexedAt: pgtype.Timestamptz{Time: now, Valid: true},
-			Status:    StatusNotIndexed,
-		}); uerr != nil {
+		// release the claim (revert to pre-claim content) then report
+		// never-attempted.
+		if uerr := s.releaseClaim(ctx, net.ID, walletID, srcID, st); uerr != nil {
 			return nil, false, uerr
 		}
 		fillFromState(out, st, s.cfg.FreshTTL, now)
@@ -378,11 +380,7 @@ func (s *Service) attemptFetch(ctx context.Context, net network.Network,
 		// Node lag or >tail reorg: no transfer call is honest — serve
 		// persisted facts; head_block on the wire evidences the
 		// condition. The index claim is released — nothing was indexed.
-		if _, uerr := s.q.UpsertWalletIndexState(ctx, db.UpsertWalletIndexStateParams{
-			NetworkID: net.ID, WalletID: walletID, SourceID: srcID,
-			IndexedAt: pgtype.Timestamptz{Time: now, Valid: true},
-			Status:    StatusNotIndexed,
-		}); uerr != nil {
+		if uerr := s.releaseClaim(ctx, net.ID, walletID, srcID, st); uerr != nil {
 			return nil, false, uerr
 		}
 		fillFromState(out, st, s.cfg.FreshTTL, now)
@@ -412,6 +410,7 @@ func (s *Service) attemptFetch(ctx context.Context, net network.Network,
 		page, err := adapter.LookupTransfers(ctx, net, normalized,
 			provider.TransferLookupOpts{
 				FromBlock: fetchFrom, ToBlock: fetchTo,
+				Kinds:     []string{provider.TransferKindNative, provider.TransferKindToken},
 				PageToken: token, PageSize: s.cfg.PageSize,
 				HeadBlock: head,
 			})
@@ -554,6 +553,35 @@ func errKind(err error) string {
 		return string(le.Kind)
 	}
 	return string(provider.ErrInternal)
+}
+
+// releaseClaim reverts an 'indexing' claim to the row's pre-claim
+// content. MarkWalletIndexing only touches status/error/updated_at, but
+// the generic upsert assigns every column unconditionally — so a plain
+// not_indexed write would wipe indexed_until_block/history_truncated,
+// the per-source coverage this re-keyed row exists to keep. The revert
+// carries st.row verbatim; a claim-created row (!st.exists) reverts to
+// an honest empty not_indexed row, and a stale 'indexing' predecessor
+// releases as not_indexed (a claim is not coverage).
+func (s *Service) releaseClaim(ctx context.Context, netID, walletID,
+	srcID int64, st *ixState) error {
+
+	p := db.UpsertWalletIndexStateParams{
+		NetworkID: netID, WalletID: walletID, SourceID: srcID,
+		Status: StatusNotIndexed,
+	}
+	if st.exists {
+		p.IndexedUntilBlock = st.row.IndexedUntilBlock
+		p.IndexedAt = st.row.IndexedAt
+		p.Error = st.row.Error
+		p.HistoryTruncated = st.row.HistoryTruncated
+		p.Status = st.row.Status
+		if p.Status == StatusIndexing {
+			p.Status = StatusNotIndexed
+		}
+	}
+	_, err := s.q.UpsertWalletIndexState(ctx, p)
+	return err
 }
 
 // writeDisabled records the disabled terminal (error='disabled' — an

@@ -249,10 +249,14 @@ type scanState struct {
 	floorSet  bool
 	head      int64 // fetchTo joined so far
 	headPage  int   // head catch-up page cursor (0 = not draining)
-	native    []provider.Transfer
-	token     []provider.Transfer
-	seen      map[string]bool
-	emitted   bool
+	// headStalled is the smallest fetchTo whose head catch-up exhausted
+	// the upstream page cap without joining — any fetchTo ≥ it needs
+	// strictly more pages, so it stays unprovable (dead end, no re-burn).
+	headStalled int64
+	native      []provider.Transfer
+	token       []provider.Transfer
+	seen        map[string]bool
+	emitted     bool
 }
 
 func (s *scanState) covered(fetchFrom int64) bool {
@@ -365,7 +369,12 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network, wall
 	if opts.PageToken == "" {
 		st.emitted = false // refresh boundary: rows emit again
 	}
-	if opts.ToBlock > st.head && st.headPage == 0 {
+	// headBlocked: a previous catch-up proved this window's head segment
+	// unreachable within the upstream page cap — dead end, never re-burn.
+	headBlocked := func() bool {
+		return st.headStalled > 0 && opts.ToBlock >= st.headStalled
+	}
+	if opts.ToBlock > st.head && st.headPage == 0 && !headBlocked() {
 		st.headPage = 1 // drain (head..newTo] newest-first
 	}
 	drop := func(err error) (*provider.TransferPage, error) {
@@ -377,7 +386,7 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network, wall
 
 	calls := 0
 	budget := a.maxScanPages
-	for budget > 0 {
+	for budget > 0 && !headBlocked() {
 		switch {
 		case st.headPage > 0:
 			// Head catch-up drains from page 1 until hitting rows ≤ head.
@@ -399,9 +408,18 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network, wall
 					}
 				}
 			}
-			if done || st.headPage >= maxPage {
+			if done {
 				st.headPage = 0
 				st.head = opts.ToBlock
+			} else if st.headPage >= maxPage {
+				// Catch-up hit the upstream ceiling without reaching a
+				// boundary row — the head segment is unprovable. Record
+				// the stalled boundary and stop spending: claiming join
+				// here would emit rows over an unfetched hole.
+				st.headPage = 0
+				if st.headStalled == 0 || opts.ToBlock < st.headStalled {
+					st.headStalled = opts.ToBlock
+				}
 			} else {
 				st.headPage++
 			}
@@ -438,7 +456,9 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network, wall
 	}
 
 	cov := st.covered(opts.FromBlock)
-	fin := cov && st.headPage == 0
+	// Joined requires the proven boundary to cover this call's fetchTo —
+	// a stalled or in-progress catch-up can never claim it.
+	fin := cov && st.headPage == 0 && st.head >= opts.ToBlock
 	page := &provider.TransferPage{UpstreamCalls: calls,
 		Streams: []provider.StreamStatus{
 			{Name: streamNative, Finished: fin},
@@ -459,9 +479,10 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network, wall
 		emit(st.native)
 		emit(st.token)
 	}
-	// Continuation only when fetching remains possible: capped (dead end)
-	// carries no token — unfinished streams alone report the partial.
-	if !fin && !st.capped {
+	// Continuation only when fetching remains possible: capped or
+	// head-stalled (dead ends) carry no token — unfinished streams alone
+	// report the partial.
+	if !fin && !st.capped && !headBlocked() {
 		b, _ := json.Marshal(tokenState{V: 1, Page: st.page, HeadPage: st.headPage,
 			Exhausted: st.exhausted, Floor: st.floor, FloorSet: st.floorSet, Head: st.head})
 		page.NextPageToken = string(b)

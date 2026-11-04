@@ -335,3 +335,99 @@ func TestFailover_BudgetSemantics(t *testing.T) {
 	assert.Equal(t, int64(0), sec2.headCalls.Load(),
 		"per-provider cap is a boundary stop, not a failover")
 }
+
+// Regression (review round-1 Blocker): the claim-release upserts must
+// restore the row's pre-claim content — never wipe the per-source
+// watermark or history_truncated the re-keyed row exists to keep.
+
+// Head-lag release path: provider head below fetchFrom releases the
+// claim with ALL prior coverage fields intact (a routine condition —
+// lagging explorer backends sit >reorg-tail behind the watermark).
+func TestFailover_HeadLagReleasePreservesCoverage(t *testing.T) {
+	pool := testutil.RequireTestPoolDSN(t, testDSN)
+	pri := newStub("chainscan")
+	pri.head = 100 // below fetchFrom = 400-4+1 = 397 (ReorgTail=4)
+	svc, q, net := newSvcChain(t, pool, []*stubTx{pri},
+		map[string]int{"chainscan": 8})
+
+	w, err := wallet.NewService(q).GetOrCreate(context.Background(),
+		net.ID, addrRoot, addrRoot)
+	require.NoError(t, err)
+	src, err := q.GetSourceByCode(context.Background(), "chainscan")
+	require.NoError(t, err)
+	_, err = q.UpsertWalletIndexState(context.Background(),
+		db.UpsertWalletIndexStateParams{
+			NetworkID: net.ID, WalletID: w.ID, SourceID: src.ID,
+			IndexedUntilBlock: pgtype.Int8{Int64: 400, Valid: true},
+			IndexedAt: pgtype.Timestamptz{
+				Time: time.Now().Add(-time.Hour), Valid: true},
+			Status:           StatusPartial,
+			Error:            pgtype.Text{String: "degraded", Valid: true},
+			HistoryTruncated: true,
+		})
+	require.NoError(t, err)
+
+	out, err := svc.EnsureIndexed(context.Background(), net, addrRoot,
+		EnsureOptions{Refresh: true})
+	require.NoError(t, err)
+	require.NotNil(t, out.HeadBlock)
+	assert.Equal(t, int64(100), *out.HeadBlock)
+
+	row := getStateSrc(t, pool, net.ID, w.ID, "chainscan")
+	assert.True(t, row.IndexedUntilBlock.Valid)
+	assert.Equal(t, int64(400), row.IndexedUntilBlock.Int64,
+		"claim release must never wipe the watermark")
+	assert.True(t, row.HistoryTruncated,
+		"claim release must never wipe truncation truth")
+	assert.Equal(t, StatusPartial, row.Status,
+		"release restores the pre-claim status, not not_indexed")
+	assert.Equal(t, "degraded", row.Error.String)
+}
+
+// releaseClaim restores pre-claim content verbatim (the raced-drain
+// prepay path uses the same helper); a claim-created row reverts to an
+// honest empty not_indexed row — no phantom coverage either way.
+func TestService_ReleaseClaimRestoresPreclaimRow(t *testing.T) {
+	pool := testutil.RequireTestPoolDSN(t, testDSN)
+	svc, q, net := newSvcChain(t, pool, []*stubTx{newStub("chainscan")},
+		map[string]int{"chainscan": 8})
+	w, err := wallet.NewService(q).GetOrCreate(context.Background(),
+		net.ID, addrRoot, addrRoot)
+	require.NoError(t, err)
+	src, err := q.GetSourceByCode(context.Background(), "chainscan")
+	require.NoError(t, err)
+
+	seeded, err := q.UpsertWalletIndexState(context.Background(),
+		db.UpsertWalletIndexStateParams{
+			NetworkID: net.ID, WalletID: w.ID, SourceID: src.ID,
+			IndexedUntilBlock: pgtype.Int8{Int64: 700, Valid: true},
+			IndexedAt: pgtype.Timestamptz{
+				Time: time.Now().Add(-time.Hour), Valid: true},
+			Status:           StatusPartial,
+			Error:            pgtype.Text{String: "transport", Valid: true},
+			HistoryTruncated: true,
+		})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.releaseClaim(context.Background(),
+		net.ID, w.ID, src.ID, &ixState{exists: true, row: seeded}))
+	row := getStateSrc(t, pool, net.ID, w.ID, "chainscan")
+	assert.Equal(t, int64(700), row.IndexedUntilBlock.Int64)
+	assert.True(t, row.HistoryTruncated)
+	assert.Equal(t, StatusPartial, row.Status)
+	assert.Equal(t, "transport", row.Error.String)
+
+	// Claim-created row (!st.exists) → honest empty not_indexed row.
+	w2, err := wallet.NewService(q).GetOrCreate(context.Background(),
+		net.ID, addrA, addrA)
+	require.NoError(t, err)
+	require.NoError(t, svc.q.MarkWalletIndexing(context.Background(),
+		db.MarkWalletIndexingParams{
+			NetworkID: net.ID, WalletID: w2.ID, SourceID: src.ID}))
+	require.NoError(t, svc.releaseClaim(context.Background(),
+		net.ID, w2.ID, src.ID, &ixState{}))
+	row2 := getStateSrc(t, pool, net.ID, w2.ID, "chainscan")
+	assert.Equal(t, StatusNotIndexed, row2.Status)
+	assert.False(t, row2.IndexedUntilBlock.Valid)
+	assert.False(t, row2.HistoryTruncated)
+}

@@ -37,22 +37,30 @@ type tokenRow struct {
 	BlockTimestamp  string `json:"block_timestamp"`
 }
 
-func atoi(s string) int64 {
+// atoi parses a strict decimal string; any non-digit byte or empty
+// input fails — a truncated prefix like "12x"→12 is a silent lie.
+func atoi(s string) (int64, bool) {
+	if s == "" {
+		return 0, false
+	}
 	var n int64
 	for _, c := range s {
 		if c < '0' || c > '9' {
-			break
+			return 0, false
 		}
 		n = n*10 + int64(c-'0')
 	}
-	return n
+	return n, true
 }
 
 func mapNative(tx nativeRow, head int64) (provider.Transfer, bool) {
 	if tx.Value == "" || tx.Value == "0" {
 		return provider.Transfer{}, false
 	}
-	block := atoi(tx.BlockNumber)
+	block, ok := atoi(tx.BlockNumber)
+	if !ok {
+		return provider.Transfer{}, false
+	}
 	var conf int64
 	if head > 0 && block > 0 {
 		conf = head - block + 1
@@ -67,8 +75,11 @@ func mapNative(tx nativeRow, head int64) (provider.Transfer, bool) {
 	}, true
 }
 
-func mapToken(tx tokenRow, head int64) provider.Transfer {
-	block := atoi(tx.BlockNumber)
+func mapToken(tx tokenRow, head int64) (provider.Transfer, bool) {
+	block, ok := atoi(tx.BlockNumber)
+	if !ok {
+		return provider.Transfer{}, false
+	}
 	var conf int64
 	if head > 0 && block > 0 {
 		conf = head - block + 1
@@ -80,5 +91,5 @@ func mapToken(tx tokenRow, head int64) provider.Transfer {
 		From: strings.ToLower(tx.FromAddress), To: strings.ToLower(tx.ToAddress),
 		Asset: strings.ToLower(tx.Address), AmountRaw: tx.Value,
 		BlockNumber: block, BlockTimestamp: ts, Confirmations: conf,
-	}
+	}, true
 }
