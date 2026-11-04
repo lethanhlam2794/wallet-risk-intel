@@ -22,6 +22,9 @@ import (
 	"checkwallet/internal/network"
 	"checkwallet/internal/platform/metrics"
 	"checkwallet/internal/sanctions"
+	"checkwallet/internal/screening"
+	"checkwallet/internal/tracing"
+	"checkwallet/internal/transaction"
 	"checkwallet/internal/wallet"
 )
 
@@ -52,6 +55,12 @@ type Deps struct {
 	Labels *label.Service
 	// Enrichment wires GET /wallets/:network/:address/enrichment when set.
 	Enrichment *enrichment.Service
+	// Screening wires POST/GET /screenings when set.
+	Screening *screening.Service
+	// Transactions wires GET .../transactions when set.
+	Transactions *transaction.Service
+	// Tracing wires GET .../exposures when set (requires Transactions).
+	Tracing *tracing.Service
 	// Metrics wires request instrumentation and /metrics when set.
 	Metrics *metrics.Metrics
 }
@@ -107,6 +116,20 @@ func New(d Deps) *gin.Engine {
 		api.GET("/sanctions/wallets/:network/:address", sc.WalletLookup)
 		api.GET("/sanctions/entities/:id", sc.Entity)
 		api.GET("/sanctions/programs/:code", sc.Program)
+	}
+
+	if d.Screening != nil {
+		sh := screening.NewHandler(d.Screening, d.Resolver, d.Queries, d.Logger)
+		api.POST("/screenings", sh.Create)
+		api.GET("/screenings/:id", sh.GetByID)
+	}
+
+	if d.Transactions != nil {
+		th := NewTxHandler(d.Transactions, d.Tracing, d.Resolver)
+		api.GET("/wallets/:network/:address/transactions", th.Transactions)
+		if d.Tracing != nil {
+			api.GET("/wallets/:network/:address/exposures", th.Exposures)
+		}
 	}
 
 	// Metrics scrape endpoint: reader-authenticated (phase 02 posture).

@@ -163,6 +163,29 @@ type SanctionsWallet struct {
 	RevokedAt          pgtype.Timestamptz `json:"revoked_at"`
 }
 
+type ScreeningRequest struct {
+	ID                int64              `json:"id"`
+	ClientID          int64              `json:"client_id"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	RequestHash       string             `json:"request_hash"`
+	ScreeningResultID pgtype.UUID        `json:"screening_result_id"`
+	ClaimedAt         pgtype.Timestamptz `json:"claimed_at"`
+}
+
+type ScreeningResult struct {
+	ID                   pgtype.UUID        `json:"id"`
+	WalletID             int64              `json:"wallet_id"`
+	RiskScore            pgtype.Int2        `json:"risk_score"`
+	RiskLevel            string             `json:"risk_level"`
+	ScreeningStatus      string             `json:"screening_status"`
+	ScoringPolicyVersion string             `json:"scoring_policy_version"`
+	Findings             []byte             `json:"findings"`
+	ProviderStatus       []byte             `json:"provider_status"`
+	ScreenedAt           pgtype.Timestamptz `json:"screened_at"`
+	Request              []byte             `json:"request"`
+	Result               []byte             `json:"result"`
+}
+
 type StgSanctionsEntity struct {
 	RunID            pgtype.UUID `json:"run_id"`
 	ExternalEntityID string      `json:"external_entity_id"`
@@ -224,6 +247,23 @@ type StgWalletLabel struct {
 	Evidence         []byte      `json:"evidence"`
 }
 
+type Transaction struct {
+	ID                 int64              `json:"id"`
+	NetworkID          int64              `json:"network_id"`
+	TxHash             string             `json:"tx_hash"`
+	TransferIndex      string             `json:"transfer_index"`
+	TransferType       string             `json:"transfer_type"`
+	FromWalletID       pgtype.Int8        `json:"from_wallet_id"`
+	ToWalletID         pgtype.Int8        `json:"to_wallet_id"`
+	AssetIdentifier    pgtype.Text        `json:"asset_identifier"`
+	AmountRaw          pgtype.Numeric     `json:"amount_raw"`
+	BlockNumber        pgtype.Int8        `json:"block_number"`
+	BlockTimestamp     pgtype.Timestamptz `json:"block_timestamp"`
+	ConfirmationStatus string             `json:"confirmation_status"`
+	IsError            bool               `json:"is_error"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+}
+
 type Wallet struct {
 	ID                int64              `json:"id"`
 	NetworkID         int64              `json:"network_id"`
@@ -232,6 +272,21 @@ type Wallet struct {
 	AddressType       string             `json:"address_type"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WalletIndexState struct {
+	NetworkID                  int64              `json:"network_id"`
+	WalletID                   int64              `json:"wallet_id"`
+	SourceID                   pgtype.Int8        `json:"source_id"`
+	IndexedUntilBlock          pgtype.Int8        `json:"indexed_until_block"`
+	IndexedAt                  pgtype.Timestamptz `json:"indexed_at"`
+	Status                     string             `json:"status"`
+	Error                      pgtype.Text        `json:"error"`
+	RowsIndexed                int64              `json:"rows_indexed"`
+	RowsSkippedMissingContract int64              `json:"rows_skipped_missing_contract"`
+	RowsSkippedInvalidAddress  int64              `json:"rows_skipped_invalid_address"`
+	HistoryTruncated           bool               `json:"history_truncated"`
+	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WalletLabel struct {

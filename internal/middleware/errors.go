@@ -19,6 +19,10 @@ const (
 	CodeConflict       = "INGESTION_RUNNING"
 	CodeInvalidCursor  = "INVALID_CURSOR"
 	CodeInvalidSource  = "INVALID_SOURCE"
+
+	// Screening idempotency conflicts (plan §3.3).
+	CodeIdempotencyConflict = "IDEMPOTENCY_CONFLICT"
+	CodeIdempotencyInFlight = "IDEMPOTENCY_IN_FLIGHT"
 )
 
 type errorEnvelope struct {

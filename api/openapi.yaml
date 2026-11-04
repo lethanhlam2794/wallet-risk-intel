@@ -1,23 +1,27 @@
 openapi: 3.1.0
 info:
   title: Blockchain Wallet Risk Intelligence API
-  version: "0.2.0"
+  version: "0.3.0"
   description: |
     REST API for wallet risk signals over published OFAC SDN sanctions data,
-    public attribution labels, and live third-party enrichment.
+    public attribution labels, live third-party enrichment, and versioned
+    risk scoring.
 
-    Implemented scope (spec §19 phases 1–4): network catalog, wallet
+    Implemented scope (spec §19 phases 1–5): network catalog, wallet
     normalization, sanctions wallet/entity/program lookups, public
-    attribution labels, live multi-provider wallet enrichment, admin
-    ingestion, health probes, and metrics. Later-phase endpoints
-    (screenings, tracing) are intentionally absent.
+    attribution labels, live multi-provider wallet enrichment, synchronous
+    risk screenings with claim-first idempotency, admin ingestion, health
+    probes, metrics, and bounded transaction indexing/tracing
+    (native + fungible-token scope, 1-hop/2-hop BFS).
 
     **Semantics**: a non-match is data, never a safety verdict. `matched:false`
     means "no listing on this network in the current snapshot" — see
     `cross_chain_observations` and `unresolved_network_listings` for listings
     of the same address that cannot count as a direct match. Provider
     observations are `reported` — never auto-verified — and provider
-    failures surface as typed statuses, never as clean results.
+    failures surface as typed statuses, never as clean results. Screening
+    scores are heuristic, versioned (`scoring.policy_version`), and always
+    accompanied by `data_completeness` — `LOW` never means "proven safe".
   contact:
     name: Engineering
 servers:
@@ -28,6 +32,7 @@ tags:
   - name: reference
   - name: wallets
   - name: sanctions
+  - name: screenings
   - name: admin
 
 paths:
@@ -438,6 +443,253 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
+  /api/v1/wallets/{network}/{address}/transactions:
+    get:
+      tags: [wallets]
+      summary: Indexed transactions for a wallet
+      description: |
+        Lazy on-demand indexing: the wallet's native + fungible-token
+        transfer history is fetched from the configured provider on first
+        request, then served from the index under the freshness gate.
+        `index_scope: "native+token"` declares that INTERNAL transfers and
+        NFTs are out of scope. A provider failure, bounded fetch, or
+        DISABLED provider is reported honestly in the coverage fields —
+        never as a clean empty list. Reverted transactions are retained
+        with `is_error=true` (they move nothing, but are forensic data).
+      parameters:
+        - { $ref: "#/components/parameters/Network" }
+        - { $ref: "#/components/parameters/Address" }
+        - name: direction
+          in: query
+          schema: { type: string, enum: [in, out, self] }
+          description: >-
+            Edge direction relative to the wallet. A wallet→wallet self
+            transfer is emitted once with `direction="self"` and matches
+            both `in` and `out` filters.
+        - name: asset
+          in: query
+          schema: { type: string }
+          description: '`native` or a token contract address.'
+        - name: from_timestamp
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to_timestamp
+          in: query
+          schema: { type: string, format: date-time }
+        - name: cursor
+          in: query
+          schema: { type: string }
+          description: Opaque keyset cursor from a previous `next_cursor`.
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 100, minimum: 1 }
+        - name: refresh
+          in: query
+          schema: { type: boolean, default: false }
+          description: >-
+            Bypasses the freshness gate (re-fetches); the FAILED cooldown
+            still holds.
+      responses:
+        "200":
+          description: Indexed transaction page plus index coverage.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/TransactionPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/wallets/{network}/{address}/exposures:
+    get:
+      tags: [wallets]
+      summary: Bounded 1–5 hop exposure tracing
+      description: |
+        Bounded BFS over indexed transfers (`tracing_method:
+        "bounded_bfs"`). Hop-1 counterparties come from the root wallet's
+        index; each may become an ordered expansion position whose own
+        index is lazily built for deeper hops, one frontier per depth up
+        to `max_hops`. A **path is transaction evidence, never
+        ownership**: `direct_counterparty` / `indirect_hop` describe
+        graph distance only — a path does not prove shared control or
+        identical fund flow. Expansion never crosses networks; labels
+        observed for the same normalized address on a *different*
+        network are reported as `kind:"label"` signals carrying
+        `network` + `listed_address` provenance, never local category
+        winners. Each item carries `exposure_score` — a separately
+        versioned (`exposure_policy_version`) evidence weight in
+        0–100 (null when every signal is informational-only); it never
+        feeds `risk_score`. Bounds are honest: `truncated` (sibling of `coverage`)
+        names the binding reason (deadline > max_provider_requests >
+        max_nodes > max_edges > response_cap > limit), and the
+        `*_by_hop` maps report per-frontier positions, attempts,
+        emitted contiguous prefixes, and remainder. Reverted
+        transfers (`is_error`) produce no edges.
+      parameters:
+        - { $ref: "#/components/parameters/Network" }
+        - { $ref: "#/components/parameters/Address" }
+        - name: max_hops
+          in: query
+          schema: { type: integer, enum: [1, 2, 3, 4, 5], default: 2 }
+          description: '`=1` emits hop-1 items only; `0` or `>5` → 400.'
+        - name: direction
+          in: query
+          schema: { type: string, enum: [in, out] }
+          description: >-
+            Filters the hop-1 edge set before position derivation;
+            deeper-hop edges are bidirectional facts (unfiltered).
+            Default is both directions.
+        - name: category
+          in: query
+          schema: { type: string }
+          description: Post-assembly filter over all `matched_signals`.
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 100, minimum: 1 }
+        - name: refresh
+          in: query
+          schema: { type: boolean, default: false }
+          description: >-
+            Applies to every index performed this request; the FAILED
+            cooldown still holds.
+      responses:
+        "200":
+          description: Matched counterparties with evidence + coverage.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ExposureResult" }
+              example:
+                data:
+                  items:
+                    - counterparty: "0x00000000000000000000000000000000000000c9"
+                      category: cross_chain_listing
+                      matched_signals:
+                        - kind: label
+                          category: SCAM
+                          label: seeded-foreign
+                          source: wallet_attribution
+                          verification_status: reported
+                          network: bsc
+                          listed_address: "0x00000000000000000000000000000000000000C9"
+                      relationship: indirect_hop
+                      hops: 3
+                      exposure_score: 12
+                      paths:
+                        - hop_count: 3
+                          path_verified: false
+                          temporal_order_valid: true
+                          edges:
+                            - from_address: "0x00000000000000000000000000000000000000b1"
+                              to_address: "0x00000000000000000000000000000000000000a1"
+                              network: ethereum
+                              tx_hash: "0xd1"
+                              transfer_index: "0"
+                              transfer_type: NATIVE
+                              asset: native
+                              amount_raw: "7"
+                              block_number: 90
+                              block_timestamp: "2023-11-14T22:13:20Z"
+                              confirmation_status: confirmed
+                            - from_address: "0x00000000000000000000000000000000000000b2"
+                              to_address: "0x00000000000000000000000000000000000000b1"
+                              network: ethereum
+                              tx_hash: "0xd2"
+                              transfer_index: "0"
+                              transfer_type: NATIVE
+                              asset: native
+                              amount_raw: "7"
+                              block_number: 95
+                              block_timestamp: "2023-11-14T22:13:25Z"
+                              confirmation_status: confirmed
+                            - from_address: "0x00000000000000000000000000000000000000c9"
+                              to_address: "0x00000000000000000000000000000000000000b2"
+                              network: ethereum
+                              tx_hash: "0xd3"
+                              transfer_index: "0"
+                              transfer_type: NATIVE
+                              asset: native
+                              amount_raw: "7"
+                              block_number: 100
+                              block_timestamp: "2023-11-14T22:13:30Z"
+                              confirmation_status: confirmed
+                      transaction_evidence:
+                        - from_address: "0x00000000000000000000000000000000000000b1"
+                          to_address: "0x00000000000000000000000000000000000000a1"
+                          network: ethereum
+                          tx_hash: "0xd1"
+                          transfer_index: "0"
+                          transfer_type: NATIVE
+                          asset: native
+                          amount_raw: "7"
+                          block_number: 90
+                          block_timestamp: "2023-11-14T22:13:20Z"
+                          confirmation_status: confirmed
+                        - from_address: "0x00000000000000000000000000000000000000b2"
+                          to_address: "0x00000000000000000000000000000000000000b1"
+                          network: ethereum
+                          tx_hash: "0xd2"
+                          transfer_index: "0"
+                          transfer_type: NATIVE
+                          asset: native
+                          amount_raw: "7"
+                          block_number: 95
+                          block_timestamp: "2023-11-14T22:13:25Z"
+                          confirmation_status: confirmed
+                        - from_address: "0x00000000000000000000000000000000000000c9"
+                          to_address: "0x00000000000000000000000000000000000000b2"
+                          network: ethereum
+                          tx_hash: "0xd3"
+                          transfer_index: "0"
+                          transfer_type: NATIVE
+                          asset: native
+                          amount_raw: "7"
+                          block_number: 100
+                          block_timestamp: "2023-11-14T22:13:30Z"
+                          confirmation_status: confirmed
+                  tracing_method: bounded_bfs
+                  exposure_policy_version: exposure-v1
+                  truncated: null
+                  coverage:
+                    counterparties_total: 2
+                    nodes_examined: 2
+                    positions_emitted: 2
+                    nodes_remaining: 0
+                    nodes_failed: 0
+                    edges_examined: 3
+                    provider_calls: 6
+                    provider_status: ok
+                    sanctions_snapshot_version: null
+                    labels_snapshot_version: null
+                    node_indexed_until:
+                      "0x00000000000000000000000000000000000000b1": 100
+                      "0x00000000000000000000000000000000000000b2": 100
+                    head_block: 100
+                    frontier_by_hop: { "2": 1, "3": 1 }
+                    nodes_examined_by_hop: { "2": 1, "3": 1 }
+                    frontier_emitted_by_hop: { "2": 1, "3": 1 }
+                    nodes_remaining_by_hop: { "2": 0, "3": 0 }
+                    max_depth_reached: 3
+                    root:
+                      index_status: fresh
+                      stale: false
+                      provider_status: ok
+                      indexed_until_block: 100
+                      indexed_at: "2026-11-04T04:00:00Z"
+                      history_truncated: false
+                      index_scope: "native+token"
+                      rows_indexed: 1
+                      rows_skipped:
+                        missing_contract: 0
+                        invalid_address: 0
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /api/v1/sanctions/wallets/{network}/{address}:
     get:
       tags: [sanctions]
@@ -612,6 +864,126 @@ paths:
                   source_url: null
                   source_code: ofac_sdn
                   associated_entities_count: 2
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/screenings:
+    post:
+      tags: [screenings]
+      summary: Run a synchronous risk screening
+      description: |
+        Executes one screening synchronously: sanctions, labels, and live
+        provider inputs are gathered, scored under policy `v1.0.0`, and
+        persisted durably before the response is sent.
+
+        **Deliberate deviation from spec §9.6**: the spec's example shows
+        `202 Accepted` + `PENDING`. There is no job queue — the pipeline is
+        synchronous, so this endpoint returns `201` with the complete §9.7
+        result and a `Location` header. `PENDING` exists only as a
+        transient idempotency-claim state and is never persisted.
+
+        **Latency**: worst case ≈ the provider fan-out deadline (~25 s)
+        plus local lookups. Clients should use a >30 s timeout.
+
+        **Idempotency**: send `Idempotency-Key` to dedupe retries. The key
+        is bound to the canonical request (resolved network, normalized
+        address, defaulted options) via SHA-256 — same key + different
+        payload is always `409 IDEMPOTENCY_CONFLICT`. A same-key,
+        same-payload retry while the original is still running polls
+        briefly, then either replays the terminal result (`200` +
+        `Idempotent-Replay: true`) or returns `409 IDEMPOTENCY_IN_FLIGHT`.
+        Without the header every POST creates a new screening.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: |
+            Dedupe key — 1–255 chars of `[A-Za-z0-9._~-]`. Absent, empty,
+            or whitespace-only keys disable idempotency.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+            pattern: "^[A-Za-z0-9._~-]+$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScreeningRequest" }
+            example:
+              network: ethereum
+              address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+              options:
+                include_sanctions: true
+                include_labels: true
+                include_exposure: true
+                max_hops: 2
+                refresh_providers: false
+      responses:
+        "201":
+          description: Screening completed and persisted.
+          headers:
+            Location:
+              description: URL of the stored result.
+              schema: { type: string, example: "/api/v1/screenings/7d0f6a1e-2b3c-4d5e-8f9a-0b1c2d3e4f5a" }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ScreeningResult" }
+        "200":
+          description: Idempotent replay of an already-completed screening.
+          headers:
+            Idempotent-Replay:
+              schema: { type: string, enum: ["true"] }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ScreeningResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: |
+            `IDEMPOTENCY_CONFLICT` — the key was already used with a
+            different request payload; `IDEMPOTENCY_IN_FLIGHT` — a
+            same-key, same-payload screening is still running past the
+            bounded wait.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              examples:
+                conflict:
+                  value:
+                    error: { code: IDEMPOTENCY_CONFLICT, message: "Idempotency-Key already used with a different request", request_id: "req_..." }
+                in_flight:
+                  value:
+                    error: { code: IDEMPOTENCY_IN_FLIGHT, message: "another screening with this key is still in flight", request_id: "req_..." }
+
+  /api/v1/screenings/{id}:
+    get:
+      tags: [screenings]
+      summary: Fetch a stored screening result
+      description: |
+        Returns the persisted §9.7 result byte-identically — results are
+        stored as type `json` and replay verbatim. Any reader may fetch
+        any result UUID (results are not client-private).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Stored screening result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ScreeningResult" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -1053,15 +1425,459 @@ components:
         snapshot_checksum: { type: ["string", "null"] }
         snapshot_version: { type: ["string", "null"] }
         error_message: { type: ["string", "null"] }
-    ErrorEnvelope:
+    ScreeningRequest:
       type: object
+      required: [network, address]
       properties:
-        error:
+        network:
+          type: string
+          description: Network code.
+          example: ethereum
+        address:
+          type: string
+          description: EVM address (20-byte hex, 0x prefix optional).
+          pattern: "^(0x)?[0-9a-fA-F]{40}$"
+        options:
           type: object
           properties:
-            code: { type: string }
-            message: { type: string }
-            request_id: { type: ["string", "null"] }
+            include_sanctions:
+              type: boolean
+              default: true
+              description: Evaluate the direct-sanctions dimension.
+            include_labels:
+              type: boolean
+              default: true
+              description: Evaluate the direct-labels dimension.
+            include_exposure:
+              type: boolean
+              default: true
+              description: |
+                Include provider-reported exposures. `false` marks
+                `exposures.evaluated=false` +
+                `coverage.disabled_by_request` — never a clean verdict.
+            max_hops:
+              type: integer
+              minimum: 0
+              maximum: 2
+              default: 2
+              description: Exposure scoring bound; rejected outside 0–2.
+            refresh_providers:
+              type: boolean
+              default: false
+              description: Bypass the provider cache when the refresh
+                cooldown allows it.
+    ScreeningResult:
+      type: object
+      description: |
+        The §9.7 screening result — persisted and replayed
+        byte-identically. `risk_score` is NULL under
+        `INSUFFICIENT_DATA`; `risk_level` UNKNOWN. A `LOW` score is a
+        heuristic finding, not a safe verdict — read
+        `data_completeness` alongside.
+      properties:
+        screening_id: { type: string, format: uuid }
+        network: { type: string }
+        address:
+          type: string
+          description: Normalized lowercase 0x address.
+        status:
+          type: string
+          enum: [COMPLETED, PARTIAL, INSUFFICIENT_DATA, FAILED]
+        risk_score:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 100
+        risk_level:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN]
+        direct_sanctions:
+          type: object
+          properties:
+            evaluated:
+              type: boolean
+              description: false → the dimension was excluded by request.
+            matched: { type: boolean }
+            entries:
+              type: array
+              items: { $ref: "#/components/schemas/SanctionEntry" }
+        direct_labels:
+          type: object
+          properties:
+            evaluated: { type: boolean }
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Label" }
+            collected: { type: integer }
+            truncated:
+              type: boolean
+              description: true → the 1000-label hard cap was reached.
+        exposures:
+          type: object
+          properties:
+            evaluated: { type: boolean }
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/ScreeningExposure" }
+            coverage: { $ref: "#/components/schemas/ScreeningCoverage" }
+        scoring: { $ref: "#/components/schemas/ScreeningScoring" }
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/EvidenceRef" }
+        provider_status: { $ref: "#/components/schemas/ScreeningProviderStatus" }
+        data_completeness: { $ref: "#/components/schemas/DataCompleteness" }
+        screened_at: { type: string, format: date-time }
+    ScreeningExposure:
+      type: object
+      description: |
+        Provider-reported indirect exposure — `basis` is always
+        `provider_reported`; never under `transaction_evidence` and
+        never proof of ownership.
+      properties:
+        counterparty: { type: string }
+        category: { type: string }
+        hops: { type: integer }
+        direction: { type: string }
+        provider_score: { type: number }
+        source: { type: string }
+        basis:
+          type: string
+          enum: [provider_reported]
+        scored:
+          type: boolean
+          description: |
+            Whether hops satisfied `max_hops` ∧ ≤ 2. Unscored items are
+            listed as reported evidence, never silently dropped.
+    ScreeningCoverage:
+      type: object
+      properties:
+        tracing:
+          type: string
+          enum: [provider_reported_only, bounded_bfs]
+          description: >-
+            Own-graph tracing is provider_reported_only on this surface;
+            bounded_bfs is the /exposures method.
+        max_hops_requested: { type: integer }
+        disabled_by_request: { type: boolean }
+    ScreeningScoring:
+      type: object
+      properties:
+        policy_version:
+          type: string
+          enum: ["v1.0.0"]
+        score:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 100
+        risk_level:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN]
+        flags:
+          type: array
+          items: { type: string, enum: [DIRECT_SANCTIONS] }
+        blocks:
+          type: object
+          properties:
+            direct: { $ref: "#/components/schemas/BlockScore" }
+            exposure: { $ref: "#/components/schemas/BlockScore" }
+            other: { $ref: "#/components/schemas/BlockScore" }
+        reasons:
+          type: array
+          items: { $ref: "#/components/schemas/ScoringReason" }
+    BlockScore:
+      type: object
+      properties:
+        subtotal: { type: integer }
+        capped:
+          type: boolean
+          description: true → the block cap bound the subtotal.
+    ScoringReason:
+      type: object
+      properties:
+        code:
+          type: string
+          enum: [DIRECT_SANCTIONS_MATCH, DIRECT_LABEL,
+                 LABEL_CLASSIFICATION, PROVIDER_OBSERVATION,
+                 PROVIDER_SCORE, EXPOSURE_PROVIDER, CROSS_CHAIN_LISTING,
+                 SNAPSHOT_STALE, PROVIDER_FAILED, NOT_EVALUATED]
+        category: { type: string }
+        verification_status:
+          type: string
+          enum: [verified, reported, unverified, disputed]
+        weight: { type: integer }
+        evidence_ref: { type: string }
+    EvidenceRef:
+      type: object
+      description: |
+        {kind, ref} joining reasons to proof — `wallet_labels.id` for
+        labels, `{sanctions_entity_id}` for sanctions rows,
+        `{source, fetched_at}` for provider observations.
+      properties:
+        kind:
+          type: string
+          enum: [sanctions, label, provider_observation, provider_score,
+                 exposure, cross_chain_listing]
+        ref:
+          description: Scalar id or composite reference object.
+    ScreeningProviderStatus:
+      type: object
+      properties:
+        providers:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/ScreeningProviderEntry" }
+          description: Per-source outcome — OK / typed failure / DISABLED.
+        fanout:
+          $ref: "#/components/schemas/ScreeningProviderEntry"
+          description: >
+            Wholesale enrichment-pipeline failure, when the fan-out itself
+            errored and no per-source results exist. A named sibling field —
+            never a pseudo-provider key inside `providers`.
+        sanctions: { $ref: "#/components/schemas/SnapshotStatus" }
+        labels: { $ref: "#/components/schemas/SnapshotStatus" }
+    ScreeningProviderEntry:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [OK, DEGRADED, RATE_LIMITED, TIMEOUT, UPSTREAM_5XX,
+                 CLIENT_4XX, MALFORMED, CIRCUIT_OPEN, DISABLED, TRANSPORT, ERROR]
+        enabled: { type: boolean }
+        cached: { type: boolean }
+        fetched_at: { type: ["string", "null"], format: date-time }
+        error: { $ref: "#/components/schemas/ProviderError" }
+        provider_score:
+          type: number
+          description: The provider's own score — never the internal score.
+    SnapshotStatus:
+      type: object
+      properties:
+        data_status:
+          type: string
+          enum: [AVAILABLE, STALE, UNAVAILABLE, NOT_REQUESTED]
+        last_synced_at: { type: ["string", "null"], format: date-time }
+    DataCompleteness:
+      type: object
+      description: |
+        Per-dimension availability — always accompanies a score;
+        `usable=false` dimensions contribute nothing, `NOT_REQUESTED`
+        was excluded by request.
+      properties:
+        sanctions: { $ref: "#/components/schemas/DimensionStatus" }
+        labels: { $ref: "#/components/schemas/DimensionStatus" }
+        labels_collected: { type: integer }
+        labels_truncated: { type: boolean }
+        providers:
+          type: object
+          properties:
+            usable:
+              type: array
+              items: { type: string }
+            degraded:
+              type: array
+              items: { type: string }
+            disabled:
+              type: array
+              items: { type: string }
+              description: DISABLED is configuration, not a failure.
+        exposure: { $ref: "#/components/schemas/DimensionStatus" }
+    DimensionStatus:
+      type: object
+      properties:
+        requested: { type: boolean }
+        data_status:
+          type: string
+          enum: [AVAILABLE, STALE, UNAVAILABLE, NOT_REQUESTED]
+        usable: { type: boolean }
+        stale: { type: boolean }
+    IndexCoverage:
+      type: object
+      description: >-
+        Persisted lazy-index state — served even when no upstream call
+        occurred. `provider_status` is an ErrKind, "ok" after a succeeded
+        attempt, or null when no attempt is known.
+      properties:
+        index_status:
+          type: string
+          enum: [not_indexed, indexing, fresh, partial, failed, disabled]
+        stale: { type: boolean }
+        provider_status:
+          type: ["string", "null"]
+          enum: [ok, timeout, rate_limited, degraded, malformed,
+                 circuit_open, disabled, not_configured, internal]
+        indexed_until_block: { type: ["integer", "null"] }
+        indexed_at: { type: ["string", "null"], format: date-time }
+        head_block: { type: ["integer", "null"] }
+        history_truncated: { type: boolean }
+        index_scope: { type: string, enum: ["native+token"] }
+        rows_indexed: { type: integer }
+        rows_skipped:
+          type: object
+          properties:
+            missing_contract: { type: integer }
+            invalid_address: { type: integer }
+    TransactionItem:
+      type: object
+      properties:
+        tx_hash: { type: string }
+        direction: { type: string, enum: [in, out, self] }
+        transfer_type: { type: string, enum: [NATIVE, TOKEN] }
+        asset_identifier: { type: ["string", "null"] }
+        amount_raw:
+          type: string
+          description: Raw integer amount (NUMERIC) — never a float.
+        counterparty: { type: string }
+        block_number: { type: ["integer", "null"] }
+        block_timestamp: { type: ["string", "null"], format: date-time }
+        confirmation_status: { type: string, enum: [pending, confirmed] }
+        is_error: { type: boolean }
+        transfer_index: { type: string }
+    TransactionPage:
+      allOf:
+        - $ref: "#/components/schemas/IndexCoverage"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/TransactionItem" }
+            next_cursor: { type: string }
+    ExposureSignal:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [sanctions_direct, label, listing]
+        category: { type: string }
+        label: { type: string }
+        entity:
+          type: object
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        programs:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              name: { type: ["string", "null"] }
+        source: { type: string }
+        verification_status: { type: string }
+        network: { type: ["string", "null"] }
+        listed_address: { type: string }
+    ExposureEdge:
+      type: object
+      properties:
+        from_address: { type: string }
+        to_address: { type: string }
+        network: { type: string }
+        tx_hash: { type: string }
+        transfer_index: { type: string }
+        transfer_type: { type: string, enum: [NATIVE, TOKEN] }
+        asset:
+          type: string
+          description: '"native" for NATIVE rows, else the contract.'
+        amount_raw: { type: string }
+        block_number: { type: ["integer", "null"] }
+        block_timestamp: { type: ["string", "null"], format: date-time }
+        confirmation_status: { type: string, enum: [pending, confirmed] }
+    ExposurePath:
+      type: object
+      properties:
+        hop_count: { type: integer }
+        path_verified:
+          type: boolean
+          description: Always false in MVP — a path is evidence, never proof.
+        temporal_order_valid: { type: boolean }
+        edges:
+          type: array
+          items: { $ref: "#/components/schemas/ExposureEdge" }
+    ExposureItem:
+      type: object
+      properties:
+        counterparty: { type: string }
+        category: { type: string }
+        matched_signals:
+          type: array
+          items: { $ref: "#/components/schemas/ExposureSignal" }
+        relationship:
+          type: string
+          enum: [direct_counterparty, indirect_hop]
+          description: Graph distance only — never ownership.
+        hops: { type: integer, enum: [1, 2, 3, 4, 5] }
+        exposure_score:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 100
+          description: >-
+            exposure-v1 evidence weight — Σ per-signal base × hop decay ×
+            verification × confidence, per-term half-up rounded, capped
+            100. `null` when every signal is informational-only.
+            Separately versioned from risk scoring; never feeds
+            `risk_score`.
+        paths:
+          type: array
+          items: { $ref: "#/components/schemas/ExposurePath" }
+        transaction_evidence:
+          type: array
+          items: { $ref: "#/components/schemas/ExposureEdge" }
+    ExposureResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ExposureItem" }
+        tracing_method: { type: string, enum: [bounded_bfs] }
+        exposure_policy_version:
+          type: string
+          enum: [exposure-v1]
+          description: >-
+            Version of the per-item `exposure_score` policy — emitted
+            always; scores are reproducible by version.
+        truncated:
+          type: ["string", "null"]
+          enum: [deadline, max_provider_requests, max_nodes, max_edges,
+                 response_cap, limit]
+        coverage:
+          type: object
+          properties:
+            counterparties_total:
+              type: integer
+              description: Σ |frontier_d| over materialized frontier index {2..max_hops}.
+            nodes_examined: { type: integer }
+            positions_emitted:
+              type: integer
+              description: Σ contiguous resolved prefixes across depths.
+            nodes_remaining: { type: integer }
+            nodes_failed: { type: integer }
+            edges_examined: { type: integer }
+            provider_calls: { type: integer }
+            provider_status: { type: ["string", "null"] }
+            sanctions_snapshot_version: { type: ["string", "null"] }
+            labels_snapshot_version: { type: ["string", "null"] }
+            node_indexed_until:
+              type: object
+              additionalProperties: { type: ["integer", "null"] }
+              description: Attempted positions only.
+            head_block: { type: ["integer", "null"] }
+            frontier_by_hop:
+              type: object
+              additionalProperties: { type: integer }
+              description: '|frontier_d| keyed by frontier index {2..max_hops}.'
+            nodes_examined_by_hop:
+              type: object
+              additionalProperties: { type: integer }
+              description: Attempted positions per frontier index.
+            frontier_emitted_by_hop:
+              type: object
+              additionalProperties: { type: integer }
+              description: Contiguous emitted prefix length per frontier index.
+            nodes_remaining_by_hop:
+              type: object
+              additionalProperties: { type: integer }
+              description: Positions never attempted per frontier index.
+            max_depth_reached:
+              type: integer
+              description: Deepest frontier index with ≥1 attempt (0 = none).
+            root: { $ref: "#/components/schemas/IndexCoverage" }
 
   responses:
     BadRequest:

@@ -205,3 +205,84 @@ func StampRequestedChain(err error, chain string) {
 		le.RequestedChain = chain
 	}
 }
+
+// ---- Transaction-history provider contract (phase 6, plan §3.1) ----
+// Deliberately separate from Provider: history lookup is a paged
+// stream-pair scan, not a single-shot address lookup (spec §13 — not every
+// provider supports every interface).
+
+// Transfer types stored in transactions.transfer_type.
+const (
+	TransferKindNative = "NATIVE"
+	TransferKindToken  = "TOKEN"
+)
+
+// Transfer is one normalized on-chain value transfer. AmountRaw is a raw
+// integer decimal string — NUMERIC fidelity, never a float. TxHash is
+// lowercase. From/To/Asset carry the upstream representations verbatim —
+// the indexer owns normalization (wallet.NormalizeEVM) so invalid rows can
+// be skipped and counted rather than silently dropped. Stream identifies
+// the adapter stream that produced the row (chainscan: txlist|tokentx;
+// nodereal: from|to) — the indexer needs per-stream occurrence counts for
+// content-derived transfer_index identity.
+type Transfer struct {
+	TxHash         string
+	Stream         string
+	Type           string
+	From           string
+	To             string
+	Asset          string // token contract (upstream form); "" for NATIVE
+	AmountRaw      string // raw integer decimal string; "" = underivable
+	BlockNumber    int64
+	BlockTimestamp time.Time
+	Confirmations  int64
+	IsError        bool
+}
+
+// TransferLookupOpts bounds one stream-pair fetch step. PageToken is
+// opaque and encodes the per-stream cursors; empty means first step.
+// HeadBlock carries the request's observed head so adapters can compute
+// confirmations (head − blockNum + 1) without an extra upstream call;
+// 0 means unknown (Confirmations stays 0 → 'pending').
+type TransferLookupOpts struct {
+	FromBlock int64
+	ToBlock   int64 // inclusive
+	Kinds     []string
+	PageToken string
+	PageSize  int
+	HeadBlock int64
+}
+
+// StreamStatus reports one upstream stream's pagination state after a
+// step — the indexer derives per-stream contiguous coverage from it.
+type StreamStatus struct {
+	Name     string
+	Finished bool
+}
+
+// TransferPage is the product of one LookupTransfers step: rows from every
+// active stream, the continuation token (empty = all streams finished),
+// per-stream states, and UpstreamCalls — the real number of outbound
+// requests performed this step, which the request-global provider budget
+// charges against.
+//
+// Ordering contract: within one stream, transfers must be emitted in
+// ascending block order — the indexer's contiguous-coverage watermark
+// (max-block-minus-one per stream) depends on it.
+type TransferPage struct {
+	Transfers     []Transfer
+	NextPageToken string
+	Streams       []StreamStatus
+	UpstreamCalls int
+}
+
+// TxProvider is the on-demand transaction-history contract (plan §3.1).
+// Enabled is per-network: chainscan gates on enabled_chains, nodereal on
+// key presence — a disabled adapter must never emit traffic.
+type TxProvider interface {
+	Name() string
+	Enabled(net network.Network) bool
+	// HeadBlock returns the upstream-observed head block number.
+	HeadBlock(ctx context.Context, net network.Network) (int64, error)
+	LookupTransfers(ctx context.Context, net network.Network, normalized string, opts TransferLookupOpts) (*TransferPage, error)
+}

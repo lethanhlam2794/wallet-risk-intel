@@ -37,6 +37,15 @@ type Metrics struct {
 	ProviderErrorsTotal      *prometheus.CounterVec // {source,reason}
 	ProviderRateLimitedTotal *prometheus.CounterVec // {source}
 	ProviderCircuitOpen      *prometheus.GaugeVec   // {source}
+
+	// Screening instrumentation (spec §17, phase 5).
+	ScreeningRequestsTotal *prometheus.CounterVec // {status}
+	ScreeningDuration      prometheus.Histogram
+	ScreeningPartialTotal  prometheus.Counter
+
+	// Transaction tracing instrumentation (phase 6).
+	ProviderRequestDuration *prometheus.HistogramVec // {source}
+	TracingNodesExamined    prometheus.Counter
 }
 
 // New builds the registry. snapshotQuery supplies the latest published_at
@@ -100,6 +109,28 @@ func New(snapshotQuery func(ctx context.Context) (time.Time, bool),
 			Name: "provider_circuit_open",
 			Help: "Provider circuit breaker state (1=open/half-open, 0=closed).",
 		}, []string{"source"}),
+		ScreeningRequestsTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "screening_requests_total",
+			Help: "Screening runs by terminal status.",
+		}, []string{"status"}),
+		ScreeningDuration: fac.NewHistogram(prometheus.HistogramOpts{
+			Name:    "screening_duration_seconds",
+			Help:    "Screening pipeline wall time.",
+			Buckets: []float64{0.1, 0.5, 1, 2.5, 5, 10, 25, 60},
+		}),
+		ScreeningPartialTotal: fac.NewCounter(prometheus.CounterOpts{
+			Name: "screening_partial_total",
+			Help: "Screenings that landed PARTIAL (degraded inputs visible).",
+		}),
+		ProviderRequestDuration: fac.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "provider_request_duration_seconds",
+			Help:    "Provider upstream call wall time by source.",
+			Buckets: []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
+		}, []string{"source"}),
+		TracingNodesExamined: fac.NewCounter(prometheus.CounterOpts{
+			Name: "tracing_nodes_examined_total",
+			Help: "Expansion nodes attempted by bounded BFS at every depth.",
+		}),
 	}
 
 	reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -184,6 +215,15 @@ func (m *Metrics) IncProviderRateLimited(source string) {
 	m.ProviderRateLimitedTotal.WithLabelValues(source).Inc()
 }
 
+// ObserveScreening records one completed screening run.
+func (m *Metrics) ObserveScreening(status string, d time.Duration) {
+	m.ScreeningRequestsTotal.WithLabelValues(status).Inc()
+	m.ScreeningDuration.Observe(d.Seconds())
+}
+
+// IncScreeningPartial counts PARTIAL screenings — degraded visibility.
+func (m *Metrics) IncScreeningPartial() { m.ScreeningPartialTotal.Inc() }
+
 // SetProviderCircuit drives the breaker-state gauge.
 func (m *Metrics) SetProviderCircuit(source string, open bool) {
 	v := 0.0
@@ -201,6 +241,22 @@ func (m *Metrics) ProviderHooks(source string) (onResult, onError func(s, v stri
 		func(s, v string) { m.IncProviderError(s, v) },
 		func(s string) { m.IncProviderRateLimited(s) },
 		func(s string, open bool) { m.SetProviderCircuit(s, open) }
+}
+
+// ProviderDurationHook returns the call-site duration observer for one
+// source (resilience Hooks has no duration field — adapters time Do()
+// themselves, plan §3.5).
+func (m *Metrics) ProviderDurationHook(source string) func(time.Duration) {
+	return func(d time.Duration) {
+		m.ProviderRequestDuration.WithLabelValues(source).Observe(d.Seconds())
+	}
+}
+
+// IncTracingNodesExamined counts hop-2 expansion nodes attempted.
+func (m *Metrics) IncTracingNodesExamined(n int64) {
+	if n > 0 {
+		m.TracingNodesExamined.Add(float64(n))
+	}
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }

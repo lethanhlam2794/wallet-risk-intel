@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,12 +30,17 @@ import (
 	"checkwallet/internal/platform/metrics"
 	"checkwallet/internal/provider"
 	"checkwallet/internal/provider/chainabuse"
+	"checkwallet/internal/provider/chainscan"
 	"checkwallet/internal/provider/goplus"
+	"checkwallet/internal/provider/nodereal"
 	"checkwallet/internal/provider/ofac"
 	"checkwallet/internal/provider/publicaml"
 	"checkwallet/internal/provider/resilience"
 	"checkwallet/internal/provider/walletattribution"
 	"checkwallet/internal/sanctions"
+	"checkwallet/internal/screening"
+	"checkwallet/internal/tracing"
+	"checkwallet/internal/transaction"
 	"checkwallet/internal/wallet"
 )
 
@@ -110,14 +116,36 @@ func run() error {
 		return err
 	}
 
-	engine := httpserver.New(httpserver.Deps{
-		Pool: pool, RDB: rdb.R(), Cfg: cfg, Logger: log,
-		Resolver: resolver, Queries: queries,
-		Admin:      ingestion.NewAdminHandler(ingestSvc, queries, log),
+	screeningSvc := screening.New(screening.Deps{
+		Pool: pool, Queries: queries,
 		Sanctions:  sanctionsSvc,
 		Labels:     labelSvc,
 		Enrichment: enrichSvc,
+		Wallets:    wallet.NewService(queries),
+		Logger:     log,
 		Metrics:    m,
+	})
+
+	// Transaction-indexing providers (spec §19 phase 6). Both adapters are
+	// always constructed — a missing key yields Enabled()=false ⇒
+	// DISABLED coverage, never a boot crash.
+	txSvc, tracingSvc, err := buildTransactions(cfg, pool, queries,
+		wallet.NewService(queries), sanctionsSvc, resolver, m, log)
+	if err != nil {
+		return err
+	}
+
+	engine := httpserver.New(httpserver.Deps{
+		Pool: pool, RDB: rdb.R(), Cfg: cfg, Logger: log,
+		Resolver: resolver, Queries: queries,
+		Admin:        ingestion.NewAdminHandler(ingestSvc, queries, log),
+		Sanctions:    sanctionsSvc,
+		Labels:       labelSvc,
+		Enrichment:   enrichSvc,
+		Screening:    screeningSvc,
+		Metrics:      m,
+		Transactions: txSvc,
+		Tracing:      tracingSvc,
 	})
 
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
@@ -175,6 +203,71 @@ func buildEnrichment(cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
 			Deadline:        cfg.EnrichmentDeadline,
 			Retain:          25,
 		}), nil
+}
+
+// buildTransactions constructs the chainscan + nodereal TxProviders and
+// the indexing/tracing services. Missing API keys produce
+// Enabled()=false — the adapters report DISABLED honestly (plan §3.2).
+func buildTransactions(cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
+	wallets *wallet.Service, sanctionsSvc *sanctions.Service,
+	resolver *network.Resolver, m *metrics.Metrics, log *slog.Logger) (*transaction.Service, *tracing.Service, error) {
+
+	hooksFor := func(source string) resilience.Hooks {
+		onR, onE, onRL, onC := m.ProviderHooks(source)
+		return resilience.Hooks{OnResult: onR, OnError: onE,
+			OnRateLimited: onRL, OnCircuit: onC}
+	}
+	cs, err := chainscan.New(cfg.ChainscanBaseURL, cfg.EtherscanAPIKey,
+		strings.Split(cfg.ChainscanEnabledChains, ","),
+		chainscan.WithHooks(hooksFor(chainscan.SourceCode)),
+		chainscan.WithDurationFunc(m.ProviderDurationHook(chainscan.SourceCode)))
+	if err != nil {
+		return nil, nil, err
+	}
+	nr, err := nodereal.New(cfg.NoderealBaseURL, cfg.NoderealAPIKey,
+		nodereal.WithHooks(hooksFor(nodereal.SourceCode)),
+		nodereal.WithDurationFunc(m.ProviderDurationHook(nodereal.SourceCode)))
+	if err != nil {
+		return nil, nil, err
+	}
+	if cfg.EtherscanAPIKey == "" {
+		log.Info("chainscan disabled: ETHERSCAN_API_KEY not configured")
+	}
+	if cfg.NoderealAPIKey == "" {
+		log.Info("nodereal disabled: NODEREAL_API_KEY not configured")
+	}
+	txSvc := transaction.New(pool, q,
+		map[string]provider.TxProvider{"ethereum": cs, "bsc": nr},
+		wallets, transaction.Config{
+			FreshTTL:     cfg.IndexingFreshTTL,
+			StaleAfter:   cfg.IndexingStaleAfter,
+			NegativeTTL:  cfg.EnrichmentNegativeTTL,
+			PageSize:     cfg.IndexingPageSize,
+			MaxPagesHop0: cfg.IndexingMaxPagesHop0,
+			MaxPagesHopN: cfg.IndexingMaxPagesHopN,
+			MaxPagesHop3: cfg.IndexingMaxPagesHop3,
+			ReorgTail: map[string]int64{
+				"ethereum": cfg.IndexingReorgTailETH,
+				"bsc":      cfg.IndexingReorgTailBSC,
+			},
+			WindowCap: map[string]int64{"bsc": cfg.IndexingWindowCapBSC},
+			Budget: map[string]int{
+				chainscan.SourceCode: cfg.IndexingBudgetETH,
+				nodereal.SourceCode:  cfg.IndexingBudgetBSC,
+			},
+		}, log)
+	tracingSvc := tracing.New(q, txSvc, sanctionsSvc, resolver, tracing.Config{
+		MaxNodes: cfg.TracingMaxNodes,
+		MaxNodesPerDepth: [4]int{
+			cfg.TracingMaxNodes2, cfg.TracingMaxNodes3,
+			cfg.TracingMaxNodes4, cfg.TracingMaxNodes5,
+		},
+		MaxEdges:    cfg.TracingMaxEdges,
+		Deadline:    cfg.TracingDeadline,
+		ResponseCap: cfg.TracingResponseCap,
+	})
+	tracingSvc.SetMetrics(m)
+	return txSvc, tracingSvc, nil
 }
 
 // bootstrapAPIClients upserts dev bootstrap keys from env. Removing the env
