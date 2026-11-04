@@ -21,6 +21,7 @@ import (
 	"checkwallet/internal/middleware"
 	"checkwallet/internal/network"
 	"checkwallet/internal/platform/metrics"
+	"checkwallet/internal/providerconfig"
 	"checkwallet/internal/sanctions"
 	"checkwallet/internal/screening"
 	"checkwallet/internal/tracing"
@@ -63,6 +64,8 @@ type Deps struct {
 	Tracing *tracing.Service
 	// Metrics wires request instrumentation and /metrics when set.
 	Metrics *metrics.Metrics
+	// ProviderConfigs wires /api/v1/admin/provider-configs* when set.
+	ProviderConfigs *providerconfig.Service
 }
 
 // New builds the Gin engine with the full middleware chain and routes.
@@ -149,6 +152,13 @@ func New(d Deps) *gin.Engine {
 		)
 		adm.POST("/ingestion-runs", d.Admin.TriggerRun)
 		adm.GET("/ingestion-runs/:id", d.Admin.GetRun)
+		if d.ProviderConfigs != nil {
+			ph := NewProviderConfigHandler(d.ProviderConfigs)
+			adm.GET("/provider-configs", ph.List)
+			adm.GET("/provider-configs/:code", ph.Get)
+			adm.PUT("/provider-configs/:code", ph.Update)
+			adm.GET("/provider-configs/:code/changes", ph.Changes)
+		}
 	}
 
 	// Unmatched routes/methods still answer the stable envelope.

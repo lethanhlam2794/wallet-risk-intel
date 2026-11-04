@@ -156,23 +156,33 @@ func run() error {
 	// Transaction-indexing providers (spec §19 phase 6). Both adapters are
 	// always constructed — a missing key yields Enabled()=false ⇒
 	// DISABLED coverage, never a boot crash.
-	txSvc, tracingSvc, err := buildTransactions(ctx, cfg, pool, queries,
+	txSvc, tracingSvc, txChains, err := buildTransactions(ctx, cfg, pool, queries,
 		wallet.NewService(queries), sanctionsSvc, resolver, pcRes, m, log)
 	if err != nil {
 		return err
 	}
 
+	// Admin provider-config surface (db-provider-config phase 4): masked
+	// reads, whitelisted writes with per-field audit rows.
+	netCodes := make([]string, 0, len(resolver.List()))
+	for _, n := range resolver.List() {
+		netCodes = append(netCodes, n.Code)
+	}
+	pcAdmin := providerconfig.NewService(pool, queries, pcKeys, pcRes,
+		chainCodes(txChains), netCodes)
+
 	engine := httpserver.New(httpserver.Deps{
 		Pool: pool, RDB: rdb.R(), Cfg: cfg, Logger: log,
 		Resolver: resolver, Queries: queries,
-		Admin:        ingestion.NewAdminHandler(ingestSvc, queries, log),
-		Sanctions:    sanctionsSvc,
-		Labels:       labelSvc,
-		Enrichment:   enrichSvc,
-		Screening:    screeningSvc,
-		Metrics:      m,
-		Transactions: txSvc,
-		Tracing:      tracingSvc,
+		Admin:           ingestion.NewAdminHandler(ingestSvc, queries, log),
+		Sanctions:       sanctionsSvc,
+		Labels:          labelSvc,
+		Enrichment:      enrichSvc,
+		Screening:       screeningSvc,
+		Metrics:         m,
+		Transactions:    txSvc,
+		Tracing:         tracingSvc,
+		ProviderConfigs: pcAdmin,
 	})
 
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
@@ -238,7 +248,8 @@ func buildEnrichment(cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
 func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
 	wallets *wallet.Service, sanctionsSvc *sanctions.Service,
 	resolver *network.Resolver, pcRes *providerconfig.Resolver,
-	m *metrics.Metrics, log *slog.Logger) (*transaction.Service, *tracing.Service, error) {
+	m *metrics.Metrics, log *slog.Logger) (*transaction.Service, *tracing.Service,
+	map[string][]provider.TxProvider, error) {
 
 	hooksFor := func(source string) resilience.Hooks {
 		onR, onE, onRL, onC := m.ProviderHooks(source)
@@ -254,14 +265,14 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		chainscan.WithHooks(hooksFor(chainscan.SourceCode)),
 		chainscan.WithDurationFunc(m.ProviderDurationHook(chainscan.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	nr, err := nodereal.New(resolved(nodereal.SourceCode).BaseURL,
 		resolved(nodereal.SourceCode).APIKey,
 		nodereal.WithHooks(hooksFor(nodereal.SourceCode)),
 		nodereal.WithDurationFunc(m.ProviderDurationHook(nodereal.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	al, err := alchemy.New(resolved(alchemy.SourceCode).BaseURL,
 		resolved(alchemy.SourceCode).APIKey,
@@ -269,7 +280,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		alchemy.WithHooks(hooksFor(alchemy.SourceCode)),
 		alchemy.WithDurationFunc(m.ProviderDurationHook(alchemy.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if resolved(chainscan.SourceCode).APIKey == "" {
 		log.Info("chainscan disabled: no api key configured")
@@ -282,7 +293,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		blockscout.WithHooks(hooksFor(blockscout.SourceCode)),
 		blockscout.WithDurationFunc(m.ProviderDurationHook(blockscout.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	an, err := ankr.New(resolved(ankr.SourceCode).BaseURL,
 		resolved(ankr.SourceCode).APIKey,
@@ -290,7 +301,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		ankr.WithHooks(hooksFor(ankr.SourceCode)),
 		ankr.WithDurationFunc(m.ProviderDurationHook(ankr.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if resolved(alchemy.SourceCode).APIKey == "" {
 		log.Info("alchemy disabled: no api key configured")
@@ -301,7 +312,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		covalent.WithHooks(hooksFor(covalent.SourceCode)),
 		covalent.WithDurationFunc(m.ProviderDurationHook(covalent.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if resolved(ankr.SourceCode).APIKey == "" {
 		log.Info("ankr disabled: no api key configured")
@@ -312,7 +323,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		moralis.WithHooks(hooksFor(moralis.SourceCode)),
 		moralis.WithDurationFunc(m.ProviderDurationHook(moralis.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if resolved(covalent.SourceCode).APIKey == "" {
 		log.Info("covalent disabled: no api key configured")
@@ -326,7 +337,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		tatum.WithHooks(hooksFor(tatum.SourceCode)),
 		tatum.WithDurationFunc(m.ProviderDurationHook(tatum.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if resolved(tatum.SourceCode).APIKey == "" {
 		log.Info("tatum disabled: no api key configured")
@@ -337,7 +348,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		bitquery.WithHooks(hooksFor(bitquery.SourceCode)),
 		bitquery.WithDurationFunc(m.ProviderDurationHook(bitquery.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if resolved(bitquery.SourceCode).APIKey == "" {
 		log.Info("bitquery disabled: no api key configured")
@@ -348,7 +359,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		oklink.WithHooks(hooksFor(oklink.SourceCode)),
 		oklink.WithDurationFunc(m.ProviderDurationHook(oklink.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if resolved(oklink.SourceCode).APIKey == "" {
 		log.Info("oklink disabled: no api key configured")
@@ -359,7 +370,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		tokenview.WithHooks(hooksFor(tokenview.SourceCode)),
 		tokenview.WithDurationFunc(m.ProviderDurationHook(tokenview.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if resolved(tokenview.SourceCode).APIKey == "" {
 		log.Info("tokenview disabled: no api key configured")
@@ -370,7 +381,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		chainbase.WithHooks(hooksFor(chainbase.SourceCode)),
 		chainbase.WithDurationFunc(m.ProviderDurationHook(chainbase.SourceCode)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if resolved(chainbase.SourceCode).APIKey == "" {
 		log.Info("chainbase disabled: no api key configured")
@@ -395,12 +406,12 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	ethChain, err := selectTxProviderChain("TX_PROVIDER_ETH", cfg.TxProviderETH,
 		chainscan.SourceCode, registry, log)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	bscChain, err := selectTxProviderChain("TX_PROVIDER_BSC", cfg.TxProviderBSC,
 		nodereal.SourceCode, registry, log)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	budget := map[string]int{
@@ -423,10 +434,10 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	// TXINDEX_BUDGET_* env would leave the request pool unlimited.
 	for _, p := range registry {
 		if _, err := q.GetSourceByCode(ctx, p.Name()); err != nil {
-			return nil, nil, fmt.Errorf("tx provider %s: data_sources row missing: %w", p.Name(), err)
+			return nil, nil, nil, fmt.Errorf("tx provider %s: data_sources row missing: %w", p.Name(), err)
 		}
 		if budget[p.Name()] <= 0 {
-			return nil, nil, fmt.Errorf("tx provider %s: budget must be > 0", p.Name())
+			return nil, nil, nil, fmt.Errorf("tx provider %s: budget must be > 0", p.Name())
 		}
 	}
 
@@ -463,7 +474,20 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		ResponseCap: cfg.TracingResponseCap,
 	})
 	tracingSvc.SetMetrics(m)
-	return txSvc, tracingSvc, nil
+	chains := map[string][]provider.TxProvider{"ethereum": ethChain, "bsc": bscChain}
+	return txSvc, tracingSvc, chains, nil
+}
+
+// chainCodes flattens the resolved failover chains to provider-code lists
+// for the admin last-active-member warning.
+func chainCodes(chains map[string][]provider.TxProvider) map[string][]string {
+	out := make(map[string][]string, len(chains))
+	for net, chain := range chains {
+		for _, p := range chain {
+			out[net] = append(out[net], p.Name())
+		}
+	}
+	return out
 }
 
 // selectTxProviderChain resolves TX_PROVIDER_<NET> into the ordered

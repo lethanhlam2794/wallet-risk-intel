@@ -1071,6 +1071,200 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/admin/provider-configs:
+    get:
+      tags: [admin]
+      summary: List transaction-provider configurations
+      description: |
+        One entry per registered transaction-history provider (12 codes).
+        Providers without a `provider_configs` row appear with
+        `configured:false` and are PUT-discoverable; their shown `status`
+        is the default `active`. `api_key` is always the masked shape —
+        plaintext never leaves this surface.
+      responses:
+        "200":
+          description: Provider list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ProviderConfigView" }
+              example:
+                data:
+                  - source_code: chainscan
+                    configured: false
+                    api_key: { set: false, last4: null }
+                    base_url: null
+                    enabled_chains: null
+                    status: active
+                    catalog_active: true
+                    effective_active: true
+                    requires_restart: [api_key, base_url, enabled_chains]
+                    updated_by: null
+                    updated_at: null
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/provider-configs/{code}:
+    parameters:
+      - name: code
+        in: path
+        required: true
+        description: Transaction provider code (a `data_sources.code`).
+        schema:
+          type: string
+          enum: [alchemy, blockscout, ankr, covalent, moralis, tatum,
+                 bitquery, oklink, tokenview, chainbase, chainscan, nodereal]
+    get:
+      tags: [admin]
+      summary: Read one provider configuration
+      responses:
+        "200":
+          description: Provider view.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ProviderConfigView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [admin]
+      summary: Update provider configuration (whitelisted fields)
+      description: |
+        Whitelisted fields only: `api_key`, `base_url`, `enabled_chains`,
+        `status`. Unknown JSON keys are rejected with `400`. `api_key` is
+        stored encrypted when `PROVIDER_CONFIG_KEK` is set and is never
+        returned; audit rows record the masked shape only. Values
+        beginning with `enc:` are rejected with `400`.
+
+        `base_url` must be `https` and its host must be in the adapter's
+        SSRF allowlist (same check adapters apply at construction);
+        rejections echo `allowed_hosts`. `enabled_chains` elements must be
+        registered network codes. `status` accepts `active`/`inactive`.
+
+        Only `status` is runtime-effective (TTL ~30s): `api_key`,
+        `base_url` and `enabled_chains` are stored but the running
+        adapters keep the boot-resolved values — every response carries
+        `requires_restart`, and `warnings[]` discloses stored≠in-effect
+        drift, `enabled_chains:[]` (provider disabled on every network),
+        and deactivating the last effective-active member of a failover
+        chain.
+
+        Every changed field writes a `provider_config_changes` audit row
+        in the same transaction; unchanged fields write nothing. Updates
+        are column-scoped under a row lock, so concurrent PUTs to
+        different fields do not lose each other.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProviderConfigPatch" }
+            example:
+              status: inactive
+      responses:
+        "200":
+          description: Post-write view plus warnings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ProviderConfigView" }
+                  warnings:
+                    type: array
+                    items: { $ref: "#/components/schemas/ProviderConfigWarning" }
+              example:
+                data:
+                  source_code: chainscan
+                  configured: true
+                  api_key: { set: true, last4: "4242" }
+                  base_url: null
+                  enabled_chains: [ethereum]
+                  status: inactive
+                  catalog_active: true
+                  effective_active: false
+                  requires_restart: [api_key, base_url, enabled_chains]
+                  updated_by: ops-admin
+                  updated_at: "2026-11-04T23:00:00Z"
+                warnings:
+                  - code: last_active_member
+                    network: ethereum
+                    message: "deactivating chainscan leaves the ethereum failover chain with no active member"
+        "400":
+          description: Invalid field value or unknown key.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error:
+                  code: BAD_REQUEST
+                  message: 'base_url host "evil.example.com" not in allowlist ["api.etherscan.io"]'
+                  allowed_hosts: ["api.etherscan.io", "api.bscscan.com"]
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/admin/provider-configs/{code}/changes:
+    parameters:
+      - name: code
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [alchemy, blockscout, ankr, covalent, moralis, tatum,
+                 bitquery, oklink, tokenview, chainbase, chainscan, nodereal]
+    get:
+      tags: [admin]
+      summary: Provider configuration audit history
+      description: |
+        Audit rows newest-first, keyset-paginated by `cursor` (opaque
+        token from `next_cursor`); `limit` defaults to 50, max 100.
+        `api_key` changes record the masked shape in `previous_value` /
+        `new_value` — plaintext keys never appear.
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Audit page.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/ProviderConfigChange" }
+                      next_cursor: { type: string }
+              example:
+                data:
+                  items:
+                    - id: "5d3f1e2a-9b4c-4d5e-8f9a-0b1c2d3e4f5a"
+                      field: status
+                      previous_value: "active"
+                      new_value: "inactive"
+                      actor_id: ops-admin
+                      actor_type: api_client
+                      changed_at: "2026-11-04T23:00:00Z"
+                  next_cursor: "eyJ0IjoiMjAyNi0xMS0wNFQyMzowMDowMFoiLCJpIjoiNWQzZjFlMmEtOWI0Yy00ZDVlLThmOWEtMGIxYzJkM2U0ZjVhIn0"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -1425,6 +1619,82 @@ components:
         snapshot_checksum: { type: ["string", "null"] }
         snapshot_version: { type: ["string", "null"] }
         error_message: { type: ["string", "null"] }
+    ProviderConfigView:
+      type: object
+      description: |
+        One provider's stored `provider_configs` row. `api_key` is the
+        masked shape `{"set":bool,"last4":string|null}` — `last4` is
+        suppressed for keys shorter than 8 characters. `configured:false`
+        means no row exists (env-only behaviour; PUT materializes one).
+        `status` is the operator switch and the only runtime-effective
+        field; `catalog_active` is `data_sources.is_active` and AND's
+        into `effective_active`. Fields listed in `requires_restart`
+        need an API restart before the running adapters pick them up.
+      properties:
+        source_code: { type: string }
+        configured: { type: boolean }
+        api_key:
+          type: object
+          properties:
+            set: { type: boolean }
+            last4: { type: ["string", "null"] }
+        base_url: { type: ["string", "null"] }
+        enabled_chains:
+          type: ["array", "null"]
+          items: { type: string }
+        status: { type: string, enum: [active, inactive] }
+        catalog_active: { type: boolean }
+        effective_active: { type: boolean }
+        requires_restart:
+          type: array
+          items: { type: string, enum: [api_key, base_url, enabled_chains] }
+        updated_by: { type: ["string", "null"] }
+        updated_at: { type: ["string", "null"], format: date-time }
+    ProviderConfigPatch:
+      type: object
+      description: |
+        Whitelisted writable fields; absent keys leave the column
+        untouched. `""` and `[]` are explicit overrides (they do NOT
+        fall back to env). `api_key` rejects values starting with `enc:`;
+        `base_url` must be `https` on the adapter allowlist (rejections
+        echo `allowed_hosts`); `enabled_chains` elements must be
+        registered network codes.
+      additionalProperties: false
+      properties:
+        api_key: { type: string }
+        base_url: { type: string }
+        enabled_chains:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [active, inactive] }
+    ProviderConfigWarning:
+      type: object
+      description: |
+        Non-obvious effect of a write. `code` is one of
+        `requires_restart` (stored≠in-effect until restart),
+        `no_enabled_chains` (`[]` disables the provider everywhere),
+        `last_active_member` (failover chain left with no active member).
+      properties:
+        code:
+          type: string
+          enum: [requires_restart, no_enabled_chains, last_active_member]
+        field: { type: string }
+        network: { type: string }
+        message: { type: string }
+    ProviderConfigChange:
+      type: object
+      description: |
+        One audit row. For `field:"api_key"` the values are the masked
+        shape `{"set":bool,"last4":string|null}`; other fields record the
+        stored value itself.
+      properties:
+        id: { type: string, format: uuid }
+        field: { type: string, enum: [api_key, base_url, enabled_chains, status] }
+        previous_value: { }
+        new_value: { }
+        actor_id: { type: ["string", "null"] }
+        actor_type: { type: string }
+        changed_at: { type: string, format: date-time }
     ScreeningRequest:
       type: object
       required: [network, address]
