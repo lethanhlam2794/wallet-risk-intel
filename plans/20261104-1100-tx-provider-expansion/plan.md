@@ -1,7 +1,7 @@
 # Plan: Transaction-History Provider Expansion (11 adapters + quota failover)
 
 > Source spec: `docs/prompts/20261104-1050-claude-code-bsc-tx-providers.md`
-> Mode: codex-vibe --auto | Status: in-progress | Created: 2026-11-04
+> Mode: codex-vibe --auto | Status: completed | Created: 2026-11-04
 
 ## Overview
 
@@ -26,13 +26,13 @@ support.
 | 03 | ankr adapter (bsc+eth) | P1 | 02 | DONE — live-verify BLOCKED (no key) |
 | 04 | covalent adapter (bsc) | P1 | 03 | DONE — live-verify BLOCKED (no key) |
 | 05 | moralis adapter (bsc) | P1 | 04 | DONE — live-verify BLOCKED (no key) |
-| 06 | tatum adapter (bsc) | P1 | 05 | BLOCKED (no key) |
-| 07 | bitquery verify-first (bsc) | P2 | 06 | probe required |
-| 08 | oklink verify-first (bsc) | P2 | 07 | probe required |
-| 09 | blockchair verify-first (bsc) | P2 | 08 | probe required (keyless probe possible) |
-| 10 | tokenview verify-first (eth+bsc) | P2 | 09 | probe required |
-| 11 | chainbase verify-first (eth+bsc) | P2 | 10 | probe required |
-| 12 | quota-sharing failover chain | P1 | 01–11 | integration |
+| 06 | tatum adapter (bsc) | P1 | 05 | DONE — live-verify BLOCKED (no key) |
+| 07 | bitquery verify-first (bsc) | P2 | 06 | DONE — probe 401, merge-unverified |
+| 08 | oklink verify-first (bsc) | P2 | 07 | DONE — probe 401, merge-unverified |
+| 09 | blockchair verify-first (bsc) | P2 | 08 | DONE — NOT-VIABLE (no BSC coverage) |
+| 10 | tokenview verify-first (eth+bsc) | P2 | 09 | DONE — probe 401, merge-unverified |
+| 11 | chainbase verify-first (eth+bsc) | P2 | 10 | DONE — probe 401, merge-unverified |
+| 12 | quota-sharing failover chain | P1 | 01–11 | DONE — D1–D5 design + per-source re-key + chain walk |
 
 Phases serialize 01→11 (shared file surfaces: config.go / main.go /
 .env.example / migration-number space). `Depends` column is authoritative
@@ -67,12 +67,12 @@ from this table:
 
 | Adapter | Verified | Adapter | Verified |
 |---|---|---|---|
-| alchemy | BLOCKED (no key) | tatum | pending-key |
-| blockscout | VERIFIED | bitquery | pending-key |
-| ankr | BLOCKED (no key) | oklink | pending-key |
-| covalent | BLOCKED (no key) | blockchair | keyless-probe ok, key verify pending |
-| moralis | BLOCKED (no key) | tokenview | pending-key |
-| chainbase | pending-key | | |
+| alchemy | BLOCKED (no key) | tatum | BLOCKED (no key) |
+| blockscout | VERIFIED | bitquery | BLOCKED (no key) |
+| ankr | BLOCKED (no key) | oklink | BLOCKED (no key) |
+| covalent | BLOCKED (no key) | blockchair | NOT-VIABLE — no BSC |
+| moralis | BLOCKED (no key) | tokenview | BLOCKED (no key) |
+| chainbase | BLOCKED (no key) | | |
 
 ## Validate-gate user decisions (this session)
 
@@ -111,7 +111,7 @@ from this table:
 - disabled ≠ failed ≠ ok; provider failure never becomes a clean result
 - per-stream Finished semantics + ascending block order per stream
 - UpstreamCalls counts real outbound requests (request-global budget)
-- per-source watermarks DO NOT exist today (one source_id per row) — phase-12 sign-off (D1) decides real semantics; never claim isolation the schema can't express
+- per-source watermarks: wallet_index_state keyed (network_id, wallet_id, source_id) since migration 000019 — a provider never reads or overwrites another source's row
 - unknown ≠ safe; coverage metadata stays truthful
 - mocks must parse the real wire shape (the -32700 lesson)
 - no secrets/keys in code, logs, tests, commits; .env.example only

@@ -1,7 +1,7 @@
 ---
 phase: 12
 title: "Ordered failover chain (design sign-off required)"
-status: pending
+status: completed
 priority: P2
 dependencies: [phase-01, phase-02, phase-03, phase-04, phase-05, phase-06, phase-07, phase-08, phase-09, phase-10, phase-11]
 ---
@@ -164,15 +164,15 @@ with any open:
 
 ## Success Criteria
 
-- [ ] Design doc written covering D1–D5
+- [x] Design doc written covering D1–D5
 - [x] D1 sign-off recorded: schema re-key (a) chosen at validate gate
-- [ ] D2–D5 mechanics written into reports/phase-12-design.md before code
-- [ ] Chain ordering respected; selector validation errors on unknown
-- [ ] Failure-kind restriction enforced and tested both directions
-- [ ] Watermark semantics per signed-off design, proven by test
-- [ ] Budget semantics per signed-off design
-- [ ] All-failed → honest status; empty page → no chain walk
-- [ ] Default-unset → byte-identical current behavior
+- [x] D2–D5 mechanics written into reports/phase-12-design.md before code
+- [x] Chain ordering respected; selector validation errors on unknown
+- [x] Failure-kind restriction enforced and tested both directions
+- [x] Watermark semantics per signed-off design, proven by test
+- [x] Budget semantics per signed-off design
+- [x] All-failed → honest status; empty page → no chain walk
+- [x] Default-unset → byte-identical current behavior
 
 ## Risk Assessment
 
