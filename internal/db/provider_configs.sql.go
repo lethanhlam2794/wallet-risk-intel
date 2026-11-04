@@ -116,10 +116,10 @@ func (q *Queries) InsertProviderConfigChange(ctx context.Context, arg InsertProv
 	return i, err
 }
 
-const insertProviderConfigRow = `-- name: InsertProviderConfigRow :one
+const insertProviderConfigRow = `-- name: InsertProviderConfigRow :exec
 INSERT INTO provider_configs (source_code, updated_by)
 VALUES ($1, $2)
-RETURNING source_code, api_key, base_url, enabled_chains, status, updated_by, updated_at
+ON CONFLICT (source_code) DO NOTHING
 `
 
 type InsertProviderConfigRowParams struct {
@@ -127,19 +127,11 @@ type InsertProviderConfigRowParams struct {
 	UpdatedBy  pgtype.Text `json:"updated_by"`
 }
 
-func (q *Queries) InsertProviderConfigRow(ctx context.Context, arg InsertProviderConfigRowParams) (ProviderConfig, error) {
-	row := q.db.QueryRow(ctx, insertProviderConfigRow, arg.SourceCode, arg.UpdatedBy)
-	var i ProviderConfig
-	err := row.Scan(
-		&i.SourceCode,
-		&i.ApiKey,
-		&i.BaseUrl,
-		&i.EnabledChains,
-		&i.Status,
-		&i.UpdatedBy,
-		&i.UpdatedAt,
-	)
-	return i, err
+// First-write materialization; DO NOTHING keeps a concurrent first PUT
+// serialized — the loser re-selects FOR UPDATE instead of eating 23505.
+func (q *Queries) InsertProviderConfigRow(ctx context.Context, arg InsertProviderConfigRowParams) error {
+	_, err := q.db.Exec(ctx, insertProviderConfigRow, arg.SourceCode, arg.UpdatedBy)
+	return err
 }
 
 const listProviderConfigChanges = `-- name: ListProviderConfigChanges :many
@@ -224,22 +216,6 @@ func (q *Queries) ListProviderConfigs(ctx context.Context) ([]ProviderConfig, er
 		return nil, err
 	}
 	return items, nil
-}
-
-const touchProviderConfig = `-- name: TouchProviderConfig :exec
-UPDATE provider_configs
-SET updated_by = $2, updated_at = NOW()
-WHERE source_code = $1
-`
-
-type TouchProviderConfigParams struct {
-	SourceCode string      `json:"source_code"`
-	UpdatedBy  pgtype.Text `json:"updated_by"`
-}
-
-func (q *Queries) TouchProviderConfig(ctx context.Context, arg TouchProviderConfigParams) error {
-	_, err := q.db.Exec(ctx, touchProviderConfig, arg.SourceCode, arg.UpdatedBy)
-	return err
 }
 
 const updateProviderConfigAPIKey = `-- name: UpdateProviderConfigAPIKey :exec

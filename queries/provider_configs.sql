@@ -13,10 +13,12 @@ SELECT * FROM provider_configs ORDER BY source_code;
 -- name: GetProviderConfigForUpdate :one
 SELECT * FROM provider_configs WHERE source_code = $1 FOR UPDATE;
 
--- name: InsertProviderConfigRow :one
+-- First-write materialization; DO NOTHING keeps a concurrent first PUT
+-- serialized — the loser re-selects FOR UPDATE instead of eating 23505.
+-- name: InsertProviderConfigRow :exec
 INSERT INTO provider_configs (source_code, updated_by)
 VALUES ($1, $2)
-RETURNING *;
+ON CONFLICT (source_code) DO NOTHING;
 
 -- name: UpsertProviderConfig :one
 INSERT INTO provider_configs (source_code, api_key, base_url, enabled_chains, status, updated_by)
@@ -50,11 +52,6 @@ WHERE source_code = $1;
 -- name: UpdateProviderConfigStatus :exec
 UPDATE provider_configs
 SET status = $2, updated_by = $3, updated_at = NOW()
-WHERE source_code = $1;
-
--- name: TouchProviderConfig :exec
-UPDATE provider_configs
-SET updated_by = $2, updated_at = NOW()
 WHERE source_code = $1;
 
 -- name: InsertProviderConfigChange :one

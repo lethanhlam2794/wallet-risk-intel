@@ -85,6 +85,12 @@ type Patch struct {
 	Status        *string
 }
 
+// empty reports the patch carries no fields.
+func (p Patch) empty() bool {
+	return p.APIKey == nil && p.BaseURL == nil &&
+		p.EnabledChains == nil && p.Status == nil
+}
+
 // Actor is the authenticated client performing a write.
 type Actor struct {
 	ID   string // api_client name
@@ -250,6 +256,14 @@ func (s *Service) Update(ctx context.Context, code string, actor Actor, p Patch)
 	if err := s.validate(code, p); err != nil {
 		return nil, err
 	}
+	if p.empty() {
+		// PUT {} is a no-op read — never materializes an all-NULL row.
+		v, err := s.Get(ctx, code)
+		if err != nil {
+			return nil, err
+		}
+		return &UpdateResult{View: v}, nil
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -261,8 +275,14 @@ func (s *Service) Update(ctx context.Context, code string, actor Actor, p Patch)
 	row, err := qtx.GetProviderConfigForUpdate(ctx, code)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		row, err = qtx.InsertProviderConfigRow(ctx, db.InsertProviderConfigRowParams{
-			SourceCode: code, UpdatedBy: pgtype.Text{String: actor.ID, Valid: actor.ID != ""}})
+		// ON CONFLICT DO NOTHING keeps a concurrent first-write from
+		// erroring the tx: the loser blocks until the winner commits,
+		// then locks the winner's row below — serialized, never a 500.
+		if err := qtx.InsertProviderConfigRow(ctx, db.InsertProviderConfigRowParams{
+			SourceCode: code, UpdatedBy: pgtype.Text{String: actor.ID, Valid: actor.ID != ""}}); err != nil {
+			return nil, err
+		}
+		row, err = qtx.GetProviderConfigForUpdate(ctx, code)
 		if err != nil {
 			return nil, err
 		}
@@ -292,11 +312,24 @@ func (s *Service) Update(ctx context.Context, code string, actor Actor, p Patch)
 	}
 
 	if p.APIKey != nil {
-		oldPlain := ""
+		// Changed-detection compares stored representation, not Go
+		// values: NULL ⇒ always a change ("" is an explicit override,
+		// never NULL-equal); an undecryptable stored value is changed and
+		// audits {set:true} — it existed even if unreadable.
+		oldMask := MaskedKey{Set: false}
+		var oldPlain string
+		readable := true
 		if row.ApiKey.Valid && row.ApiKey.String != "" {
-			oldPlain, _ = s.keys.Decrypt(row.ApiKey.String)
+			dec, derr := s.keys.Decrypt(row.ApiKey.String)
+			if derr != nil {
+				oldMask = MaskedKey{Set: true}
+				readable = false
+			} else {
+				oldPlain = dec
+				oldMask = maskPlain(dec)
+			}
 		}
-		if *p.APIKey != oldPlain {
+		if !row.ApiKey.Valid || !readable || *p.APIKey != oldPlain {
 			stored, err := s.keys.Encrypt(*p.APIKey)
 			if err != nil {
 				return nil, err
@@ -308,18 +341,15 @@ func (s *Service) Update(ctx context.Context, code string, actor Actor, p Patch)
 			}); err != nil {
 				return nil, err
 			}
-			if err := record("api_key", maskPlain(oldPlain), maskPlain(*p.APIKey)); err != nil {
+			if err := record("api_key", oldMask, maskPlain(*p.APIKey)); err != nil {
 				return nil, err
 			}
 		}
 	}
 
 	if p.BaseURL != nil {
-		old := ""
-		if row.BaseUrl.Valid {
-			old = row.BaseUrl.String
-		}
-		if *p.BaseURL != old {
+		// NULL stored ⇒ always a change; "" is an explicit override.
+		if !row.BaseUrl.Valid || row.BaseUrl.String != *p.BaseURL {
 			if err := qtx.UpdateProviderConfigBaseURL(ctx, db.UpdateProviderConfigBaseURLParams{
 				SourceCode: code,
 				BaseUrl:    pgtype.Text{String: *p.BaseURL, Valid: true},
@@ -327,20 +357,28 @@ func (s *Service) Update(ctx context.Context, code string, actor Actor, p Patch)
 			}); err != nil {
 				return nil, err
 			}
-			if err := record("base_url", nilIfEmpty(old), *p.BaseURL); err != nil {
+			var prev any
+			if row.BaseUrl.Valid {
+				prev = row.BaseUrl.String
+			}
+			if err := record("base_url", prev, *p.BaseURL); err != nil {
 				return nil, err
 			}
 		}
 	}
 
 	if p.EnabledChains != nil {
+		// NULL stored ⇒ always a change; [] is an explicit override —
+		// slices.Equal alone would conflate nil and empty.
 		var old []string
+		changed := true
 		if row.EnabledChains != nil {
 			if err := json.Unmarshal(row.EnabledChains, &old); err != nil {
 				return nil, err
 			}
+			changed = !slices.Equal(*p.EnabledChains, old)
 		}
-		if !slices.Equal(*p.EnabledChains, old) {
+		if changed {
 			raw, err := json.Marshal(*p.EnabledChains)
 			if err != nil {
 				return nil, err
@@ -582,11 +620,4 @@ func decodeChangeCursor(s string) (time.Time, uuid.UUID, error) {
 		return time.Time{}, uuid.Nil, err
 	}
 	return c.Ts, id, nil
-}
-
-func nilIfEmpty(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }

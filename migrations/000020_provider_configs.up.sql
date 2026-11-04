@@ -20,8 +20,8 @@ CREATE TABLE provider_config_changes (
     source_code VARCHAR(100) NOT NULL
         REFERENCES data_sources(code) ON UPDATE CASCADE,
     actor_id VARCHAR(64),
-    actor_type VARCHAR(30) NOT NULL,
-    field VARCHAR(30) NOT NULL,
+    actor_type VARCHAR(32) NOT NULL,
+    field VARCHAR(64) NOT NULL,
     previous_value JSONB,
     new_value JSONB,
     changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

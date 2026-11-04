@@ -220,12 +220,17 @@ func (d *resolverDeps) origin(envName string) Origin {
 	return OriginDefault
 }
 
-// checkAllowedHost applies the same host allowlist adapters enforce on
-// their own base URLs (host equality, case-insensitive).
+// checkAllowedHost applies the same scheme+host allowlist adapters
+// enforce on their own base URLs (https only; host equality,
+// case-insensitive) — a stored http:// URL is a resolution error naming
+// provider+field, not a deferred adapter failure.
 func checkAllowedHost(allowed []string, raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
 		return fmt.Errorf("invalid base url %q", raw)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("base url %q must use https scheme", raw)
 	}
 	for _, h := range allowed {
 		if strings.EqualFold(u.Host, h) {
