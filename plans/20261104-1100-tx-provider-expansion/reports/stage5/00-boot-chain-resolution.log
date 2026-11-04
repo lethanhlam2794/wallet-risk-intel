@@ -1,0 +1,12 @@
+{"time":"2026-11-04T16:15:24.154389566+07:00","level":"INFO","msg":"chainabuse disabled: CHAINABUSE_API_KEY not configured"}
+{"time":"2026-11-04T16:15:24.154523485+07:00","level":"INFO","msg":"alchemy disabled: ALCHEMY_API_KEY not configured"}
+{"time":"2026-11-04T16:15:24.154535519+07:00","level":"INFO","msg":"ankr disabled: ANKR_API_KEY not configured"}
+{"time":"2026-11-04T16:15:24.1545581+07:00","level":"INFO","msg":"covalent disabled: COVALENT_API_KEY not configured"}
+{"time":"2026-11-04T16:15:24.154566115+07:00","level":"INFO","msg":"moralis disabled: MORALIS_API_KEY not configured"}
+{"time":"2026-11-04T16:15:24.154575359+07:00","level":"INFO","msg":"tatum disabled: TATUM_API_KEY not configured"}
+{"time":"2026-11-04T16:15:24.154595502+07:00","level":"INFO","msg":"bitquery disabled: BITQUERY_API_KEY not configured"}
+{"time":"2026-11-04T16:15:24.154605862+07:00","level":"INFO","msg":"oklink disabled: OKLINK_API_KEY not configured"}
+{"time":"2026-11-04T16:15:24.154616277+07:00","level":"INFO","msg":"tokenview disabled: TOKENVIEW_API_KEY not configured"}
+{"time":"2026-11-04T16:15:24.154627061+07:00","level":"INFO","msg":"chainbase disabled: CHAINBASE_API_KEY not configured"}
+{"time":"2026-11-04T16:15:24.154635359+07:00","level":"INFO","msg":"tx provider failover chain resolved","env":"TX_PROVIDER_ETH","order":["chainscan","blockscout"]}
+{"time":"2026-11-04T16:15:24.159259885+07:00","level":"INFO","msg":"api listening","addr":":8090"}

@@ -1,0 +1,20 @@
+   source   |  status  | indexed_until_block | history_truncated | rows_indexed |                  address                   |   net    
+------------+----------+---------------------+-------------------+--------------+--------------------------------------------+----------
+ chainscan  | fresh    |            26340489 | f                 |            7 | 0x0000000000000000000000000000000000012345 | ethereum
+ blockscout | partial  |                     | t                 |            0 | 0xd8da6bf26964af9d7eed9e03e53415d37aa96045 | ethereum
+ blockscout | fresh    |            26340033 | f                 |            7 | 0x0000000000000000000000000000000000012345 | ethereum
+ nodereal   | partial  |             6831001 | t                 |         4000 | 0x10ed43c718714eb63d5aa57b78b54704e256024e | bsc
+ nodereal   | partial  |              100000 | t                 |            0 | 0x8894e0a0c962cf723c1976a4421c95949be2d4e3 | bsc
+ nodereal   | partial  |              100000 | t                 |            0 | 0x853c6a32c1132e5ca594390e06c0b9bc73f68652 | bsc
+ chainscan  | fresh    |            26338825 | f                 |            0 | 0x853c6a32c1132e5ca594390e06c0b9bc73f68652 | ethereum
+ chainscan  | fresh    |            26338821 | f                 |          646 | 0x850e74dd9a2952b1ada253d355a091b97bcce1ef | ethereum
+ chainscan  | fresh    |            26338820 | f                 |            1 | 0x46ce2da01290ea2d1bced39bba149d017df34cb9 | ethereum
+ chainscan  | disabled |                 200 | f                 |            0 | 0x00000000000000000000000000000000000000A1 | ethereum
+(10 rows)
+
+   source   | status | indexed_until_block | rows_indexed |          updated_at           
+------------+--------+---------------------+--------------+-------------------------------
+ blockscout | fresh  |            26340492 |            7 | 2026-11-04 09:16:52.506659+00
+ chainscan  | fresh  |            26340489 |            7 | 2026-11-04 09:15:56.167264+00
+(2 rows)
+

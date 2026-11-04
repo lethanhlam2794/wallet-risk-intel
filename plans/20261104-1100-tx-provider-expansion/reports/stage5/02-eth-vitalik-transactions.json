@@ -1,0 +1,2 @@
+{"data":{"items":[],"index_status":"partial","stale":false,"provider_status":"ok","indexed_until_block":null,"indexed_at":"2026-11-04T09:14:18.531188Z","head_block":26340480,"history_truncated":true,"index_scope":"native+token","rows_indexed":0,"rows_skipped":{"missing_contract":0,"invalid_address":0}}}
+TIME:10.388900s HTTP:200

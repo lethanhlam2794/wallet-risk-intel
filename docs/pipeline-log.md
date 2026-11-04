@@ -331,3 +331,46 @@ substitution, S6 docs published. Working tree intentionally uncommitted.
   - Remediation commit: `0726414`
   - Advisory (non-blocking): advisory-claim TOCTOU — conditional-release `WHERE status='indexing'` noted as optional hardening; pre-existing hazard class
 - **Self-Audit Commitment**: re-review conducted by an independent session; verdict APPROVED clears the Stage 3 gate.
+
+### [TXP_STAGE_4_VERIFICATION] - Stage 4: Blind Test Saturation & Session Cleanup
+- **Completion Timestamp**: 2026-11-04 17:35:00
+- **Status**: PASSED — 10/10
+- **Completed Tasks**:
+  - [x] All 8 review round-1 findings remediated (commit `0726414`) and re-reviewed → APPROVED (round 2, `147511d`)
+  - [x] Anonymous/blind randomized saturation: `reports/saturation/run.sh` — 22 packages in freshly-shuffled order per iteration, `-shuffle=on` random seeds, `-count=1` no-cache; harness never names individual tests
+  - [x] Race suite over blast radius: `go test -count=1 -race ./internal/provider/... ./internal/transaction/ ./tests/` — ALL ok, zero race detections (tests/ 157s, transaction 78s)
+  - [x] Session cleanup: `pgrep -f "devin -p|devin -r"` → no headless pipeline workers remain; only interactive `devin acp` orchestrator sessions
+- **Machine Evidence**:
+  - Saturation: `reports/saturation/summary.txt` — iter-01..10 all PASS, 22/22 ok each, per-iter logs `iter-*.log`
+  - Race: 20 packages green incl. tokenview 53s, transaction 78s, tests/ 157s
+  - Worker session ids logged: critic `nebula-freesia`; cook `broadleaf-sort` + `cyber-date`; review rounds 1–2 (fresh sessions)
+- **Self-Audit Commitment**: no code changes after final saturation; backend production-ready.
+
+### [TXP_STAGE_5_VERIFICATION] - Stage 5: Browser Autonomy — SKIPPED-NO-UI + live substitution
+- **Completion Timestamp**: 2026-11-04 17:40:00
+- **Status**: SKIPPED-NO-UI (justified; live-API substitution executed)
+- **Justification**: backend-only change — Go REST API + worker; zero UI surface in diff. Per pipeline rules, substitute evidence captured: live API traffic, latency, secret hygiene, DB state.
+- **Machine Evidence** (live captures in `reports/stage5/`):
+  - Boot chain resolution: `TX_PROVIDER_ETH=chainscan,blockscout` + `nodereal,blockscout` → ordered-chain log lines
+  - `GET /api/v1/networks` → 200, 3.7ms
+  - `GET /wallets/ethereum/0x…12345/transactions?refresh=1` → 200, 1.61s, `provider_status:"ok"`, `fresh`, `indexed_until_block:26340489`, `rows_indexed:7` real ERC-20 rows
+  - Live disabled-skip: nodereal `Enabled(eth)=false` → zero traffic → blockscout serves (`fresh/ok`, 7 rows, 1.90s)
+  - Honest PARTIAL: ultra-busy wallet → `index_status:"partial"`, `history_truncated:true`, `provider_status:"ok"` — coverage never over-claimed
+  - Per-source watermark isolation verified by live SQL: same wallet holds `chainscan|fresh|26340489` and `blockscout|fresh|26340492` under PK `(network_id,wallet_id,source_id)`
+  - Secret hygiene: no keys in commits/tests; dev bootstrap keys are documented local seeds; headers never logged
+- **Report**: `plans/20261104-1100-tx-provider-expansion/reports/stage5-report.md`
+- **Self-Audit Commitment**: substitute evidence is real upstream traffic (blockscout/chainscan), not mocks; all JSON captured verbatim.
+
+### [TXP_STAGE_6_VERIFICATION] - Stage 6: Illustrated Guidebook & Feature Map Sign-Off
+- **Completion Timestamp**: 2026-11-04 17:45:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Published guidebook + technical feature map: `docs/feature-maps/tx-provider-expansion.md`
+  - [x] Backend-only: real live API JSON captures in place of screenshots (`reports/stage5/*.json`, `*.log`, `*.sql.txt`)
+  - [x] Documented source paths, env/config contract, failover semantics, API contract, operator runbook, known limits
+  - [x] Executable DB verification queries — executed live against `check_wallet` dev DB, outputs captured (`04-per-source-state.sql.txt`); `\d wallet_index_state` confirms PK `(network_id,wallet_id,source_id)`
+- **Machine Evidence**:
+  - Guidebook: `docs/feature-maps/tx-provider-expansion.md`
+  - Live captures: `plans/20261104-1100-tx-provider-expansion/reports/stage5/` (6 files, all real API/DB output)
+  - Review trail: `review-round-1.md` → `remediation-round-1.md` → `review-round-2.md` APPROVED
+- **Self-Audit Commitment**: every DB query in the guidebook was executed against the live dev DB and output captured; a tester can reproduce all flows independently.
