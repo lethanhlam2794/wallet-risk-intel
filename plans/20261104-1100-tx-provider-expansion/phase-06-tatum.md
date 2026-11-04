@@ -1,7 +1,7 @@
 ---
 phase: 06
 title: Tatum transaction-history adapter
-status: pending
+status: completed
 priority: P1
 dependencies: [phase-05]
 ---

@@ -1,7 +1,7 @@
 ---
 phase: 08
 title: OKLink transaction-history adapter
-status: pending
+status: completed
 priority: P2
 dependencies: [phase-07]
 ---

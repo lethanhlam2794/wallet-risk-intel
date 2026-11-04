@@ -1,7 +1,7 @@
 ---
 phase: 09
 title: Blockchair transaction-history adapter
-status: pending
+status: not-viable
 priority: P2
 dependencies: [phase-08]
 ---

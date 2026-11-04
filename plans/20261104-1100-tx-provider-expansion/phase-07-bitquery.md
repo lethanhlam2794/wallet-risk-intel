@@ -1,7 +1,7 @@
 ---
 phase: 07
 title: Bitquery transaction-history adapter
-status: pending
+status: completed
 priority: P2
 dependencies: [phase-06]
 ---
