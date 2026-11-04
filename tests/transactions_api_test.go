@@ -83,10 +83,10 @@ func testTxAPI(t *testing.T, stub *apiStub) (*httptest.Server, *pgxpool.Pool) {
 		HTTPAddr: ":0", RedisURL: testutil.TestRedisURL(), LogLevel: "error",
 		RateLimitRequests: 1000, RateLimitAnon: 1000, RateLimitWindow: time.Minute,
 	}
-	adapters := map[string]provider.TxProvider{}
+	adapters := map[string][]provider.TxProvider{}
 	for _, n := range nets {
 		if n.Code == "ethereum" {
-			adapters[n.Code] = stub
+			adapters[n.Code] = []provider.TxProvider{stub}
 		}
 	}
 	wallets := wallet.NewService(queries)

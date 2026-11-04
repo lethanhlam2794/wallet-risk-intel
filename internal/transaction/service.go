@@ -57,12 +57,32 @@ func (c *Config) defaults() {
 	}
 }
 
+// failoverKinds is the closed set of provider failure kinds that justify
+// walking to the next chain member (phase-12 D3/D4). Everything else —
+// empty page, client_4xx, malformed, timeout, internal — is terminal for
+// the request; disabled members are skipped before failing.
+var failoverKinds = map[provider.ErrKind]bool{
+	provider.ErrRateLimited: true,
+	provider.ErrUpstream5xx: true,
+	provider.ErrDegraded:    true,
+	provider.ErrTransport:   true,
+	provider.ErrCircuitOpen: true,
+}
+
+func isFailover(err error) bool {
+	var le *provider.LookupError
+	if !errors.As(err, &le) {
+		return false
+	}
+	return failoverKinds[le.Kind]
+}
+
 // Service owns lazy indexing and indexed-read for one network registry.
 type Service struct {
 	q        *db.Queries
 	pool     *pgxpool.Pool
 	wallets  *wallet.Service
-	adapters map[string]provider.TxProvider // net.Code → adapter (single)
+	adapters map[string][]provider.TxProvider // net.Code → ordered failover chain
 	cfg      Config
 	sf       singleflight.Group
 	log      *slog.Logger
@@ -72,9 +92,10 @@ type Service struct {
 	sourceIDs map[string]int64 // adapter Name() → data_sources.id (lazy)
 }
 
-// New builds the service; adapters maps network code → the single adapter
-// registered for it (conflicts are a wiring error caught in main).
-func New(pool *pgxpool.Pool, q *db.Queries, adapters map[string]provider.TxProvider,
+// New builds the service; adapters maps network code → the ordered
+// failover chain registered for it (a one-entry chain is the pre-phase-12
+// single-adapter shape; conflicts are a wiring error caught in main).
+func New(pool *pgxpool.Pool, q *db.Queries, adapters map[string][]provider.TxProvider,
 	wallets *wallet.Service, cfg Config, log *slog.Logger) *Service {
 
 	cfg.defaults()
@@ -88,14 +109,17 @@ func New(pool *pgxpool.Pool, q *db.Queries, adapters map[string]provider.TxProvi
 	}
 }
 
-// BudgetFor returns the configured request-global provider pool limit for
-// the network's adapter (0 = unlimited).
+// BudgetFor returns the request-global provider pool limit for the
+// network — the max over the resolved chain's configured budgets
+// (phase-12 D2); 0 = unlimited.
 func (s *Service) BudgetFor(net network.Network) int {
-	a := s.adapters[net.Code]
-	if a == nil {
-		return 0
+	max := 0
+	for _, a := range s.adapters[net.Code] {
+		if b := s.cfg.Budget[a.Name()]; b > max {
+			max = b
+		}
 	}
-	return s.cfg.Budget[a.Name()]
+	return max
 }
 
 // MaxPagesFor returns the stream-pair step bound for a frontier index:
@@ -155,9 +179,10 @@ type ixState struct {
 	row    db.WalletIndexState
 }
 
-func (s *Service) loadState(ctx context.Context, netID, walletID int64) (*ixState, error) {
+func (s *Service) loadState(ctx context.Context, netID, walletID int64,
+	srcID int64) (*ixState, error) {
 	row, err := s.q.GetWalletIndexState(ctx, db.GetWalletIndexStateParams{
-		NetworkID: netID, WalletID: walletID})
+		NetworkID: netID, WalletID: walletID, SourceID: srcID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return &ixState{}, nil
 	}
@@ -171,98 +196,171 @@ func (s *Service) ensure(ctx context.Context, net network.Network,
 	normalized string, walletID int64, opts EnsureOptions) (*IndexOutcome, error) {
 
 	now := s.now()
-	adapter := s.adapters[net.Code]
+	chain := s.adapters[net.Code]
 
-	var srcID pgtype.Int8
-	enabled := false
-	if adapter != nil {
-		enabled = adapter.Enabled(net)
-		if id, err := s.sourceID(ctx, adapter.Name()); err == nil {
-			srcID = pgtype.Int8{Int64: id, Valid: true}
+	firstState := &ixState{}
+	var firstSrc int64
+	disabledSkips := 0
+	var lastOutcome *IndexOutcome
+	var totalCalls int64
+
+	for i, adapter := range chain {
+		var srcID int64
+		if adapter != nil {
+			if id, err := s.sourceID(ctx, adapter.Name()); err == nil {
+				srcID = id
+			}
 		}
-	}
+		st := &ixState{}
+		if srcID != 0 {
+			loaded, err := s.loadState(ctx, net.ID, walletID, srcID)
+			if err != nil {
+				return nil, err
+			}
+			st = loaded
+		}
+		if i == 0 {
+			firstState, firstSrc = st, srcID
+		}
+		status := StatusNotIndexed
+		if st.exists {
+			status = st.row.Status
+		}
+		fresh := st.exists && st.row.IndexedAt.Valid &&
+			now.Sub(st.row.IndexedAt.Time) <= s.cfg.FreshTTL
+		cooldown := st.exists && st.row.IndexedAt.Valid &&
+			now.Sub(st.row.IndexedAt.Time) <= s.cfg.NegativeTTL
+		serve := func() *IndexOutcome {
+			out := outcomeFromState(st, s.cfg.FreshTTL, now)
+			out.WalletID = walletID
+			return out
+		}
+		// Per-source gate order preserved (design D3): freshness serves,
+		// disabled/cooldown skip without traffic, live claims serve.
+		switch {
+		case (status == StatusFresh || status == StatusPartial) && fresh && !opts.Refresh:
+			return serve(), nil
+		case adapter == nil || !adapter.Enabled(net):
+			disabledSkips++
+			continue
+		case status == StatusFailed && cooldown:
+			continue
+		case status == StatusIndexing && st.row.UpdatedAt.Valid &&
+			now.Sub(st.row.UpdatedAt.Time) <= s.cfg.StaleAfter:
+			return serve(), nil
+		case srcID == 0:
+			continue // no provenance row to persist under — skip the attempt
+		}
 
-	st, err := s.loadState(ctx, net.ID, walletID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Provider-switch reset: never trust another adapter's watermark.
-	if st.exists && srcID.Valid && st.row.SourceID.Valid &&
-		st.row.SourceID.Int64 != srcID.Int64 {
-		if err := s.q.ResetWalletIndexSource(ctx, db.ResetWalletIndexSourceParams{
-			NetworkID: net.ID, WalletID: walletID, SourceID: srcID}); err != nil {
+		out, failover, err := s.attemptFetch(ctx, net, normalized, walletID,
+			adapter, srcID, st, now, opts, i < len(chain)-1, totalCalls)
+		if err != nil {
 			return nil, err
 		}
-		st.exists = false
-		st = &ixState{}
-	}
-	// A row written by a different adapter without FK provenance is not
-	// trusted either — but only when it claims coverage we cannot verify.
-	if st.exists && srcID.Valid && !st.row.SourceID.Valid && st.row.Status != StatusNotIndexed {
-		if err := s.q.ResetWalletIndexSource(ctx, db.ResetWalletIndexSourceParams{
-			NetworkID: net.ID, WalletID: walletID, SourceID: srcID}); err != nil {
-			return nil, err
+		totalCalls = out.ProviderCalls
+		if !failover {
+			return out, nil
 		}
-		st = &ixState{}
+		lastOutcome = out
 	}
 
-	status := StatusNotIndexed
-	if st.exists {
-		status = st.row.Status
+	if lastOutcome != nil {
+		// Every attempted adapter failed — the last FAILED row is the
+		// freshest verdict (D3); per-attempt failures persist per source.
+		return lastOutcome, nil
 	}
-	fresh := st.exists && st.row.IndexedAt.Valid &&
-		now.Sub(st.row.IndexedAt.Time) <= s.cfg.FreshTTL
-	cooldown := st.exists && st.row.IndexedAt.Valid &&
-		now.Sub(st.row.IndexedAt.Time) <= s.cfg.NegativeTTL
+	if len(chain) == 0 || disabledSkips == len(chain) {
+		// All-disabled terminal: written under chain[0]'s configured
+		// source (D5) — the selector's verdict, not a phantom row.
+		return s.writeDisabled(ctx, net.ID, walletID, firstSrc, firstState, now)
+	}
+	// No adapter attempted and none all-disabled — chain[0]'s persisted
+	// row carries the verdict (primary cooling down, rest unusable).
+	out := outcomeFromState(firstState, s.cfg.FreshTTL, now)
+	out.WalletID = walletID
+	return out, nil
+}
 
-	serve := func() *IndexOutcome {
-		out := outcomeFromState(st, s.cfg.FreshTTL, now)
-		out.WalletID = walletID
-		return out
-	}
-	switch {
-	case (status == StatusFresh || status == StatusPartial) && fresh && !opts.Refresh:
-		return serve(), nil
-	case !enabled:
-		// Re-evaluated per request — a disabled provider records its own
-		// terminal rather than lingering under a stale failed verdict.
-		return s.writeDisabled(ctx, net.ID, walletID, srcID, st, now)
-	case status == StatusFailed && cooldown:
-		// The FAILED cooldown still holds under refresh=1 (plan §3.2).
-		return serve(), nil
-	case status == StatusIndexing && st.row.UpdatedAt.Valid &&
-		now.Sub(st.row.UpdatedAt.Time) <= s.cfg.StaleAfter:
-		// A live claim within the stale horizon is someone else's work —
-		// serve persisted facts rather than double-index (cross-process;
-		// same-process callers already joined via singleflight).
-		return serve(), nil
-	}
-	// 'indexing' past the horizon is a dead claim — retryable.
+// attemptFetch runs one chain member's full fetch cycle against its own
+// per-source state row: head → window → index-claim → stream-pair
+// pagination → batch upsert → terminal write. It returns failover=true
+// exactly when the attempt ended on a failover-eligible ErrKind AND a
+// later chain member exists (moreMembers): that attempt's accumulated
+// transfers are DISCARDED (never mixed into the next attempt's batch —
+// D3) and its row records FAILED with its prior watermark kept. On any
+// other outcome the returned *IndexOutcome is terminal for the request.
+// callsBase accumulates prior attempts' upstream calls so ProviderCalls
+// always reports request-total real outbound calls.
+func (s *Service) attemptFetch(ctx context.Context, net network.Network,
+	normalized string, walletID int64, adapter provider.TxProvider,
+	srcID int64, st *ixState, now time.Time, opts EnsureOptions,
+	moreMembers bool, callsBase int64) (*IndexOutcome, bool, error) {
 
-	// --- fetch path ---
 	maxPages := opts.MaxPages
 	if maxPages <= 0 {
 		maxPages = s.cfg.MaxPagesHop0
 	}
-	out := &IndexOutcome{WalletID: walletID, IndexScope: IndexScope}
-	if !opts.Budget.tryTake(1) {
+	out := &IndexOutcome{WalletID: walletID, IndexScope: IndexScope,
+		ProviderCalls: callsBase}
+	// Per-provider cap (D2): this adapter may spend at most its own
+	// configured budget within the request, on top of the shared pool.
+	providerCap := int64(s.cfg.Budget[adapter.Name()])
+	var attemptCalls int64
+	prepay := func() bool {
+		if providerCap > 0 && attemptCalls >= int64(providerCap) {
+			return false
+		}
+		return opts.Budget.tryTake(1)
+	}
+	settle := func(calls int64) {
+		attemptCalls += calls
+		if calls > 1 {
+			opts.Budget.charge(calls - 1)
+		}
+	}
+	if opts.Budget.Exhausted() {
 		// No request left for even the head call — serve persisted facts;
-		// the budget flag lets BFS count this as never-attempted.
+		// the budget flag lets BFS count this as never-attempted. The
+		// read-only check runs BEFORE the index claim so a drained pool
+		// never leaves an 'indexing' row behind.
 		fillFromState(out, st, s.cfg.FreshTTL, now)
 		out.WalletID = walletID
 		out.BudgetExhausted = true
-		// No ProviderStatus verdict — the pool is ours, not a provider
-		// failure; persisted state already filled it.
-		return out, nil
+		return out, false, nil
+	}
+	// Claim the index work before spending: the 'indexing' row is the
+	// cross-process guard for the whole attempt (phase-12 D3).
+	if err := s.q.MarkWalletIndexing(ctx, db.MarkWalletIndexingParams{
+		NetworkID: net.ID, WalletID: walletID, SourceID: srcID}); err != nil {
+		return nil, false, err
+	}
+	if !prepay() {
+		// Raced drain between the exhausted check and the prepay —
+		// release the claim (not_indexed) then report never-attempted.
+		if _, uerr := s.q.UpsertWalletIndexState(ctx, db.UpsertWalletIndexStateParams{
+			NetworkID: net.ID, WalletID: walletID, SourceID: srcID,
+			IndexedAt: pgtype.Timestamptz{Time: now, Valid: true},
+			Status:    StatusNotIndexed,
+		}); uerr != nil {
+			return nil, false, uerr
+		}
+		fillFromState(out, st, s.cfg.FreshTTL, now)
+		out.WalletID = walletID
+		out.BudgetExhausted = true
+		return out, false, nil
 	}
 	head, err := adapter.HeadBlock(ctx, net)
-	out.ProviderCalls = 1
+	settle(1)
+	out.ProviderCalls++
 	if err != nil {
 		kind := errKind(err)
 		out.FetchErr = err
-		return s.writeTerminal(ctx, net.ID, walletID, srcID, st, now,
+		res, werr := s.writeTerminal(ctx, net.ID, walletID, srcID, st, now,
 			StatusFailed, kind, nil, 0, RowsSkipped{}, out)
+		if werr != nil {
+			return nil, false, werr
+		}
+		return res, moreMembers && isFailover(err), nil
 	}
 	out.HeadBlock = &head
 	out.Fetched = true
@@ -278,18 +376,22 @@ func (s *Service) ensure(ctx context.Context, net network.Network,
 	}
 	if head < fetchFrom {
 		// Node lag or >tail reorg: no transfer call is honest — serve
-		// persisted facts; head_block on the wire evidences the condition.
+		// persisted facts; head_block on the wire evidences the
+		// condition. The index claim is released — nothing was indexed.
+		if _, uerr := s.q.UpsertWalletIndexState(ctx, db.UpsertWalletIndexStateParams{
+			NetworkID: net.ID, WalletID: walletID, SourceID: srcID,
+			IndexedAt: pgtype.Timestamptz{Time: now, Valid: true},
+			Status:    StatusNotIndexed,
+		}); uerr != nil {
+			return nil, false, uerr
+		}
 		fillFromState(out, st, s.cfg.FreshTTL, now)
-		return out, nil
+		out.ProviderCalls = callsBase + 1
+		return out, false, nil
 	}
 	fetchTo := head
 	if cap := s.cfg.WindowCap[net.Code]; cap > 0 && fetchFrom+cap < fetchTo {
 		fetchTo = fetchFrom + cap
-	}
-
-	if err := s.q.MarkWalletIndexing(ctx, db.MarkWalletIndexingParams{
-		NetworkID: net.ID, WalletID: walletID, SourceID: srcID}); err != nil {
-		return nil, err
 	}
 
 	// Paginate stream-pair steps until done, bound, or typed failure.
@@ -303,7 +405,7 @@ func (s *Service) ensure(ctx context.Context, net network.Network,
 	var fetchErr error
 	budgetStop := false
 	for steps < maxPages {
-		if !opts.Budget.tryTake(1) {
+		if !prepay() {
 			budgetStop = true
 			break
 		}
@@ -318,10 +420,8 @@ func (s *Service) ensure(ctx context.Context, net network.Network,
 			break
 		}
 		steps++
+		settle(int64(page.UpstreamCalls))
 		out.ProviderCalls += int64(page.UpstreamCalls) // real upstream calls
-		if page.UpstreamCalls > 1 {
-			opts.Budget.charge(int64(page.UpstreamCalls) - 1)
-		}
 		transfers = append(transfers, page.Transfers...)
 		for _, ss := range page.Streams {
 			streamSeen[ss.Name] = true
@@ -343,16 +443,29 @@ func (s *Service) ensure(ctx context.Context, net network.Network,
 		}
 	}
 
+	// Failover-eligible mid-flight failure with a later member waiting:
+	// discard this attempt's accumulated batch entirely (never upserted,
+	// never mixed — D3) and write FAILED with the prior watermark kept.
+	if fetchErr != nil && moreMembers && isFailover(fetchErr) {
+		out.FetchErr = fetchErr
+		res, werr := s.writeTerminal(ctx, net.ID, walletID, srcID, st, now,
+			StatusFailed, errKind(fetchErr), nil, 0, RowsSkipped{}, out)
+		if werr != nil {
+			return nil, false, werr
+		}
+		return res, true, nil
+	}
+
 	// Upsert the assembled batch first — the watermark applies only after
 	// commit (crash-safe ordering).
 	rowsJSON, skipped, rowCount, err := s.buildRows(ctx, net, transfers)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if len(rowsJSON) > 2 { // "[]"
 		if err := s.q.UpsertTransactions(ctx, db.UpsertTransactionsParams{
 			NetworkID: net.ID, Rows: rowsJSON}); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 
@@ -410,21 +523,28 @@ func (s *Service) ensure(ctx context.Context, net network.Network,
 			allFinished = false
 		}
 	}
+	var res *IndexOutcome
 	switch {
 	case fetchErr != nil:
 		out.FetchErr = fetchErr
-		return s.writeTerminal(ctx, net.ID, walletID, srcID, st, now,
+		res, err = s.writeTerminal(ctx, net.ID, walletID, srcID, st, now,
 			StatusFailed, errKind(fetchErr), wmPtr,
 			rowCount, skipped, out)
 	case token == "" && fetchTo == head && !budgetStop && allFinished:
-		return s.writeTerminal(ctx, net.ID, walletID, srcID, st, now,
+		res, err = s.writeTerminal(ctx, net.ID, walletID, srcID, st, now,
 			StatusFresh, "", wmPtr, rowCount, skipped, out)
 	default:
 		// Stopped on a bound (max_pages, budget, window cap) — partial and
 		// history_truncated are written together (plan §3.4).
-		return s.writeTerminal(ctx, net.ID, walletID, srcID, st, now,
+		res, err = s.writeTerminal(ctx, net.ID, walletID, srcID, st, now,
 			StatusPartial, "", wmPtr, rowCount, skipped, out)
 	}
+	if err != nil {
+		return nil, false, err
+	}
+	// Non-failover-kind fetch failures are terminal for the request even
+	// when later members exist; so are failures on the last member.
+	return res, fetchErr != nil && moreMembers && isFailover(fetchErr), nil
 }
 
 // errKind folds an adapter error to its persisted ErrKind vocabulary.
@@ -439,8 +559,18 @@ func errKind(err error) string {
 // writeDisabled records the disabled terminal (error='disabled' — an
 // ErrKind, never an unearned FAILED cooldown).
 func (s *Service) writeDisabled(ctx context.Context, netID, walletID int64,
-	srcID pgtype.Int8, st *ixState, now time.Time) (*IndexOutcome, error) {
+	srcID int64, st *ixState, now time.Time) (*IndexOutcome, error) {
 
+	if srcID == 0 {
+		// No resolvable source — post-rekey rows require provenance;
+		// report the disabled verdict without persisting a row.
+		out := outcomeFromState(st, s.cfg.FreshTTL, now)
+		out.WalletID = walletID
+		out.IndexStatus = StatusDisabled
+		ps := string(provider.ErrDisabled)
+		out.ProviderStatus = &ps
+		return out, nil
+	}
 	var wm pgtype.Int8
 	if st.exists && st.row.IndexedUntilBlock.Valid {
 		wm = st.row.IndexedUntilBlock
@@ -463,7 +593,7 @@ func (s *Service) writeDisabled(ctx context.Context, netID, walletID int64,
 
 // writeTerminal persists one terminal state and reports it.
 func (s *Service) writeTerminal(ctx context.Context, netID, walletID int64,
-	srcID pgtype.Int8, st *ixState, now time.Time,
+	srcID int64, st *ixState, now time.Time,
 	status, errKind string, watermark *int64,
 	rowsIndexed int64, skipped RowsSkipped, out *IndexOutcome) (*IndexOutcome, error) {
 

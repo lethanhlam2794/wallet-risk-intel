@@ -347,8 +347,8 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		log.Info("chainbase disabled: CHAINBASE_API_KEY not configured")
 	}
 
-	// Registry of every selectable provider; TX_PROVIDER_<NET> picks the
-	// serving adapter per network (first entry — failover lands phase-12).
+	// Registry of every selectable provider; TX_PROVIDER_<NET> resolves the
+	// ordered failover chain per network.
 	registry := map[string]provider.TxProvider{
 		chainscan.SourceCode:  cs,
 		nodereal.SourceCode:   nr,
@@ -363,12 +363,12 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		tokenview.SourceCode:  tv,
 		chainbase.SourceCode:  cb,
 	}
-	ethAdapter, err := selectTxProvider("TX_PROVIDER_ETH", cfg.TxProviderETH,
+	ethChain, err := selectTxProviderChain("TX_PROVIDER_ETH", cfg.TxProviderETH,
 		chainscan.SourceCode, registry, log)
 	if err != nil {
 		return nil, nil, err
 	}
-	bscAdapter, err := selectTxProvider("TX_PROVIDER_BSC", cfg.TxProviderBSC,
+	bscChain, err := selectTxProviderChain("TX_PROVIDER_BSC", cfg.TxProviderBSC,
 		nodereal.SourceCode, registry, log)
 	if err != nil {
 		return nil, nil, err
@@ -402,7 +402,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	}
 
 	txSvc := transaction.New(pool, q,
-		map[string]provider.TxProvider{"ethereum": ethAdapter, "bsc": bscAdapter},
+		map[string][]provider.TxProvider{"ethereum": ethChain, "bsc": bscChain},
 		wallets, transaction.Config{
 			FreshTTL:     cfg.IndexingFreshTTL,
 			StaleAfter:   cfg.IndexingStaleAfter,
@@ -432,19 +432,18 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	return txSvc, tracingSvc, nil
 }
 
-// selectTxProvider resolves TX_PROVIDER_<NET>: unset → the historical
-// default adapter; set → the first comma-separated entry must name a
-// registered provider (unknown names are rejected at boot, never silently
-// misrouted). Extra entries are validated then ignored until phase-12
-// failover — warned, not dropped silently.
-func selectTxProvider(envName, raw, def string,
-	registry map[string]provider.TxProvider, log *slog.Logger) (provider.TxProvider, error) {
+// selectTxProviderChain resolves TX_PROVIDER_<NET> into the ordered
+// failover chain: unset → a single-entry chain at the historical default
+// (byte-identical single-adapter behavior); set → every comma-separated
+// entry must name a registered provider, in the listed failover order
+// (unknown names are rejected at boot, never silently misrouted).
+func selectTxProviderChain(envName, raw, def string,
+	registry map[string]provider.TxProvider, log *slog.Logger) ([]provider.TxProvider, error) {
 	if strings.TrimSpace(raw) == "" {
-		return registry[def], nil
+		return []provider.TxProvider{registry[def]}, nil
 	}
-	var first provider.TxProvider
-	var extras int
-	for i, name := range strings.Split(raw, ",") {
+	var chain []provider.TxProvider
+	for _, name := range strings.Split(raw, ",") {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			return nil, fmt.Errorf("%s: empty provider entry", envName)
@@ -453,17 +452,16 @@ func selectTxProvider(envName, raw, def string,
 		if !ok {
 			return nil, fmt.Errorf("%s: unknown tx provider %q", envName, name)
 		}
-		if i == 0 {
-			first = p
-		} else {
-			extras++
+		chain = append(chain, p)
+	}
+	if len(chain) > 1 {
+		names := make([]string, 0, len(chain))
+		for _, p := range chain {
+			names = append(names, p.Name())
 		}
+		log.Info("tx provider failover chain resolved", "env", envName, "order", names)
 	}
-	if extras > 0 {
-		log.Warn("tx provider selector: extra entries validated but ignored until failover lands",
-			"env", envName, "serving", first.Name(), "ignored", extras)
-	}
-	return first, nil
+	return chain, nil
 }
 
 // bootstrapAPIClients upserts dev bootstrap keys from env. Removing the env

@@ -108,7 +108,7 @@ func newSvc(t *testing.T, pool *pgxpool.Pool, stub provider.TxProvider) (*Servic
 	t.Helper()
 	q := db.New(pool)
 	net := testNet(t, pool)
-	svc := New(pool, q, map[string]provider.TxProvider{net.Code: stub},
+	svc := New(pool, q, map[string][]provider.TxProvider{net.Code: {stub}},
 		wallet.NewService(q), Config{
 			FreshTTL: 10 * time.Minute, NegativeTTL: time.Minute,
 			StaleAfter: 15 * time.Minute, PageSize: 100,
@@ -365,7 +365,9 @@ func TestEnsureIndexed_MaxPagesTruncated(t *testing.T) {
 	assert.Equal(t, int64(5), stub.lookCalls.Load())
 }
 
-// Test 18b: provider switch resets the watermark and counters.
+// Test 18b: provider switch — the new adapter owns its OWN coverage row
+// (post-rekey): it indexes from its own cold start, the old source's
+// watermark left untouched.
 func TestEnsureIndexed_ProviderSwitchReset(t *testing.T) {
 	pool := testutil.RequireTestPoolDSN(t, testDSN)
 	stubA := newStub("chainscan")
@@ -378,7 +380,7 @@ func TestEnsureIndexed_ProviderSwitchReset(t *testing.T) {
 
 	stubB := newStub("nodereal")
 	stubB.head = 500
-	svc.adapters[net.Code] = stubB
+	svc.adapters[net.Code] = []provider.TxProvider{stubB}
 	out, err = svc.EnsureIndexed(context.Background(), net, addrRoot, EnsureOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, out.IndexedUntilBlock)
@@ -614,16 +616,19 @@ func TestMarkWalletIndexing_ClearsError(t *testing.T) {
 		`INSERT INTO wallets (network_id, address, normalized_address, address_type)
 		 VALUES ($1, $2, $2, 'evm') RETURNING id`,
 		net.ID, addrRoot).Scan(&walletID))
-	_, err := q.UpsertWalletIndexState(context.Background(),
+	src, err := q.GetSourceByCode(context.Background(), "chainscan")
+	require.NoError(t, err)
+	_, err = q.UpsertWalletIndexState(context.Background(),
 		db.UpsertWalletIndexStateParams{
-			NetworkID: net.ID, WalletID: walletID,
+			NetworkID: net.ID, WalletID: walletID, SourceID: src.ID,
 			IndexedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			Status:    StatusFailed,
 			Error:     pgtype.Text{String: "timeout", Valid: true},
 		})
 	require.NoError(t, err)
 	require.NoError(t, q.MarkWalletIndexing(context.Background(),
-		db.MarkWalletIndexingParams{NetworkID: net.ID, WalletID: walletID}))
+		db.MarkWalletIndexingParams{NetworkID: net.ID, WalletID: walletID,
+			SourceID: src.ID}))
 	st := getState(t, pool, net.ID, walletID)
 	assert.Equal(t, StatusIndexing, st.Status)
 	assert.False(t, st.Error.Valid, "claim clears stale error")

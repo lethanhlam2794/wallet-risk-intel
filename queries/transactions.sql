@@ -83,7 +83,7 @@ LIMIT $3;
 
 -- name: GetWalletIndexState :one
 SELECT * FROM wallet_index_state
-WHERE network_id = $1 AND wallet_id = $2;
+WHERE network_id = $1 AND wallet_id = $2 AND source_id = $3;
 
 -- Claim marker: status='indexing' preserves watermark/counters; updated_at
 -- is the claim timestamp the stale-claim horizon (IndexingStaleAfter)
@@ -91,31 +91,21 @@ WHERE network_id = $1 AND wallet_id = $2;
 -- name: MarkWalletIndexing :exec
 INSERT INTO wallet_index_state (network_id, wallet_id, source_id, status)
 VALUES ($1, $2, $3, 'indexing')
-ON CONFLICT (network_id, wallet_id) DO UPDATE SET
-    status = 'indexing', source_id = EXCLUDED.source_id, error = NULL,
+ON CONFLICT (network_id, wallet_id, source_id) DO UPDATE SET
+    status = 'indexing', error = NULL,
     updated_at = NOW();
-
--- Provider-switch reset (plan §3.2): never trust another adapter's
--- watermark — coverage counters reset with it.
--- name: ResetWalletIndexSource :exec
-UPDATE wallet_index_state SET
-    source_id = $3, indexed_until_block = NULL, status = 'not_indexed',
-    error = NULL, rows_indexed = 0, rows_skipped_missing_contract = 0,
-    rows_skipped_invalid_address = 0, history_truncated = false,
-    updated_at = NOW()
-WHERE network_id = $1 AND wallet_id = $2;
 
 -- Terminal write: status/error/indexed_at written in one upsert —
 -- indexed_at is simultaneously the freshness, FAILED-cooldown, and stale
--- clock. rows_* deltas accumulate (per-source; reset on provider switch).
+-- clock. rows_* deltas accumulate per source (phase-12 re-key: each
+-- adapter owns an independent coverage row).
 -- name: UpsertWalletIndexState :one
 INSERT INTO wallet_index_state (network_id, wallet_id, source_id,
     indexed_until_block, indexed_at, status, error,
     rows_indexed, rows_skipped_missing_contract, rows_skipped_invalid_address,
     history_truncated)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-ON CONFLICT (network_id, wallet_id) DO UPDATE SET
-    source_id = EXCLUDED.source_id,
+ON CONFLICT (network_id, wallet_id, source_id) DO UPDATE SET
     indexed_until_block = EXCLUDED.indexed_until_block,
     indexed_at = EXCLUDED.indexed_at,
     status = EXCLUDED.status,

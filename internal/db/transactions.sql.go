@@ -188,16 +188,17 @@ func (q *Queries) BulkResolveWallets(ctx context.Context, arg BulkResolveWallets
 
 const getWalletIndexState = `-- name: GetWalletIndexState :one
 SELECT network_id, wallet_id, source_id, indexed_until_block, indexed_at, status, error, rows_indexed, rows_skipped_missing_contract, rows_skipped_invalid_address, history_truncated, updated_at FROM wallet_index_state
-WHERE network_id = $1 AND wallet_id = $2
+WHERE network_id = $1 AND wallet_id = $2 AND source_id = $3
 `
 
 type GetWalletIndexStateParams struct {
 	NetworkID int64 `json:"network_id"`
 	WalletID  int64 `json:"wallet_id"`
+	SourceID  int64 `json:"source_id"`
 }
 
 func (q *Queries) GetWalletIndexState(ctx context.Context, arg GetWalletIndexStateParams) (WalletIndexState, error) {
-	row := q.db.QueryRow(ctx, getWalletIndexState, arg.NetworkID, arg.WalletID)
+	row := q.db.QueryRow(ctx, getWalletIndexState, arg.NetworkID, arg.WalletID, arg.SourceID)
 	var i WalletIndexState
 	err := row.Scan(
 		&i.NetworkID,
@@ -397,15 +398,15 @@ func (q *Queries) ListWalletEdges(ctx context.Context, arg ListWalletEdgesParams
 const markWalletIndexing = `-- name: MarkWalletIndexing :exec
 INSERT INTO wallet_index_state (network_id, wallet_id, source_id, status)
 VALUES ($1, $2, $3, 'indexing')
-ON CONFLICT (network_id, wallet_id) DO UPDATE SET
-    status = 'indexing', source_id = EXCLUDED.source_id, error = NULL,
+ON CONFLICT (network_id, wallet_id, source_id) DO UPDATE SET
+    status = 'indexing', error = NULL,
     updated_at = NOW()
 `
 
 type MarkWalletIndexingParams struct {
-	NetworkID int64       `json:"network_id"`
-	WalletID  int64       `json:"wallet_id"`
-	SourceID  pgtype.Int8 `json:"source_id"`
+	NetworkID int64 `json:"network_id"`
+	WalletID  int64 `json:"wallet_id"`
+	SourceID  int64 `json:"source_id"`
 }
 
 // Claim marker: status='indexing' preserves watermark/counters; updated_at
@@ -413,28 +414,6 @@ type MarkWalletIndexingParams struct {
 // reads; error is cleared so a live claim never echoes a stale ErrKind.
 func (q *Queries) MarkWalletIndexing(ctx context.Context, arg MarkWalletIndexingParams) error {
 	_, err := q.db.Exec(ctx, markWalletIndexing, arg.NetworkID, arg.WalletID, arg.SourceID)
-	return err
-}
-
-const resetWalletIndexSource = `-- name: ResetWalletIndexSource :exec
-UPDATE wallet_index_state SET
-    source_id = $3, indexed_until_block = NULL, status = 'not_indexed',
-    error = NULL, rows_indexed = 0, rows_skipped_missing_contract = 0,
-    rows_skipped_invalid_address = 0, history_truncated = false,
-    updated_at = NOW()
-WHERE network_id = $1 AND wallet_id = $2
-`
-
-type ResetWalletIndexSourceParams struct {
-	NetworkID int64       `json:"network_id"`
-	WalletID  int64       `json:"wallet_id"`
-	SourceID  pgtype.Int8 `json:"source_id"`
-}
-
-// Provider-switch reset (plan §3.2): never trust another adapter's
-// watermark — coverage counters reset with it.
-func (q *Queries) ResetWalletIndexSource(ctx context.Context, arg ResetWalletIndexSourceParams) error {
-	_, err := q.db.Exec(ctx, resetWalletIndexSource, arg.NetworkID, arg.WalletID, arg.SourceID)
 	return err
 }
 
@@ -477,8 +456,7 @@ INSERT INTO wallet_index_state (network_id, wallet_id, source_id,
     rows_indexed, rows_skipped_missing_contract, rows_skipped_invalid_address,
     history_truncated)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-ON CONFLICT (network_id, wallet_id) DO UPDATE SET
-    source_id = EXCLUDED.source_id,
+ON CONFLICT (network_id, wallet_id, source_id) DO UPDATE SET
     indexed_until_block = EXCLUDED.indexed_until_block,
     indexed_at = EXCLUDED.indexed_at,
     status = EXCLUDED.status,
@@ -499,7 +477,7 @@ RETURNING network_id, wallet_id, source_id, indexed_until_block, indexed_at, sta
 type UpsertWalletIndexStateParams struct {
 	NetworkID                  int64              `json:"network_id"`
 	WalletID                   int64              `json:"wallet_id"`
-	SourceID                   pgtype.Int8        `json:"source_id"`
+	SourceID                   int64              `json:"source_id"`
 	IndexedUntilBlock          pgtype.Int8        `json:"indexed_until_block"`
 	IndexedAt                  pgtype.Timestamptz `json:"indexed_at"`
 	Status                     string             `json:"status"`
@@ -512,7 +490,8 @@ type UpsertWalletIndexStateParams struct {
 
 // Terminal write: status/error/indexed_at written in one upsert —
 // indexed_at is simultaneously the freshness, FAILED-cooldown, and stale
-// clock. rows_* deltas accumulate (per-source; reset on provider switch).
+// clock. rows_* deltas accumulate per source (phase-12 re-key: each
+// adapter owns an independent coverage row).
 func (q *Queries) UpsertWalletIndexState(ctx context.Context, arg UpsertWalletIndexStateParams) (WalletIndexState, error) {
 	row := q.db.QueryRow(ctx, upsertWalletIndexState,
 		arg.NetworkID,

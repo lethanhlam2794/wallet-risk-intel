@@ -150,7 +150,7 @@ func newStackNets(t *testing.T, pool *pgxpool.Pool, stub provider.TxProvider,
 	q := db.New(pool)
 	net := testNet(t, pool)
 	txSvc := transaction.New(pool, q,
-		map[string]provider.TxProvider{net.Code: stub},
+		map[string][]provider.TxProvider{net.Code: {stub}},
 		wallet.NewService(q), transaction.Config{
 			FreshTTL: time.Minute, NegativeTTL: time.Minute,
 			StaleAfter: 15 * time.Minute, PageSize: 100,
@@ -328,7 +328,7 @@ func TestExposures_Bounds(t *testing.T) {
 		svc, q, net := newStack(t, pool, stub, Config{MaxNodes: 10, MaxEdges: 100})
 		// Pool of 2: head + one node index — the second node never starts.
 		svc.tx = transaction.New(pool, q,
-			map[string]provider.TxProvider{net.Code: stub},
+			map[string][]provider.TxProvider{net.Code: {stub}},
 			wallet.NewService(q), transaction.Config{
 				FreshTTL: time.Minute, NegativeTTL: time.Minute,
 				StaleAfter: 15 * time.Minute, PageSize: 100,
@@ -959,7 +959,7 @@ func TestExposures_PrefixTruncationDeep(t *testing.T) {
 	svc, q, net := newStack(t, pool, stub, Config{MaxNodes: 10, MaxEdges: 100})
 	// Pool of 6: root(2) + cpA(2) + cpB(2) — cpC never attempted.
 	svc.tx = transaction.New(pool, q,
-		map[string]provider.TxProvider{net.Code: stub},
+		map[string][]provider.TxProvider{net.Code: {stub}},
 		wallet.NewService(q), transaction.Config{
 			FreshTTL: time.Minute, NegativeTTL: time.Minute,
 			StaleAfter: 15 * time.Minute, PageSize: 100,
@@ -1155,7 +1155,7 @@ func TestExposures_MaxDepthReachedBudget(t *testing.T) {
 	svc, q, net := newStack(t, pool, stub, Config{MaxNodes: 10, MaxEdges: 100})
 	// Pool of 4: root(2) + cpA(2) — frontier_3 exists, zero attempts.
 	svc.tx = transaction.New(pool, q,
-		map[string]provider.TxProvider{net.Code: stub},
+		map[string][]provider.TxProvider{net.Code: {stub}},
 		wallet.NewService(q), transaction.Config{
 			FreshTTL: time.Minute, NegativeTTL: time.Minute,
 			StaleAfter: 15 * time.Minute, PageSize: 100,
@@ -1209,11 +1209,12 @@ func TestExposureScoreRounding(t *testing.T) {
 // §6-28: beyond-prefix glimpse — a node seen ONLY via a
 // done-but-not-emitted depth-2 scan stays invisible to cpAgg_3, but
 // the same node reachable via an emitted depth-3 path emits at hop 3.
-// The deterministic gap: a2's index state carries a foreign source_id,
-// so a held row lock stalls its provider-switch reset until positions
-// 0,2,3 drain the provider pool — its EnsureIndexed then returns
-// BudgetExhausted (pulled, never attempted). viaY is pre-indexed
-// fresh so depth-3 pull-through still resolves it for free.
+// The deterministic gap: a held lock on a2's per-source index row
+// stalls its EnsureIndexed at MarkWalletIndexing (pre-spend) until
+// positions 0,2,3 drain the provider pool — its head tryTake then
+// fails, BudgetExhausted (pulled, never attempted). viaY is
+// pre-indexed fresh so depth-3 pull-through still resolves it for
+// free.
 func TestExposures_BeyondPrefixGlimpse(t *testing.T) {
 	pool := testutil.RequireTestPoolDSN(t, testDSN)
 	ctx := context.Background()
@@ -1224,12 +1225,10 @@ func TestExposures_BeyondPrefixGlimpse(t *testing.T) {
 	viaY := "0x0000000000000000000000000000000000000bb9"
 	cpX := "0x0000000000000000000000000000000000000cc9"
 
-	// a2's index state claims a different adapter's provenance: the
-	// provider-switch reset (wallet_index_state UPDATE, pre-tryTake)
-	// blocks on the held row lock while a1/a3/a4 drain the pool —
-	// a2's head tryTake then fails (pulled, never attempted). The
-	// wallets table is untouched, so the root's BulkResolveWallets
-	// batch is unaffected.
+	// a2's per-source index row (chainscan) is held under lock: its
+	// EnsureIndexed blocks in MarkWalletIndexing — pre-spend — while
+	// a1/a3/a4 drain the pool; its head tryTake then fails (pulled,
+	// never attempted).
 	var a2w int64
 	require.NoError(t, pool.QueryRow(ctx, `
 		INSERT INTO wallets (network_id, address, normalized_address, address_type)
@@ -1238,7 +1237,7 @@ func TestExposures_BeyondPrefixGlimpse(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO wallet_index_state (network_id, wallet_id, source_id, status)
 		VALUES ((SELECT id FROM blockchain_networks WHERE code='ethereum'),
-			$1, (SELECT id FROM data_sources WHERE code='nodereal'),
+			$1, (SELECT id FROM data_sources WHERE code='chainscan'),
 			'not_indexed')`, a2w)
 	require.NoError(t, err)
 	lockTx, err := pool.Begin(ctx)
@@ -1269,9 +1268,9 @@ func TestExposures_BeyondPrefixGlimpse(t *testing.T) {
 	seedLabel(t, pool, testNet(t, pool).ID, cpX, "SCAM")
 
 	svc, q, net := newStack(t, pool, stub, Config{MaxNodes: 10, MaxEdges: 100})
-	// Pool 8 = root(2) + a1(2) + a3(2) + a4(2) — a2's tryTake finds 0.
+	// Pool 8 = root(2) + a1(2) + a3(2) + a4(2); a2 spends nothing (live claim).
 	svc.tx = transaction.New(pool, q,
-		map[string]provider.TxProvider{net.Code: stub},
+		map[string][]provider.TxProvider{net.Code: {stub}},
 		wallet.NewService(q), transaction.Config{
 			FreshTTL: time.Minute, NegativeTTL: time.Minute,
 			StaleAfter: 15 * time.Minute, PageSize: 100,
@@ -1295,7 +1294,7 @@ func TestExposures_BeyondPrefixGlimpse(t *testing.T) {
 	}()
 	// Hold the lock until the three unconstrained positions finished
 	// indexing (terminal 'fresh' rows prove their budget charges
-	// settled — a2's released tryTake must find the pool empty).
+	// settled — a2's released EnsureIndexed must find the pool empty).
 	ok3 := assert.Eventually(t, func() bool {
 		var n int
 		if err := pool.QueryRow(ctx, `
@@ -1319,7 +1318,7 @@ func TestExposures_BeyondPrefixGlimpse(t *testing.T) {
 	res := out.res
 
 	assert.Equal(t, 1, res.Coverage.FrontierEmittedByHop[2],
-		"a2 stalled-then-budget-clipped → emitted prefix = a1 only")
+		"a2 claim-gated (never attempted) → emitted prefix = a1 only")
 	assert.Equal(t, 3, res.Coverage.NodesExaminedByHop[2],
 		"a1,a3,a4 attempted; a2 never attempted")
 	assert.Equal(t, 0, stub.called(a2), "a2 never reached the provider")
@@ -1333,7 +1332,7 @@ func TestExposures_BeyondPrefixGlimpse(t *testing.T) {
 	assert.Equal(t, 3, res.Coverage.MaxDepthReached)
 	require.NotNil(t, res.Truncated)
 	assert.Equal(t, TruncMaxReqs, *res.Truncated,
-		"a2 sits unattempted with the pool empty — reported honestly")
+		"pool drained by the four live positions — reported honestly")
 	it, ok := itemByCp(res.Items)[cpX]
 	require.True(t, ok, "cpX must emit via the emitted depth-3 path")
 	assert.Equal(t, 3, it.Hops,

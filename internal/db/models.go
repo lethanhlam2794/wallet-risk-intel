@@ -277,7 +277,7 @@ type Wallet struct {
 type WalletIndexState struct {
 	NetworkID                  int64              `json:"network_id"`
 	WalletID                   int64              `json:"wallet_id"`
-	SourceID                   pgtype.Int8        `json:"source_id"`
+	SourceID                   int64              `json:"source_id"`
 	IndexedUntilBlock          pgtype.Int8        `json:"indexed_until_block"`
 	IndexedAt                  pgtype.Timestamptz `json:"indexed_at"`
 	Status                     string             `json:"status"`
