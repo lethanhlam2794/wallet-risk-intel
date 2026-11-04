@@ -78,6 +78,7 @@ type resolverDeps struct {
 	log          *slog.Logger
 	allowedHosts func(code string) []string
 	getenv       func(string) string
+	statusLoader func(ctx context.Context, code string) (bool, error)
 }
 
 // Option customizes resolution (tests).

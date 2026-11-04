@@ -77,6 +77,13 @@ func isFailover(err error) bool {
 	return failoverKinds[le.Kind]
 }
 
+// StatusChecker is the runtime kill-switch read consulted in the chain
+// walk (db-provider-config phase 3). providerconfig.StatusCache satisfies
+// it; nil means no kill switch — env parity.
+type StatusChecker interface {
+	Active(ctx context.Context, code string) bool
+}
+
 // Service owns lazy indexing and indexed-read for one network registry.
 type Service struct {
 	q        *db.Queries
@@ -87,6 +94,7 @@ type Service struct {
 	sf       singleflight.Group
 	log      *slog.Logger
 	now      func() time.Time
+	checker  StatusChecker // runtime kill-switch; nil ⇒ every source active
 
 	mu        sync.Mutex
 	sourceIDs map[string]int64 // adapter Name() → data_sources.id (lazy)
@@ -107,6 +115,17 @@ func New(pool *pgxpool.Pool, q *db.Queries, adapters map[string][]provider.TxPro
 		adapters: adapters, cfg: cfg, log: log,
 		now: time.Now, sourceIDs: map[string]int64{},
 	}
+}
+
+// SetStatusChecker wires the runtime kill-switch (provider_configs.status
+// via the TTL-cached read). nil restores env parity.
+func (s *Service) SetStatusChecker(c StatusChecker) { s.checker = c }
+
+// sourceInactive reports whether the kill-switch marks a source inactive —
+// the check runs inside the disabled-skip gate so an inactive member costs
+// zero upstream traffic and never triggers failover.
+func (s *Service) sourceInactive(ctx context.Context, a provider.TxProvider) bool {
+	return s.checker != nil && a != nil && !s.checker.Active(ctx, a.Name())
 }
 
 // BudgetFor returns the request-global provider pool limit for the
@@ -245,7 +264,7 @@ func (s *Service) ensure(ctx context.Context, net network.Network,
 		switch {
 		case (status == StatusFresh || status == StatusPartial) && fresh && !opts.Refresh:
 			return serve(), nil
-		case adapter == nil || !adapter.Enabled(net):
+		case adapter == nil || !adapter.Enabled(net) || s.sourceInactive(ctx, adapter):
 			disabledSkips++
 			continue
 		case status == StatusFailed && cooldown:

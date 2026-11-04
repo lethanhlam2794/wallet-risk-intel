@@ -447,6 +447,11 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 			WindowCap: map[string]int64{"bsc": cfg.IndexingWindowCapBSC},
 			Budget:    budget,
 		}, log)
+	// Runtime kill-switch (db-provider-config phase 3): provider_configs
+	// .status AND'd with data_sources.is_active, TTL-cached (~30s) — an
+	// inactive member is skipped exactly like a disabled adapter.
+	txSvc.SetStatusChecker(providerconfig.NewStatusCache(q, 30*time.Second,
+		providerconfig.WithLogger(log)))
 	tracingSvc := tracing.New(q, txSvc, sanctionsSvc, resolver, tracing.Config{
 		MaxNodes: cfg.TracingMaxNodes,
 		MaxNodesPerDepth: [4]int{
