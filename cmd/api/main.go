@@ -36,6 +36,7 @@ import (
 	"checkwallet/internal/provider/blockscout"
 	"checkwallet/internal/provider/chainabuse"
 	"checkwallet/internal/provider/chainscan"
+	"checkwallet/internal/provider/covalent"
 	"checkwallet/internal/provider/goplus"
 	"checkwallet/internal/provider/nodereal"
 	"checkwallet/internal/provider/ofac"
@@ -266,8 +267,18 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	if cfg.AlchemyAPIKey == "" {
 		log.Info("alchemy disabled: ALCHEMY_API_KEY not configured")
 	}
+	cv, err := covalent.New(cfg.CovalentBaseURL, cfg.CovalentAPIKey,
+		strings.Split(cfg.CovalentEnabledChains, ","),
+		covalent.WithHooks(hooksFor(covalent.SourceCode)),
+		covalent.WithDurationFunc(m.ProviderDurationHook(covalent.SourceCode)))
+	if err != nil {
+		return nil, nil, err
+	}
 	if cfg.AnkrAPIKey == "" {
 		log.Info("ankr disabled: ANKR_API_KEY not configured")
+	}
+	if cfg.CovalentAPIKey == "" {
+		log.Info("covalent disabled: COVALENT_API_KEY not configured")
 	}
 
 	// Registry of every selectable provider; TX_PROVIDER_<NET> picks the
@@ -278,6 +289,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		alchemy.SourceCode:    al,
 		blockscout.SourceCode: bs,
 		ankr.SourceCode:       an,
+		covalent.SourceCode:   cv,
 	}
 	ethAdapter, err := selectTxProvider("TX_PROVIDER_ETH", cfg.TxProviderETH,
 		chainscan.SourceCode, registry, log)
@@ -296,6 +308,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		alchemy.SourceCode:    cfg.IndexingBudgetAlchemy,
 		blockscout.SourceCode: cfg.IndexingBudgetBlockscout,
 		ankr.SourceCode:       cfg.IndexingBudgetAnkr,
+		covalent.SourceCode:   cfg.IndexingBudgetCovalent,
 	}
 	// Boot checks (plan invariants): every registered provider must resolve
 	// a data_sources row — a typo'd Name() silently disables the

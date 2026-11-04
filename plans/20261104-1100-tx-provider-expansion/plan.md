@@ -24,7 +24,7 @@ support.
 | 01 | alchemy adapter (bsc+eth) | P0 | — | DONE — live-verify BLOCKED (no key) |
 | 02 | blockscout adapter (eth, keyless) | P0 | 01 | DONE — live-verified |
 | 03 | ankr adapter (bsc+eth) | P1 | 02 | DONE — live-verify BLOCKED (no key) |
-| 04 | covalent adapter (bsc) | P1 | 03 | BLOCKED (no key) |
+| 04 | covalent adapter (bsc) | P1 | 03 | DONE — live-verify BLOCKED (no key) |
 | 05 | moralis adapter (bsc) | P1 | 04 | BLOCKED (no key) |
 | 06 | tatum adapter (bsc) | P1 | 05 | BLOCKED (no key) |
 | 07 | bitquery verify-first (bsc) | P2 | 06 | probe required |
@@ -70,7 +70,7 @@ from this table:
 | alchemy | BLOCKED (no key) | tatum | pending-key |
 | blockscout | VERIFIED | bitquery | pending-key |
 | ankr | BLOCKED (no key) | oklink | pending-key |
-| covalent | pending-key | blockchair | keyless-probe ok, key verify pending |
+| covalent | BLOCKED (no key) | blockchair | keyless-probe ok, key verify pending |
 | moralis | pending-key | tokenview | pending-key |
 | chainbase | pending-key | | |
 
