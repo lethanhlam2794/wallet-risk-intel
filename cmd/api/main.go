@@ -43,6 +43,7 @@ import (
 	"checkwallet/internal/provider/ofac"
 	"checkwallet/internal/provider/publicaml"
 	"checkwallet/internal/provider/resilience"
+	"checkwallet/internal/provider/tatum"
 	"checkwallet/internal/provider/walletattribution"
 	"checkwallet/internal/sanctions"
 	"checkwallet/internal/screening"
@@ -291,6 +292,16 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	if cfg.MoralisAPIKey == "" {
 		log.Info("moralis disabled: MORALIS_API_KEY not configured")
 	}
+	ta, err := tatum.New(cfg.TatumBaseURL, cfg.TatumAPIKey,
+		strings.Split(cfg.TatumEnabledChains, ","),
+		tatum.WithHooks(hooksFor(tatum.SourceCode)),
+		tatum.WithDurationFunc(m.ProviderDurationHook(tatum.SourceCode)))
+	if err != nil {
+		return nil, nil, err
+	}
+	if cfg.TatumAPIKey == "" {
+		log.Info("tatum disabled: TATUM_API_KEY not configured")
+	}
 
 	// Registry of every selectable provider; TX_PROVIDER_<NET> picks the
 	// serving adapter per network (first entry — failover lands phase-12).
@@ -302,6 +313,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		ankr.SourceCode:       an,
 		covalent.SourceCode:   cv,
 		moralis.SourceCode:    mo,
+		tatum.SourceCode:      ta,
 	}
 	ethAdapter, err := selectTxProvider("TX_PROVIDER_ETH", cfg.TxProviderETH,
 		chainscan.SourceCode, registry, log)
@@ -322,6 +334,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		ankr.SourceCode:       cfg.IndexingBudgetAnkr,
 		covalent.SourceCode:   cfg.IndexingBudgetCovalent,
 		moralis.SourceCode:    cfg.IndexingBudgetMoralis,
+		tatum.SourceCode:      cfg.IndexingBudgetTatum,
 	}
 	// Boot checks (plan invariants): every registered provider must resolve
 	// a data_sources row — a typo'd Name() silently disables the

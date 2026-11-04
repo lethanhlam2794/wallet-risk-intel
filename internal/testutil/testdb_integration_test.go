@@ -28,6 +28,6 @@ func TestRequireTestPool_SeededSchema(t *testing.T) {
 	assert.Equal(t,
 		[]string{"alchemy", "ankr", "blockscout", "chainabuse", "chainscan",
 			"covalent", "goplus", "moralis", "nodereal", "ofac_sdn",
-			"publicaml", "wallet_attribution"},
+			"publicaml", "tatum", "wallet_attribution"},
 		sources, "all migration-seeded data sources must survive truncation")
 }
