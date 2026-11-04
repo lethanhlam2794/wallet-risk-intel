@@ -1,0 +1,42 @@
+I'll start by reading the mandatory compliance inputs and surveying the plan directory structure.Compliance inputs are readable. Let me finish reading them and start on the plan files.Let me finish the learning ledger quickly and read plan.md.Compliance inputs read. Now reading all 12 phase files — this is the bulk of the audit.Phases 01–03 verified — checklists present. Noting already: plan.md roadmap `Depends` column still shows `—` for phases 01–11 while phase files declare sequential deps — R3 claim #8 looks unapplied. Continuing.Phases 04–06 verified. Before judging stream/failover semantics, I need ground truth on the existing `TxProvider` interface and service contract.Phases 07–08 verified (STEP 0 present). Reading the rest of service.go and phases 09–12.Now the critical files: phase-11 and phase-12 (failover design D1–D4).Phase-12 verified structurally. Now checking the deeper mechanics the plan touches — `wallet_index_state` schema, `transfer_index` identity derivation, and the transactions table key — to stress-test D1/D3.Key mechanics confirmed. Now checking `Budget` semantics — critical for the blockscout internal-buffering design (adapter can't see remaining pool).Ground truth gathered. Let me verify the plan's claims about current wiring (`main.go:242`, env vars, budget map) and check chainscan/nodereal stream semantics for the Moralis direction question.Wiring claims verified (main.go:241-242 map, Budget keyed by `Name()`). Let me check the sqlc queries the re-key ripples through, and how `chainscan`/`nodereal` partition streams for the Moralis question.Chainscan's model confirmed. Now let me read the source spec this plan implements, to cross-check spec requirements against the plan.Spec cross-checked — plan is spec-faithful on the important points. Let me check all readers/writers of `wallet_index_state` for the re-key ripple, and confirm the checklist greps across all phases.Let me check `Name()`/`SourceCode` constants in the existing adapters, and nodereal's stream split for the stream-semantics comparison.All ground truth gathered. Let me check the round-4 prompt file and the treehash artifact for any additional instructions, then verify the roadmap-Depends discrepancy precisely.All verification complete. Compiling the audit — claimed fixes checked against disk, plus new findings with evidence.
+
+## Round-4 audit — plans/20261104-1100-tx-provider-expansion
+
+### Claimed-fix verification (R3, 8 items)
+
+| # | Claim | On disk? |
+|---|-------|----------|
+| 1 | Name()↔code + Budget>0 + selector-absence checklists in every phase 01–11 | ✅ grep confirms all 11 files carry all three items |
+| 2 | plan.md "absent from defaults" not lockout | ✅ plan.md:59–61 |
+| 3 | phase-02 "Known limitation (critic R3)" | ✅ phase-02:74–81 |
+| 4 | STEP 0 viability probe → `reports/<name>-viability.md` in 07–11 | ✅ all five files |
+| 5 | `TXINDEX_BUDGET_<NAME>` in checklist | ✅ all 11 |
+| 6 | D3 all-fail persists LAST non-disabled kind | ✅ phase-12:77–79 |
+| 7 | Live-verify evidence shape pinned | ✅ all 11 |
+| 8 | **roadmap Depends column synced to sequential chain** | ❌ **NOT on disk** — plan.md:22–35 still shows `—` for phases 01–11 while frontmatter declares `phase-N → phase-N−1` and minor-decisions says "dependencies updated" |
+
+R1 fixes: all verified on disk (D1 pre-decision recorded, sign-off gate, D3 mechanics, coverage rule, D2, tracking table, wiring checks, naming map, D4, stream rule, WindowCap, sequential deps, keyless probe note, transport-generic mock guidance).
+
+### New findings
+
+**MAJOR-1 — phase-02's coverage rule is not implementable as written.** `TransferLookupOpts` carries `{FromBlock, ToBlock, Kinds, PageToken, PageSize, HeadBlock}` — the adapter cannot see the request budget or `maxPages`, so "within the page/upstream budget" is unimplementable. Worse, under newest-first upstream there is **no honest emit-able "contiguous prefix"**: the coverage model books `streamMaxBlock−1` as contiguous-from-`fetchFrom` (service.go:385–388), so emitting the scanned high-side range `[stopBlock..fetchTo]` ascending over-claims the unfetched hole `[fetchFrom..stopBlock−1]` — the exact bug the rule exists to kill. The only honest emissions are ∅ (incomplete) or the fully-covered window — and rows scanned in earlier `LookupTransfers` calls must be carried across calls to emit at scan end, but the plan never says where (fat `NextPageToken`, adapter-side cache, or single-call drain). Each choice has a distinct failure mode: single-call drain is pool-blind inside the step (`charge()` tolerates overshoot but the pool can't stop a 500-page drain — request-global budget becomes advisory), fat token serializes MBs of rows, adapter cache is stateful-but-unpinned. Fix: pin the drain/buffer model + an internal per-call upstream-call bound (new config knob or `TransferLookupOpts.MaxUpstreamCalls`), and restate the emit rule as "emit zero rows until the window is fully covered."
+
+**MINOR-1** — roadmap `Depends` unsynced (above). Executors reading the table see 11 parallel-safe phases touching the same `config.go`/`main.go`/`.env.example`/migration-number space.
+
+**MINOR-2** — phase-12 D3 lists "none → null/unknown" as an all-disabled `source_id` option (phase-12:73–74), but under the chosen D1(a) re-key `source_id` is a PK column → NOT NULL. Same ripple: today's NULL-`source_id` writes (`srcID` invalid when adapter nil/unresolved → `writeDisabled`/`UpsertWalletIndexState` insert NULL, service.go:441–493) violate the new PK; `GetWalletIndexState :one` (net,wallet) returns N rows post-rekey; `ON CONFLICT (network_id, wallet_id)` targets in both MarkWalletIndexing and UpsertWalletIndexState need the 3-col key; and "which source's row serves the response" is undefined. The design doc is the right venue — but the plan should enumerate these as required answers so the sign-off gate can't pass with them open.
+
+**MINOR-3** — phase-05 overview says "keep stream semantics per direction" (line 12), contradicting its own "never fake per-direction on a unified-list upstream" (line 31). If Moralis' wallet endpoints are unified/kind-split, this instructs the forbidden fabrication — partition by the endpoints' real axes (native vs token endpoint).
+
+**MINOR-4** — phase-12's never-failover list omits `internal` (phase-12:96–98). Of 10 `ErrKind`s, 5 are failover-listed and only 4 + empty-page are never-listed; `internal` hangs in neither. The "ONLY on" framing technically covers it, but the explicit complement list is the cross-check and should be closed.
+
+**MINOR-5** — tier-2 STEP 0 handles probe-FAILED → NOT-VIABLE but is silent on probe-BLOCKED (no key). Bitquery/oklink/tokenview/chainbase need keys: an implementer without them can't tell whether to code-unverified (per plan.md's merge-unverified policy) or write NOT-VIABLE — which would be a *false* claim since untested ≠ proven non-viable. One clause: probe-BLOCKED ≠ NOT-VIABLE.
+
+**MINOR-6** — cross-adapter `transfer_index` divergence: stream partitioning differences yield different occurrence counts `n` for identical logical transfers (e.g., W→W seen once-per-direction vs twice-in-unified-list → `counts[gk][stream]` max differs, identity.go:130,175–181). Under option (a) there's no reset, so rows a new source doesn't reproduce persist orphaned in `transactions`. Acceptable as chosen semantics, but belongs on the design-doc agenda.
+
+### Verdict
+
+All R1 fixes and 7/8 R3 fixes verified on disk. One MAJOR spec gap remains in phase-02 (the newest-first drain cannot be bounded or buffered as specified), plus six MINORs — all small-text fixes. **CHANGES_REQUESTED.**
+
+Status: DONE
+Summary: Claimed fixes are real (except the roadmap Depends sync), but phase-02's coverage rule prescribes an impossible "contiguous prefix" under newest-first upstream with no budget visibility or cross-call buffer model — MAJOR-1 plus six MINORs need addressing before honest implementation can proceed.
+Concerns/Blockers: MAJOR-1 (phase-02 drain/buffer/budget spec gap); MINORs: roadmap Depends unsynced, D3 null-source_id infeasible post-rekey + unenumerated ripples, moralis direction wording, `internal` missing from never-list, tier-2 probe-BLOCKED undefined, transfer_index divergence agenda item.

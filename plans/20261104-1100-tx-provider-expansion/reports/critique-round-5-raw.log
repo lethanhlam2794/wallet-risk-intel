@@ -1,0 +1,29 @@
+Re-auditing the amended files. Reading all of them in parallel.Core files verified. Now checking phase-05 and the tier-2 phases for the remaining fixes.All claimed fixes verified on disk. The phase-02 rewrite is substantively correct — but contains one new internal contradiction I need to flag, plus a small kind-semantics issue.
+
+## Round-5 audit — verification results
+
+| Finding | Fix on disk? |
+|---------|--------------|
+| MAJOR-1 (coverage rule) | ✅ phase-02:14–32 — full drain/buffer model pinned: `BLOCKSCOUT_MAX_SCAN_PAGES` (default 10), adapter-side buffer keyed by scan-token (~20000 cap, overflow→error+drop), coverage=descent ≤fetchFrom or upstream exhaustion → emit all ascending + Finished, drain-bound → zero rows + unfinished + progress token, token lost → restart, UpstreamCalls real |
+| MINOR-1 (Depends) | ✅ plan.md:24–35 mirrors frontmatter + serialization note :37–39 |
+| MINOR-2 (D5 ripples) | ✅ phase-12:91–115 enumerates all ripples; D3 :73–75 updated; criteria :167–169 D1–D5; step 1 :153–156 sign-off gate |
+| MINOR-3 (moralis direction) | ✅ phase-05:12 — real pagination axes, no fabricated direction streams |
+| MINOR-4 (`internal` kind) | ✅ phase-12:122–126 — `internal` added + explicit complement closure |
+| MINOR-5 (probe-BLOCKED) | ✅ all of 07–11 STEP 0 + phase-09 keyless clause |
+| MINOR-6 (transfer_index) | ✅ phase-12:109–115 — last D5 bullet incl. double-count question |
+
+### New defects introduced by these edits
+
+**NEW-1 (MINOR) — phase-02 scan-state keying contradicts the claimed cross-refresh progress.** The model buffers rows "keyed by the opaque scan-token ID" with "token lost/invalid → restart the scan from `fetchTo`" (phase-02:21–30), but the service creates `token := ""` per `ensure()` call — the token is request-scoped and discarded at request end (service.go:301). So under the literal model, every refresh regenerates a new token → the previous scan's buffered rows are unreachable → restart-per-request, not progress. Yet the updated Known-limitation says "refreshes advance the scan `BLOCKSCOUT_MAX_SCAN_PAGES` pages at a time via the progress token" (phase-02:97–98) — cumulative cross-refresh progress the token-keyed model cannot deliver. (The previous wording "refreshes re-scan and burn quota" was actually *more* accurate.) Resumable progress requires the buffer keyed deterministically by `(net, wallet, fetchFrom)` so a fresh request re-derives it — that also handles `fetchTo` drift naturally since the new scan descends through the head segment first. Fix: either pin deterministic wallet+window-keyed resumption, or correct the limitation sentence to say refreshes restart and re-burn the same newest pages (and consider WindowCap as the practical bound). As written, two sections of the same file assert incompatible mechanisms — an implementer cannot satisfy both.
+
+**NEW-2 (NIT) — buffer overflow mapped to `degraded`** (phase-02:23). A local resource cap is not "upstream answered but signalled degraded," and under phase-12 `degraded` is a failover kind → a deterministic local overflow burns the fallback chain on a window that hits the identical cap. `internal` (or an explicit note that the failover-on-degraded consequence is intended) is more truthful and cheaper.
+
+Everything else from R4 is genuinely closed — D5's enumeration is thorough, and the never-list is now closed across all ErrKinds.
+
+### Verdict
+
+**CHANGES_REQUESTED** — one small-text contradiction (plus one nit) introduced by the phase-02 rewrite. All 7 prior findings verified fixed; the plan is otherwise ready.
+
+Status: DONE
+Summary: All seven R4 fixes confirmed on disk and closing their findings; the phase-02 rewrite introduces one new internal contradiction — request-scoped scan-token keying cannot deliver the "refreshes advance the scan" progress the limitation text now claims — plus a `degraded`-kind misuse for a local buffer cap that would trigger pointless failover burn.
+Concerns/Blockers: NEW-1 (scan-state keying vs cross-refresh progress claim in phase-02); NEW-2 (local-cap overflow should not map to failover kind `degraded`).

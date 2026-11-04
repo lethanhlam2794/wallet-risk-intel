@@ -1,0 +1,19 @@
+Re-reading the amended phase-02 — the only file changed this round — to verify the deterministic-key model is internally consistent.Verified the rewritten model against the service contract (`token := ""` per `ensure()`, service.go:301; coverage = `streamMaxBlock−1` for unfinished streams). Line-by-line consistency check:
+
+**NEW-1 fix — verified and coherent.** Deterministic key `(net, wallet, fetchFrom, kinds)` (phase-02:21–25) is stable across refreshes precisely while a scan is incomplete (watermark frozen ⇒ `fetchFrom = watermark − tail + 1` constant), so a fresh request re-derives the buffer — the limitation paragraph's "refreshes advance the scan" claim is now true under the model. Scan state `{rows, scannedFloor, headSeen}` + head-segment-drain-first + upstream-identity dedupe + emit filtered to `[fetchFrom, fetchTo]` correctly handles upward drift, repeated drift, and downward drift (rows above current `fetchTo` are simply not emitted). Overflow → `internal` + buffer drop with the failover rationale stated (phase-02:31–34) closes NEW-2 properly.
+
+**Residual notes (not blocking — every ambiguity resolves to an honest outcome):**
+
+- **Range-notation typo**: "drain the head segment `[scannedFloor..fetchTo]`" (phase-02:28) should read `(headSeen..fetchTo]` — the head segment is the blocks *above* the previously seen head. The surrounding prose ("then continue descending `scannedFloor`") makes the intent clear; a literal reading would re-drain the already-buffered tail (dedupe keeps correctness, wastes quota).
+- **Per-stream state implicit**: `scannedFloor`/`headSeen` are stated singularly, but blockscout has two independently-descending endpoints (`/transactions`, `/token-transfers`). Per-stream floors/cursors are the only honest reading — one word ("per stream") would pin it.
+- **State enumeration omits the resume cursor**: `{rows, scannedFloor, headSeen}` (phase-02:26) doesn't list the upstream cursor needed to continue descending. Implementable via `scannedFloor`-seek since Blockscout's keyset params are block/index-based — but a strictly-opaque-cursor upstream would need the raw cursor in state.
+- **Eviction policy unpinned**: per-scan ~20000-row cap exists, but buffers now persist across requests by design — orphaned partial scans of abandoned wallets accumulate memory until eviction, whose policy (LRU/TTL/global bound) is unpinned.
+- **Deterministic-cap → FAILED loop**: overflow drops the buffer and returns `internal`; the next refresh restarts and overflows again — honest, bounded by the FAILED cooldown, operator-tunable via the cap. Acceptable.
+
+None of these invent semantics or violate the invariants — the model is implementable as written with honest behavior under every reading. All prior rounds' findings are confirmed fixed on disk.
+
+**Verdict: APPROVED** — `PLAN_CONSENSUS_REACHED`
+
+Status: DONE_WITH_CONCERNS
+Summary: All R4/R5 findings verified fixed; the deterministic-key drain/buffer model is internally consistent and implementable. APPROVED with five residual clarifications worth a line each in phase-02 (head-segment bracket typo, per-stream scan state, resume-cursor in state, eviction policy, deterministic-cap FAILED loop).
+Concerns/Blockers: Residual nits only — listed above; none block honest implementation.

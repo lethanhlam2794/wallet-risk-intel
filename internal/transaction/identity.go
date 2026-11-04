@@ -22,17 +22,17 @@ import (
 // them directly. AmountRaw stays a decimal string — Postgres casts it to
 // NUMERIC, never a float.
 type txRowJSON struct {
-	TxHash             string    `json:"tx_hash"`
-	TransferIndex      string    `json:"transfer_index"`
-	TransferType       string    `json:"transfer_type"`
-	FromWalletID       int64     `json:"from_wallet_id"`
-	ToWalletID         int64     `json:"to_wallet_id"`
-	AssetIdentifier    *string   `json:"asset_identifier"`
-	AmountRaw          string    `json:"amount_raw"`
-	BlockNumber        int64     `json:"block_number"`
-	BlockTimestamp     time.Time `json:"block_timestamp"`
-	ConfirmationStatus string    `json:"confirmation_status"`
-	IsError            bool      `json:"is_error"`
+	TxHash             string     `json:"tx_hash"`
+	TransferIndex      string     `json:"transfer_index"`
+	TransferType       string     `json:"transfer_type"`
+	FromWalletID       int64      `json:"from_wallet_id"`
+	ToWalletID         int64      `json:"to_wallet_id"`
+	AssetIdentifier    *string    `json:"asset_identifier"`
+	AmountRaw          string     `json:"amount_raw"`
+	BlockNumber        int64      `json:"block_number"`
+	BlockTimestamp     *time.Time `json:"block_timestamp"`
+	ConfirmationStatus string     `json:"confirmation_status"`
+	IsError            bool       `json:"is_error"`
 }
 
 // contentHash is the 16-hex SHA-256 prefix over the normalized semantic
@@ -189,6 +189,11 @@ func (s *Service) buildRows(ctx context.Context, net network.Network,
 		if g.t.Confirmations <= 0 {
 			conf = "pending"
 		}
+		var bts *time.Time
+		if !g.t.BlockTimestamp.IsZero() {
+			v := g.t.BlockTimestamp.UTC()
+			bts = &v // unknown upstream timestamp persists NULL, never year-1
+		}
 		for k := 1; k <= n; k++ {
 			rows = append(rows, txRowJSON{
 				TxHash:             gk.txHash,
@@ -199,7 +204,7 @@ func (s *Service) buildRows(ctx context.Context, net network.Network,
 				AssetIdentifier:    g.asset,
 				AmountRaw:          g.amount,
 				BlockNumber:        g.t.BlockNumber,
-				BlockTimestamp:     g.t.BlockTimestamp.UTC(),
+				BlockTimestamp:     bts,
 				ConfirmationStatus: conf,
 				IsError:            g.t.IsError,
 			})

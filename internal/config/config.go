@@ -61,6 +61,18 @@ type Config struct {
 	NoderealAPIKey         string
 	NoderealBaseURL        string
 
+	// Per-network adapter selection (tx-provider expansion): comma list of
+	// registered provider codes; first entry serves. Unset → current default.
+	TxProviderETH string
+	TxProviderBSC string
+
+	// Expansion adapters (phases 01–11). Keyless providers (blockscout)
+	// have no *_API_KEY — gating is by enabled-chains only.
+	AlchemyAPIKey         string
+	AlchemyBaseURL        string // empty → documented per-network endpoints
+	AlchemyEnabledChains  string
+	IndexingBudgetAlchemy int
+
 	IndexingFreshTTL     time.Duration // fresh-serve horizon for index state
 	IndexingStaleAfter   time.Duration // stale 'indexing' claim retry horizon
 	IndexingPageSize     int
@@ -114,6 +126,11 @@ func Load() (*Config, error) {
 		ChainscanEnabledChains:    envOr("CHAINSCAN_ENABLED_CHAINS", "ethereum"),
 		NoderealAPIKey:            os.Getenv("NODEREAL_API_KEY"),
 		NoderealBaseURL:           envOr("NODEREAL_BASE_URL", "https://bsc-mainnet.nodereal.io/v1"),
+		TxProviderETH:             os.Getenv("TX_PROVIDER_ETH"),
+		TxProviderBSC:             os.Getenv("TX_PROVIDER_BSC"),
+		AlchemyAPIKey:             os.Getenv("ALCHEMY_API_KEY"),
+		AlchemyBaseURL:            os.Getenv("ALCHEMY_BASE_URL"),
+		AlchemyEnabledChains:      envOr("ALCHEMY_ENABLED_CHAINS", "ethereum,bsc"),
 		IndexingFreshTTL:          envDur("TXINDEX_FRESH_TTL", 10*time.Minute),
 		IndexingStaleAfter:        envDur("TXINDEX_STALE_AFTER", 15*time.Minute),
 		IndexingWindowCapBSC:      envInt64Default("TXINDEX_WINDOW_CAP_BSC", 100000),
@@ -172,6 +189,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if cfg.IndexingBudgetBSC, err = envInt("TXINDEX_BUDGET_BSC", 8); err != nil {
+		return nil, err
+	}
+	if cfg.IndexingBudgetAlchemy, err = envInt("TXINDEX_BUDGET_ALCHEMY", 8); err != nil {
 		return nil, err
 	}
 	if cfg.TracingMaxNodes, err = envInt("TRACING_MAX_NODES", 50); err != nil {

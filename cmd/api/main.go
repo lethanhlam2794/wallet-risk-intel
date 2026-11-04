@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -30,6 +31,7 @@ import (
 	"checkwallet/internal/platform/logger"
 	"checkwallet/internal/platform/metrics"
 	"checkwallet/internal/provider"
+	"checkwallet/internal/provider/alchemy"
 	"checkwallet/internal/provider/chainabuse"
 	"checkwallet/internal/provider/chainscan"
 	"checkwallet/internal/provider/goplus"
@@ -131,7 +133,7 @@ func run() error {
 	// Transaction-indexing providers (spec §19 phase 6). Both adapters are
 	// always constructed — a missing key yields Enabled()=false ⇒
 	// DISABLED coverage, never a boot crash.
-	txSvc, tracingSvc, err := buildTransactions(cfg, pool, queries,
+	txSvc, tracingSvc, err := buildTransactions(ctx, cfg, pool, queries,
 		wallet.NewService(queries), sanctionsSvc, resolver, m, log)
 	if err != nil {
 		return err
@@ -210,7 +212,7 @@ func buildEnrichment(cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
 // buildTransactions constructs the chainscan + nodereal TxProviders and
 // the indexing/tracing services. Missing API keys produce
 // Enabled()=false — the adapters report DISABLED honestly (plan §3.2).
-func buildTransactions(cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
+func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
 	wallets *wallet.Service, sanctionsSvc *sanctions.Service,
 	resolver *network.Resolver, m *metrics.Metrics, log *slog.Logger) (*transaction.Service, *tracing.Service, error) {
 
@@ -232,14 +234,61 @@ func buildTransactions(cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
 	if err != nil {
 		return nil, nil, err
 	}
+	al, err := alchemy.New(cfg.AlchemyBaseURL, cfg.AlchemyAPIKey,
+		strings.Split(cfg.AlchemyEnabledChains, ","),
+		alchemy.WithHooks(hooksFor(alchemy.SourceCode)),
+		alchemy.WithDurationFunc(m.ProviderDurationHook(alchemy.SourceCode)))
+	if err != nil {
+		return nil, nil, err
+	}
 	if cfg.EtherscanAPIKey == "" {
 		log.Info("chainscan disabled: ETHERSCAN_API_KEY not configured")
 	}
 	if cfg.NoderealAPIKey == "" {
 		log.Info("nodereal disabled: NODEREAL_API_KEY not configured")
 	}
+	if cfg.AlchemyAPIKey == "" {
+		log.Info("alchemy disabled: ALCHEMY_API_KEY not configured")
+	}
+
+	// Registry of every selectable provider; TX_PROVIDER_<NET> picks the
+	// serving adapter per network (first entry — failover lands phase-12).
+	registry := map[string]provider.TxProvider{
+		chainscan.SourceCode: cs,
+		nodereal.SourceCode:  nr,
+		alchemy.SourceCode:   al,
+	}
+	ethAdapter, err := selectTxProvider("TX_PROVIDER_ETH", cfg.TxProviderETH,
+		chainscan.SourceCode, registry, log)
+	if err != nil {
+		return nil, nil, err
+	}
+	bscAdapter, err := selectTxProvider("TX_PROVIDER_BSC", cfg.TxProviderBSC,
+		nodereal.SourceCode, registry, log)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	budget := map[string]int{
+		chainscan.SourceCode: cfg.IndexingBudgetETH,
+		nodereal.SourceCode:  cfg.IndexingBudgetBSC,
+		alchemy.SourceCode:   cfg.IndexingBudgetAlchemy,
+	}
+	// Boot checks (plan invariants): every registered provider must resolve
+	// a data_sources row — a typo'd Name() silently disables the
+	// provider-switch reset — and must carry a positive budget — a typo'd
+	// TXINDEX_BUDGET_* env would leave the request pool unlimited.
+	for _, p := range registry {
+		if _, err := q.GetSourceByCode(ctx, p.Name()); err != nil {
+			return nil, nil, fmt.Errorf("tx provider %s: data_sources row missing: %w", p.Name(), err)
+		}
+		if budget[p.Name()] <= 0 {
+			return nil, nil, fmt.Errorf("tx provider %s: budget must be > 0", p.Name())
+		}
+	}
+
 	txSvc := transaction.New(pool, q,
-		map[string]provider.TxProvider{"ethereum": cs, "bsc": nr},
+		map[string]provider.TxProvider{"ethereum": ethAdapter, "bsc": bscAdapter},
 		wallets, transaction.Config{
 			FreshTTL:     cfg.IndexingFreshTTL,
 			StaleAfter:   cfg.IndexingStaleAfter,
@@ -253,10 +302,7 @@ func buildTransactions(cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
 				"bsc":      cfg.IndexingReorgTailBSC,
 			},
 			WindowCap: map[string]int64{"bsc": cfg.IndexingWindowCapBSC},
-			Budget: map[string]int{
-				chainscan.SourceCode: cfg.IndexingBudgetETH,
-				nodereal.SourceCode:  cfg.IndexingBudgetBSC,
-			},
+			Budget:    budget,
 		}, log)
 	tracingSvc := tracing.New(q, txSvc, sanctionsSvc, resolver, tracing.Config{
 		MaxNodes: cfg.TracingMaxNodes,
@@ -270,6 +316,40 @@ func buildTransactions(cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
 	})
 	tracingSvc.SetMetrics(m)
 	return txSvc, tracingSvc, nil
+}
+
+// selectTxProvider resolves TX_PROVIDER_<NET>: unset → the historical
+// default adapter; set → the first comma-separated entry must name a
+// registered provider (unknown names are rejected at boot, never silently
+// misrouted). Extra entries are validated then ignored until phase-12
+// failover — warned, not dropped silently.
+func selectTxProvider(envName, raw, def string,
+	registry map[string]provider.TxProvider, log *slog.Logger) (provider.TxProvider, error) {
+	if strings.TrimSpace(raw) == "" {
+		return registry[def], nil
+	}
+	var first provider.TxProvider
+	var extras int
+	for i, name := range strings.Split(raw, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil, fmt.Errorf("%s: empty provider entry", envName)
+		}
+		p, ok := registry[name]
+		if !ok {
+			return nil, fmt.Errorf("%s: unknown tx provider %q", envName, name)
+		}
+		if i == 0 {
+			first = p
+		} else {
+			extras++
+		}
+	}
+	if extras > 0 {
+		log.Warn("tx provider selector: extra entries validated but ignored until failover lands",
+			"env", envName, "serving", first.Name(), "ignored", extras)
+	}
+	return first, nil
 }
 
 // bootstrapAPIClients upserts dev bootstrap keys from env. Removing the env

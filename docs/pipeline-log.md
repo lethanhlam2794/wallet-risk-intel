@@ -262,3 +262,26 @@ Plan: `plans/20261103-1746-live-enrichment/`
 All six stages accounted for: S1 plan-consensus, S2 cook, S3 review
 APPROVED (4 rounds), S4 saturation 10/10, S5 SKIPPED-NO-UI + live
 substitution, S6 docs published. Working tree intentionally uncommitted.
+
+### [STAGE_1_VERIFICATION] - Stage 1: Pre-Planning & Adversarial Debate (tx-provider-expansion)
+- **Timestamp**: 2026-11-04 — halted by user at --plan boundary
+- **Status**: PASSED-WITH-NOTE (R4 final-confirm round interrupted by user halt)
+- **Completed**: scanned 6 prior completed plans; pre-scouted TxProvider contract + service.go reset/budget + main.go:242 map + wallet_index_state schema; canonical plan.md + phase-01..11 + phase-12; Critic debate R1 (14 findings→fixed) + R3 (8 findings→fixed, verified on disk); R4 halted before verdict
+- **Evidence**: plans/20261104-1100-tx-provider-expansion/ ; critic prompts in reports/ ; key concession: phase-12 D1-D4 design sign-off gate (schema has no per-source watermarks — real BLOCKER caught)
+- **HALT**: --plan-only. No Stage 2. No production code touched.
+
+### [STAGE_1_VERIFICATION_FINAL] - Stage 1 resumed & closed (--auto continue)
+- **Completion Timestamp**: 2026-11-04 14:30:00
+- **Status**: PASSED — `PLAN_CONSENSUS_REACHED`
+- **Completed Tasks**:
+  - [x] Resumed interrupted R4 confirm round via fresh Critic dispatch (`prompt-critic-round-4.md` verbatim)
+  - [x] R4 → CHANGES_REQUESTED (1 MAJOR + 6 MINORs): phase-02 coverage rule unimplementable (no budget visibility; no honest "contiguous prefix" under newest-first); roadmap Depends unsynced; D5 re-key ripples unenumerated; moralis direction wording; `internal` missing from never-list; tier-2 probe-BLOCKED undefined; transfer_index divergence unagendad
+  - [x] All conceded & fixed on disk: phase-02 rewritten with pinned drain/buffer model; plan.md Depends synced; phase-12 +D5 (required answers); phase-05 real-axes wording; never-list closed; probe-BLOCKED≠NOT-VIABLE in 07–11
+  - [x] R5 → CHANGES_REQUESTED (2 NEW): token-keyed buffer can't cross refreshes (token is request-scoped) + local-cap→`degraded` misuse. Fixed: deterministic `(net,wallet,fetchFrom,kinds)` keying w/ head-segment top-up + dedupe; overflow→`internal`
+  - [x] R6 → **APPROVED / PLAN_CONSENSUS_REACHED** (DONE_WITH_CONCERNS); 5 residual clarifications applied (head-segment bracket, per-stream state, resume cursor in state, TTL+LRU eviction, FAILED-loop note)
+- **Machine Evidence**:
+  - Plan: `plans/20261104-1100-tx-provider-expansion/plan.md` + phase-01..12 on disk
+  - Critic session: `nebula-freesia` (dangerous mode, read-only mandate); raw logs `reports/critique-round-{4,5,6}-raw.log`; prompts `reports/prompt-critic-round-{4,5,6}.md`
+  - Tree integrity: `git status` shows zero production-code writes by critic (only plan-dir + this log)
+- **Debate summary**: 6 rounds total (R1:14 findings, R3:8, R4:7, R5:2, R6:consensus). Key concessions: no honest newest-first prefix ⇒ drain/buffer-only emission; schema re-key ripples must be answered before failover code; probe-BLOCKED ≠ NOT-VIABLE.
+- **Self-Audit Commitment**: plan fully grounded in verified code realities (TxProvider shape, coverage derivation service.go:385-388, request-scoped token :301, wallet_index_state PK, identity.go counts); zero speculative assumptions survive to Cook.
