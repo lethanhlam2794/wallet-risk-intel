@@ -1,0 +1,171 @@
+{
+    "data": {
+        "items": [
+            {
+                "counterparty": "0x00000000000000000000000000000000000000c3",
+                "category": "SCAM",
+                "matched_signals": [
+                    {
+                        "kind": "label",
+                        "category": "SCAM",
+                        "label": "scam-vendor",
+                        "source": "wallet_attribution",
+                        "verification_status": "verified"
+                    },
+                    {
+                        "kind": "label",
+                        "category": "HACK",
+                        "label": "hack-group",
+                        "source": "wallet_attribution",
+                        "verification_status": "reported",
+                        "network": "bsc",
+                        "listed_address": "0x00000000000000000000000000000000000000C3"
+                    }
+                ],
+                "relationship": "indirect_hop",
+                "hops": 3,
+                "exposure_score": 29,
+                "paths": [
+                    {
+                        "hop_count": 3,
+                        "path_verified": false,
+                        "temporal_order_valid": true,
+                        "edges": [
+                            {
+                                "from_address": "0x00000000000000000000000000000000000000f0",
+                                "to_address": "0x00000000000000000000000000000000000000a1",
+                                "network": "ethereum",
+                                "tx_hash": "0xe1",
+                                "transfer_index": "n:01",
+                                "transfer_type": "NATIVE",
+                                "asset": "native",
+                                "amount_raw": "7000000000000000000",
+                                "block_number": 90,
+                                "block_timestamp": "2023-11-14T22:13:20Z",
+                                "confirmation_status": "confirmed"
+                            },
+                            {
+                                "from_address": "0x00000000000000000000000000000000000000a1",
+                                "to_address": "0x00000000000000000000000000000000000000b2",
+                                "network": "ethereum",
+                                "tx_hash": "0xe2",
+                                "transfer_index": "n:02",
+                                "transfer_type": "NATIVE",
+                                "asset": "native",
+                                "amount_raw": "7000000000000000000",
+                                "block_number": 95,
+                                "block_timestamp": "2023-11-14T22:13:25Z",
+                                "confirmation_status": "confirmed"
+                            },
+                            {
+                                "from_address": "0x00000000000000000000000000000000000000b2",
+                                "to_address": "0x00000000000000000000000000000000000000c3",
+                                "network": "ethereum",
+                                "tx_hash": "0xe3",
+                                "transfer_index": "n:03",
+                                "transfer_type": "NATIVE",
+                                "asset": "native",
+                                "amount_raw": "7000000000000000000",
+                                "block_number": 100,
+                                "block_timestamp": "2023-11-14T22:13:30Z",
+                                "confirmation_status": "confirmed"
+                            }
+                        ]
+                    }
+                ],
+                "transaction_evidence": [
+                    {
+                        "from_address": "0x00000000000000000000000000000000000000f0",
+                        "to_address": "0x00000000000000000000000000000000000000a1",
+                        "network": "ethereum",
+                        "tx_hash": "0xe1",
+                        "transfer_index": "n:01",
+                        "transfer_type": "NATIVE",
+                        "asset": "native",
+                        "amount_raw": "7000000000000000000",
+                        "block_number": 90,
+                        "block_timestamp": "2023-11-14T22:13:20Z",
+                        "confirmation_status": "confirmed"
+                    },
+                    {
+                        "from_address": "0x00000000000000000000000000000000000000a1",
+                        "to_address": "0x00000000000000000000000000000000000000b2",
+                        "network": "ethereum",
+                        "tx_hash": "0xe2",
+                        "transfer_index": "n:02",
+                        "transfer_type": "NATIVE",
+                        "asset": "native",
+                        "amount_raw": "7000000000000000000",
+                        "block_number": 95,
+                        "block_timestamp": "2023-11-14T22:13:25Z",
+                        "confirmation_status": "confirmed"
+                    },
+                    {
+                        "from_address": "0x00000000000000000000000000000000000000b2",
+                        "to_address": "0x00000000000000000000000000000000000000c3",
+                        "network": "ethereum",
+                        "tx_hash": "0xe3",
+                        "transfer_index": "n:03",
+                        "transfer_type": "NATIVE",
+                        "asset": "native",
+                        "amount_raw": "7000000000000000000",
+                        "block_number": 100,
+                        "block_timestamp": "2023-11-14T22:13:30Z",
+                        "confirmation_status": "confirmed"
+                    }
+                ]
+            }
+        ],
+        "coverage": {
+            "counterparties_total": 2,
+            "nodes_examined": 2,
+            "positions_emitted": 2,
+            "nodes_remaining": 0,
+            "nodes_failed": 0,
+            "edges_examined": 5,
+            "provider_calls": 0,
+            "provider_status": "ok",
+            "sanctions_snapshot_version": "ofac-c1279a38fa18-1793687967",
+            "labels_snapshot_version": "wattr-304b40821630-1793699980",
+            "node_indexed_until": {
+                "0x00000000000000000000000000000000000000a1": 200,
+                "0x00000000000000000000000000000000000000b2": 200
+            },
+            "head_block": null,
+            "frontier_by_hop": {
+                "2": 1,
+                "3": 1
+            },
+            "nodes_examined_by_hop": {
+                "2": 1,
+                "3": 1
+            },
+            "frontier_emitted_by_hop": {
+                "2": 1,
+                "3": 1
+            },
+            "nodes_remaining_by_hop": {
+                "2": 0,
+                "3": 0
+            },
+            "max_depth_reached": 3,
+            "root": {
+                "index_status": "fresh",
+                "stale": false,
+                "provider_status": "ok",
+                "indexed_until_block": 200,
+                "indexed_at": "2026-11-03T22:48:21.362969Z",
+                "history_truncated": false,
+                "index_scope": "native+token",
+                "rows_indexed": 0,
+                "rows_skipped": {
+                    "missing_contract": 0,
+                    "invalid_address": 0
+                }
+            }
+        },
+        "truncated": null,
+        "tracing_method": "bounded_bfs",
+        "exposure_policy_version": "exposure-v1"
+    }
+}

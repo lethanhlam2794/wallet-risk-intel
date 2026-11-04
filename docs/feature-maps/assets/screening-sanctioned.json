@@ -1,0 +1,268 @@
+{
+    "data": {
+        "screening_id": "7a01e362-6e61-4472-9c12-6f725c001004",
+        "network": "ethereum",
+        "address": "0x252a8bd2319d8a555b872990601221b3a2053bce",
+        "status": "COMPLETED",
+        "risk_score": 100,
+        "risk_level": "CRITICAL",
+        "direct_sanctions": {
+            "evaluated": true,
+            "matched": true,
+            "entries": [
+                {
+                    "sanctions_entity_id": 4703,
+                    "external_entity_id": "24003",
+                    "entity_name": "MESRI Behzad",
+                    "entity_type": "Individual",
+                    "listed_address": "0x252a8bd2319d8a555b872990601221b3a2053bce",
+                    "currency_code": "ETH",
+                    "identifier_type": "Digital Currency Address - ETH",
+                    "match_scope": "CHAIN_SPECIFIC",
+                    "programs": [
+                        {
+                            "code": "CYBER2",
+                            "name": null,
+                            "description": null,
+                            "source_url": null
+                        },
+                        {
+                            "code": "HRIT-IR",
+                            "name": null,
+                            "description": null,
+                            "source_url": null
+                        }
+                    ],
+                    "reason": {
+                        "summary": null,
+                        "status": "PROGRAM_CONTEXT_ONLY"
+                    },
+                    "source": {
+                        "code": "ofac_sdn",
+                        "name": "OFAC SDN Advanced XML",
+                        "url": null
+                    }
+                }
+            ]
+        },
+        "direct_labels": {
+            "evaluated": true,
+            "items": [
+                {
+                    "wallet_label_id": 429642,
+                    "category": "SANCTIONED",
+                    "category_type": "LEGAL",
+                    "label": "OFAC sanctioned (ETH)",
+                    "entity": {
+                        "id": 11521,
+                        "name": "OFAC SDN"
+                    },
+                    "source": {
+                        "code": "wallet_attribution",
+                        "name": "Wallet Attribution (prettydeath)"
+                    },
+                    "source_field": "ofac-sdn+graphsense+tether-blacklist+circle-blacklist",
+                    "source_url": "https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses",
+                    "upstream_category": "sanctioned",
+                    "confidence": "high",
+                    "verification_status": "reported",
+                    "evidence": {
+                        "observed_at": "2026-10-01T00:00:00Z",
+                        "source_field": "ofac-sdn+graphsense+tether-blacklist+circle-blacklist",
+                        "upstream_record": {
+                            "label": "OFAC sanctioned (ETH)",
+                            "entity": "OFAC SDN"
+                        },
+                        "fetch_checksum_part": "0392efcc458a60260dad72d08717ff46ad62df5e147bf551be7db3d1b27b81d6"
+                    },
+                    "observed_at": "2026-10-01T00:00:00Z",
+                    "first_seen_at": "2026-11-03T09:58:12.818578Z",
+                    "last_seen_at": "2026-11-03T09:58:12.818578Z",
+                    "revoked_at": null
+                }
+            ],
+            "collected": 1,
+            "truncated": false
+        },
+        "exposures": {
+            "evaluated": true,
+            "items": [],
+            "coverage": {
+                "tracing": "provider_reported_only",
+                "max_hops_requested": 2
+            }
+        },
+        "scoring": {
+            "policy_version": "v1.0.0",
+            "score": 100,
+            "risk_level": "CRITICAL",
+            "flags": [
+                "DIRECT_SANCTIONS"
+            ],
+            "blocks": {
+                "direct": {
+                    "subtotal": 100,
+                    "capped": false
+                },
+                "exposure": {
+                    "subtotal": 0,
+                    "capped": false
+                },
+                "other": {
+                    "subtotal": 20,
+                    "capped": false
+                }
+            },
+            "reasons": [
+                {
+                    "code": "DIRECT_SANCTIONS_MATCH",
+                    "category": "SANCTIONED",
+                    "verification_status": "verified",
+                    "weight": 100,
+                    "evidence_ref": "sanctions_entity:4703"
+                },
+                {
+                    "code": "DIRECT_LABEL",
+                    "category": "SANCTIONED",
+                    "verification_status": "reported",
+                    "weight": 60,
+                    "evidence_ref": "wallet_label:429642"
+                },
+                {
+                    "code": "PROVIDER_OBSERVATION",
+                    "category": "HACK",
+                    "verification_status": "reported",
+                    "weight": 44,
+                    "evidence_ref": "goplus:[\"HACK\",\"Stealing attack\",\"\"]"
+                },
+                {
+                    "code": "PROVIDER_OBSERVATION",
+                    "category": "SANCTIONED",
+                    "verification_status": "reported",
+                    "weight": 42,
+                    "evidence_ref": "publicaml:[\"SANCTIONED\",\"Sanctioned\",\"MESRI Behzad \u0645\u0635\u0631\u06cc \u0628\u0647\u0632\u0627\u062f\"]"
+                },
+                {
+                    "code": "PROVIDER_OBSERVATION",
+                    "category": "SANCTIONED",
+                    "verification_status": "reported",
+                    "weight": 42,
+                    "evidence_ref": "publicaml:[\"SANCTIONED\",\"sanction\",\"MESRI Behzad \u0645\u0635\u0631\u06cc \u0628\u0647\u0632\u0627\u062f\"]"
+                },
+                {
+                    "code": "PROVIDER_SCORE",
+                    "verification_status": "reported",
+                    "weight": 20,
+                    "evidence_ref": "publicaml:score"
+                }
+            ]
+        },
+        "evidence": [
+            {
+                "kind": "sanctions",
+                "ref": {
+                    "sanctions_entity_id": 4703
+                }
+            },
+            {
+                "kind": "label",
+                "ref": 429642
+            },
+            {
+                "kind": "provider_observation",
+                "ref": {
+                    "source": "goplus",
+                    "fetched_at": "2026-11-03T17:54:02.367028196Z",
+                    "identity": "[\"HACK\",\"Stealing attack\",\"\"]"
+                }
+            },
+            {
+                "kind": "provider_observation",
+                "ref": {
+                    "source": "publicaml",
+                    "fetched_at": "2026-11-03T17:54:03.18626686Z",
+                    "identity": "[\"SANCTIONED\",\"Sanctioned\",\"MESRI Behzad \u0645\u0635\u0631\u06cc \u0628\u0647\u0632\u0627\u062f\"]"
+                }
+            },
+            {
+                "kind": "provider_observation",
+                "ref": {
+                    "source": "publicaml",
+                    "fetched_at": "2026-11-03T17:54:03.18626686Z",
+                    "identity": "[\"SANCTIONED\",\"sanction\",\"MESRI Behzad \u0645\u0635\u0631\u06cc \u0628\u0647\u0632\u0627\u062f\"]"
+                }
+            },
+            {
+                "kind": "provider_score",
+                "ref": {
+                    "source": "publicaml",
+                    "fetched_at": "2026-11-03T17:54:03.18626686Z"
+                }
+            }
+        ],
+        "provider_status": {
+            "providers": {
+                "chainabuse": {
+                    "status": "DISABLED",
+                    "enabled": false,
+                    "cached": false,
+                    "error": {
+                        "code": "disabled",
+                        "message": "provider not enabled \u2014 no outbound call made"
+                    }
+                },
+                "goplus": {
+                    "status": "OK",
+                    "enabled": true,
+                    "cached": false,
+                    "fetched_at": "2026-11-03T17:54:02.367028196Z"
+                },
+                "publicaml": {
+                    "status": "OK",
+                    "enabled": true,
+                    "cached": false,
+                    "fetched_at": "2026-11-03T17:54:03.18626686Z",
+                    "provider_score": 100
+                }
+            },
+            "sanctions": {
+                "data_status": "AVAILABLE",
+                "last_synced_at": "2026-11-03T06:39:22.391136Z"
+            },
+            "labels": {
+                "data_status": "AVAILABLE",
+                "last_synced_at": "2026-11-03T09:58:12.818578Z"
+            }
+        },
+        "data_completeness": {
+            "sanctions": {
+                "requested": true,
+                "data_status": "AVAILABLE",
+                "usable": true
+            },
+            "labels": {
+                "requested": true,
+                "data_status": "AVAILABLE",
+                "usable": true
+            },
+            "labels_collected": 1,
+            "labels_truncated": false,
+            "providers": {
+                "usable": [
+                    "goplus",
+                    "publicaml"
+                ],
+                "degraded": [],
+                "disabled": [
+                    "chainabuse"
+                ]
+            },
+            "exposure": {
+                "requested": true,
+                "data_status": "AVAILABLE",
+                "usable": true
+            }
+        },
+        "screened_at": "2026-11-03T17:54:03.207808638Z"
+    }
+}

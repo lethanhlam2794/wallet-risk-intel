@@ -1,0 +1,18 @@
+{
+  "data": {
+    "head_block": null,
+    "history_truncated": false,
+    "index_scope": "native+token",
+    "index_status": "disabled",
+    "indexed_at": "2026-11-03T22:25:56.621948Z",
+    "indexed_until_block": null,
+    "items": [],
+    "provider_status": "disabled",
+    "rows_indexed": 0,
+    "rows_skipped": {
+      "invalid_address": 0,
+      "missing_contract": 0
+    },
+    "stale": false
+  }
+}

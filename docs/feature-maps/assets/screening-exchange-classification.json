@@ -1,0 +1,171 @@
+{
+    "data": {
+        "screening_id": "3064b51e-3fed-414e-910f-0c1f4d89faf9",
+        "network": "ethereum",
+        "address": "0x46ce2da01290ea2d1bced39bba149d017df34cb9",
+        "status": "PARTIAL",
+        "risk_score": 0,
+        "risk_level": "LOW",
+        "direct_sanctions": {
+            "evaluated": true,
+            "matched": false,
+            "entries": []
+        },
+        "direct_labels": {
+            "evaluated": true,
+            "items": [
+                {
+                    "wallet_label_id": 326499,
+                    "category": "EXCHANGE",
+                    "category_type": "ENTITY_TYPE",
+                    "label": "FTX 10",
+                    "entity": {
+                        "id": 11149,
+                        "name": "ftx"
+                    },
+                    "source": {
+                        "code": "wallet_attribution",
+                        "name": "Wallet Attribution (prettydeath)"
+                    },
+                    "source_field": "eth-labels",
+                    "source_url": "https://github.com/dawsbot/eth-labels",
+                    "upstream_category": "exchange",
+                    "confidence": "medium",
+                    "verification_status": "reported",
+                    "evidence": {
+                        "observed_at": "2026-10-01T00:00:00Z",
+                        "source_field": "eth-labels",
+                        "upstream_record": {
+                            "label": "FTX 10",
+                            "entity": "ftx"
+                        },
+                        "fetch_checksum_part": "0392efcc458a60260dad72d08717ff46ad62df5e147bf551be7db3d1b27b81d6"
+                    },
+                    "observed_at": "2026-10-01T00:00:00Z",
+                    "first_seen_at": "2026-11-03T09:58:12.818578Z",
+                    "last_seen_at": "2026-11-03T09:58:12.818578Z",
+                    "revoked_at": null
+                }
+            ],
+            "collected": 1,
+            "truncated": false
+        },
+        "exposures": {
+            "evaluated": true,
+            "items": [],
+            "coverage": {
+                "tracing": "provider_reported_only",
+                "max_hops_requested": 2
+            }
+        },
+        "scoring": {
+            "policy_version": "v1.0.0",
+            "score": 0,
+            "risk_level": "LOW",
+            "flags": [],
+            "blocks": {
+                "direct": {
+                    "subtotal": 0,
+                    "capped": false
+                },
+                "exposure": {
+                    "subtotal": 0,
+                    "capped": false
+                },
+                "other": {
+                    "subtotal": 0,
+                    "capped": false
+                }
+            },
+            "reasons": [
+                {
+                    "code": "LABEL_CLASSIFICATION",
+                    "category": "EXCHANGE",
+                    "verification_status": "reported",
+                    "weight": 0,
+                    "evidence_ref": "wallet_label:326499"
+                },
+                {
+                    "code": "PROVIDER_FAILED",
+                    "weight": 0,
+                    "evidence_ref": "publicaml"
+                }
+            ]
+        },
+        "evidence": [
+            {
+                "kind": "label",
+                "ref": 326499
+            }
+        ],
+        "provider_status": {
+            "providers": {
+                "chainabuse": {
+                    "status": "DISABLED",
+                    "enabled": false,
+                    "cached": false,
+                    "error": {
+                        "code": "disabled",
+                        "message": "provider not enabled \u2014 no outbound call made"
+                    }
+                },
+                "goplus": {
+                    "status": "OK",
+                    "enabled": true,
+                    "cached": false,
+                    "fetched_at": "2026-11-03T17:54:12.766112883Z"
+                },
+                "publicaml": {
+                    "status": "RATE_LIMITED",
+                    "enabled": true,
+                    "cached": false,
+                    "fetched_at": "2026-11-03T17:54:12.619633981Z",
+                    "error": {
+                        "code": "rate_limited",
+                        "message": "local rate limiter saturated",
+                        "retry_after": 2
+                    }
+                }
+            },
+            "sanctions": {
+                "data_status": "AVAILABLE",
+                "last_synced_at": "2026-11-03T06:39:22.391136Z"
+            },
+            "labels": {
+                "data_status": "AVAILABLE",
+                "last_synced_at": "2026-11-03T09:58:12.818578Z"
+            }
+        },
+        "data_completeness": {
+            "sanctions": {
+                "requested": true,
+                "data_status": "AVAILABLE",
+                "usable": true
+            },
+            "labels": {
+                "requested": true,
+                "data_status": "AVAILABLE",
+                "usable": true
+            },
+            "labels_collected": 1,
+            "labels_truncated": false,
+            "providers": {
+                "usable": [
+                    "goplus"
+                ],
+                "degraded": [
+                    "publicaml"
+                ],
+                "disabled": [
+                    "chainabuse"
+                ]
+            },
+            "exposure": {
+                "requested": true,
+                "data_status": "AVAILABLE",
+                "usable": true
+            }
+        },
+        "screened_at": "2026-11-03T17:54:12.784032893Z"
+    }
+}

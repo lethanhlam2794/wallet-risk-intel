@@ -1,0 +1,53 @@
+{
+    "data": {
+        "items": [],
+        "coverage": {
+            "counterparties_total": 0,
+            "nodes_examined": 0,
+            "positions_emitted": 0,
+            "nodes_remaining": 0,
+            "nodes_failed": 0,
+            "edges_examined": 0,
+            "provider_calls": 0,
+            "provider_status": "disabled",
+            "sanctions_snapshot_version": "ofac-c1279a38fa18-1793687967",
+            "labels_snapshot_version": "wattr-304b40821630-1793699980",
+            "node_indexed_until": {},
+            "head_block": null,
+            "frontier_by_hop": {
+                "2": 0,
+                "3": 0
+            },
+            "nodes_examined_by_hop": {
+                "2": 0,
+                "3": 0
+            },
+            "frontier_emitted_by_hop": {
+                "2": 0,
+                "3": 0
+            },
+            "nodes_remaining_by_hop": {
+                "2": 0,
+                "3": 0
+            },
+            "max_depth_reached": 0,
+            "root": {
+                "index_status": "disabled",
+                "stale": false,
+                "provider_status": "disabled",
+                "indexed_until_block": null,
+                "indexed_at": "2026-11-03T22:49:22.086351Z",
+                "history_truncated": false,
+                "index_scope": "native+token",
+                "rows_indexed": 0,
+                "rows_skipped": {
+                    "missing_contract": 0,
+                    "invalid_address": 0
+                }
+            }
+        },
+        "truncated": null,
+        "tracing_method": "bounded_bfs",
+        "exposure_policy_version": "exposure-v1"
+    }
+}
