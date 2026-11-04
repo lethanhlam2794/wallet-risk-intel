@@ -272,3 +272,7 @@ func (a *Adapter) fetchStream(ctx context.Context, chain, wallet, types string,
 	req.Header.Set("x-api-key", a.apiKey)
 	return a.do(ctx, req, out)
 }
+
+// init publishes the default SSRF allowlist so non-adapter callers
+// (config resolution, admin writes) apply the same host check.
+func init() { provider.RegisterAllowedHosts(SourceCode, defaultAllowedHosts) }

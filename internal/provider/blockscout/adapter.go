@@ -547,3 +547,7 @@ func (a *Adapter) bufferRow(s *streamScan, stream string, it listItem) error {
 	}
 	return nil
 }
+
+// init publishes the default SSRF allowlist so non-adapter callers
+// (config resolution, admin writes) apply the same host check.
+func init() { provider.RegisterAllowedHosts(SourceCode, defaultAllowedHosts) }

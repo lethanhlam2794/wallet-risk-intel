@@ -279,3 +279,7 @@ func (a *Adapter) historyQuery(net network.Network, wallet string, native bool,
 } }`, chains[strings.ToLower(net.Code)], wallet, wallet, native,
 		opts.FromBlock, opts.ToBlock, pageSize, offset)
 }
+
+// init publishes the default SSRF allowlist so non-adapter callers
+// (config resolution, admin writes) apply the same host check.
+func init() { provider.RegisterAllowedHosts(SourceCode, defaultAllowedHosts) }

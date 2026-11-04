@@ -49,6 +49,7 @@ import (
 	"checkwallet/internal/provider/tatum"
 	"checkwallet/internal/provider/tokenview"
 	"checkwallet/internal/provider/walletattribution"
+	"checkwallet/internal/providerconfig"
 	"checkwallet/internal/sanctions"
 	"checkwallet/internal/screening"
 	"checkwallet/internal/tracing"
@@ -92,6 +93,19 @@ func run() error {
 	bootstrapAPIClients(ctx, cfg, queries, log)
 
 	resolver, err := loadResolver(ctx, queries)
+	if err != nil {
+		return err
+	}
+
+	// DB-managed provider config: any resolution error is boot-fatal and
+	// names provider+field; an absent row reproduces the env-only path
+	// byte-for-byte, which is also the built-in rollback for the feature.
+	pcKeys, err := providerconfig.NewKeystore(cfg.ProviderConfigKEK)
+	if err != nil {
+		return err
+	}
+	pcRes, err := providerconfig.ResolveAll(ctx, cfg, queries, pcKeys,
+		providerconfig.WithLogger(log))
 	if err != nil {
 		return err
 	}
@@ -143,7 +157,7 @@ func run() error {
 	// always constructed — a missing key yields Enabled()=false ⇒
 	// DISABLED coverage, never a boot crash.
 	txSvc, tracingSvc, err := buildTransactions(ctx, cfg, pool, queries,
-		wallet.NewService(queries), sanctionsSvc, resolver, m, log)
+		wallet.NewService(queries), sanctionsSvc, resolver, pcRes, m, log)
 	if err != nil {
 		return err
 	}
@@ -223,128 +237,143 @@ func buildEnrichment(cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
 // Enabled()=false — the adapters report DISABLED honestly (plan §3.2).
 func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, q *db.Queries,
 	wallets *wallet.Service, sanctionsSvc *sanctions.Service,
-	resolver *network.Resolver, m *metrics.Metrics, log *slog.Logger) (*transaction.Service, *tracing.Service, error) {
+	resolver *network.Resolver, pcRes *providerconfig.Resolver,
+	m *metrics.Metrics, log *slog.Logger) (*transaction.Service, *tracing.Service, error) {
 
 	hooksFor := func(source string) resilience.Hooks {
 		onR, onE, onRL, onC := m.ProviderHooks(source)
 		return resilience.Hooks{OnResult: onR, OnError: onE,
 			OnRateLimited: onRL, OnCircuit: onC}
 	}
-	cs, err := chainscan.New(cfg.ChainscanBaseURL, cfg.EtherscanAPIKey,
-		strings.Split(cfg.ChainscanEnabledChains, ","),
+	// resolved is the DB-over-env effective config for a provider —
+	// adapters are built from it instead of the raw env fields.
+	resolved := func(code string) *providerconfig.Resolved { return pcRes.Get(code) }
+	cs, err := chainscan.New(resolved(chainscan.SourceCode).BaseURL,
+		resolved(chainscan.SourceCode).APIKey,
+		resolved(chainscan.SourceCode).EnabledChains,
 		chainscan.WithHooks(hooksFor(chainscan.SourceCode)),
 		chainscan.WithDurationFunc(m.ProviderDurationHook(chainscan.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	nr, err := nodereal.New(cfg.NoderealBaseURL, cfg.NoderealAPIKey,
+	nr, err := nodereal.New(resolved(nodereal.SourceCode).BaseURL,
+		resolved(nodereal.SourceCode).APIKey,
 		nodereal.WithHooks(hooksFor(nodereal.SourceCode)),
 		nodereal.WithDurationFunc(m.ProviderDurationHook(nodereal.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	al, err := alchemy.New(cfg.AlchemyBaseURL, cfg.AlchemyAPIKey,
-		strings.Split(cfg.AlchemyEnabledChains, ","),
+	al, err := alchemy.New(resolved(alchemy.SourceCode).BaseURL,
+		resolved(alchemy.SourceCode).APIKey,
+		resolved(alchemy.SourceCode).EnabledChains,
 		alchemy.WithHooks(hooksFor(alchemy.SourceCode)),
 		alchemy.WithDurationFunc(m.ProviderDurationHook(alchemy.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.EtherscanAPIKey == "" {
-		log.Info("chainscan disabled: ETHERSCAN_API_KEY not configured")
+	if resolved(chainscan.SourceCode).APIKey == "" {
+		log.Info("chainscan disabled: no api key configured")
 	}
-	if cfg.NoderealAPIKey == "" {
-		log.Info("nodereal disabled: NODEREAL_API_KEY not configured")
+	if resolved(nodereal.SourceCode).APIKey == "" {
+		log.Info("nodereal disabled: no api key configured")
 	}
-	bs, err := blockscout.New(cfg.BlockscoutBaseURL,
-		strings.Split(cfg.BlockscoutEnabledChains, ","),
+	bs, err := blockscout.New(resolved(blockscout.SourceCode).BaseURL,
+		resolved(blockscout.SourceCode).EnabledChains,
 		blockscout.WithHooks(hooksFor(blockscout.SourceCode)),
 		blockscout.WithDurationFunc(m.ProviderDurationHook(blockscout.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	an, err := ankr.New(cfg.AnkrBaseURL, cfg.AnkrAPIKey,
-		strings.Split(cfg.AnkrEnabledChains, ","),
+	an, err := ankr.New(resolved(ankr.SourceCode).BaseURL,
+		resolved(ankr.SourceCode).APIKey,
+		resolved(ankr.SourceCode).EnabledChains,
 		ankr.WithHooks(hooksFor(ankr.SourceCode)),
 		ankr.WithDurationFunc(m.ProviderDurationHook(ankr.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.AlchemyAPIKey == "" {
-		log.Info("alchemy disabled: ALCHEMY_API_KEY not configured")
+	if resolved(alchemy.SourceCode).APIKey == "" {
+		log.Info("alchemy disabled: no api key configured")
 	}
-	cv, err := covalent.New(cfg.CovalentBaseURL, cfg.CovalentAPIKey,
-		strings.Split(cfg.CovalentEnabledChains, ","),
+	cv, err := covalent.New(resolved(covalent.SourceCode).BaseURL,
+		resolved(covalent.SourceCode).APIKey,
+		resolved(covalent.SourceCode).EnabledChains,
 		covalent.WithHooks(hooksFor(covalent.SourceCode)),
 		covalent.WithDurationFunc(m.ProviderDurationHook(covalent.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.AnkrAPIKey == "" {
-		log.Info("ankr disabled: ANKR_API_KEY not configured")
+	if resolved(ankr.SourceCode).APIKey == "" {
+		log.Info("ankr disabled: no api key configured")
 	}
-	mo, err := moralis.New(cfg.MoralisBaseURL, cfg.MoralisAPIKey,
-		strings.Split(cfg.MoralisEnabledChains, ","),
+	mo, err := moralis.New(resolved(moralis.SourceCode).BaseURL,
+		resolved(moralis.SourceCode).APIKey,
+		resolved(moralis.SourceCode).EnabledChains,
 		moralis.WithHooks(hooksFor(moralis.SourceCode)),
 		moralis.WithDurationFunc(m.ProviderDurationHook(moralis.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.CovalentAPIKey == "" {
-		log.Info("covalent disabled: COVALENT_API_KEY not configured")
+	if resolved(covalent.SourceCode).APIKey == "" {
+		log.Info("covalent disabled: no api key configured")
 	}
-	if cfg.MoralisAPIKey == "" {
-		log.Info("moralis disabled: MORALIS_API_KEY not configured")
+	if resolved(moralis.SourceCode).APIKey == "" {
+		log.Info("moralis disabled: no api key configured")
 	}
-	ta, err := tatum.New(cfg.TatumBaseURL, cfg.TatumAPIKey,
-		strings.Split(cfg.TatumEnabledChains, ","),
+	ta, err := tatum.New(resolved(tatum.SourceCode).BaseURL,
+		resolved(tatum.SourceCode).APIKey,
+		resolved(tatum.SourceCode).EnabledChains,
 		tatum.WithHooks(hooksFor(tatum.SourceCode)),
 		tatum.WithDurationFunc(m.ProviderDurationHook(tatum.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.TatumAPIKey == "" {
-		log.Info("tatum disabled: TATUM_API_KEY not configured")
+	if resolved(tatum.SourceCode).APIKey == "" {
+		log.Info("tatum disabled: no api key configured")
 	}
-	bq, err := bitquery.New(cfg.BitqueryBaseURL, cfg.BitqueryAPIKey,
-		strings.Split(cfg.BitqueryEnabledChains, ","),
+	bq, err := bitquery.New(resolved(bitquery.SourceCode).BaseURL,
+		resolved(bitquery.SourceCode).APIKey,
+		resolved(bitquery.SourceCode).EnabledChains,
 		bitquery.WithHooks(hooksFor(bitquery.SourceCode)),
 		bitquery.WithDurationFunc(m.ProviderDurationHook(bitquery.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.BitqueryAPIKey == "" {
-		log.Info("bitquery disabled: BITQUERY_API_KEY not configured")
+	if resolved(bitquery.SourceCode).APIKey == "" {
+		log.Info("bitquery disabled: no api key configured")
 	}
-	ok, err := oklink.New(cfg.OklinkBaseURL, cfg.OklinkAPIKey,
-		strings.Split(cfg.OklinkEnabledChains, ","),
+	ok, err := oklink.New(resolved(oklink.SourceCode).BaseURL,
+		resolved(oklink.SourceCode).APIKey,
+		resolved(oklink.SourceCode).EnabledChains,
 		oklink.WithHooks(hooksFor(oklink.SourceCode)),
 		oklink.WithDurationFunc(m.ProviderDurationHook(oklink.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.OklinkAPIKey == "" {
-		log.Info("oklink disabled: OKLINK_API_KEY not configured")
+	if resolved(oklink.SourceCode).APIKey == "" {
+		log.Info("oklink disabled: no api key configured")
 	}
-	tv, err := tokenview.New(cfg.TokenviewBaseURL, cfg.TokenviewAPIKey,
-		strings.Split(cfg.TokenviewEnabledChains, ","),
+	tv, err := tokenview.New(resolved(tokenview.SourceCode).BaseURL,
+		resolved(tokenview.SourceCode).APIKey,
+		resolved(tokenview.SourceCode).EnabledChains,
 		tokenview.WithHooks(hooksFor(tokenview.SourceCode)),
 		tokenview.WithDurationFunc(m.ProviderDurationHook(tokenview.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.TokenviewAPIKey == "" {
-		log.Info("tokenview disabled: TOKENVIEW_API_KEY not configured")
+	if resolved(tokenview.SourceCode).APIKey == "" {
+		log.Info("tokenview disabled: no api key configured")
 	}
-	cb, err := chainbase.New(cfg.ChainbaseBaseURL, cfg.ChainbaseAPIKey,
-		strings.Split(cfg.ChainbaseEnabledChains, ","),
+	cb, err := chainbase.New(resolved(chainbase.SourceCode).BaseURL,
+		resolved(chainbase.SourceCode).APIKey,
+		resolved(chainbase.SourceCode).EnabledChains,
 		chainbase.WithHooks(hooksFor(chainbase.SourceCode)),
 		chainbase.WithDurationFunc(m.ProviderDurationHook(chainbase.SourceCode)))
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.ChainbaseAPIKey == "" {
-		log.Info("chainbase disabled: CHAINBASE_API_KEY not configured")
+	if resolved(chainbase.SourceCode).APIKey == "" {
+		log.Info("chainbase disabled: no api key configured")
 	}
 
 	// Registry of every selectable provider; TX_PROVIDER_<NET> resolves the

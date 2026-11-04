@@ -271,3 +271,7 @@ func (a *Adapter) listQuery(chain string, opts provider.TransferLookupOpts, curs
 	}
 	return q
 }
+
+// init publishes the default SSRF allowlist so non-adapter callers
+// (config resolution, admin writes) apply the same host check.
+func init() { provider.RegisterAllowedHosts(SourceCode, defaultAllowedHosts) }

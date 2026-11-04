@@ -139,6 +139,10 @@ type Config struct {
 	TracingDeadline    time.Duration
 	TracingResponseCap int
 
+	// ProviderConfigKEK encrypts provider_configs.api_key at rest when set
+	// (32-byte base64/hex, AES-256-GCM); unset = honest plaintext storage.
+	ProviderConfigKEK string
+
 	BootstrapAdminKey  string
 	BootstrapReaderKey string
 }
@@ -206,6 +210,7 @@ func Load() (*Config, error) {
 		IndexingStaleAfter:        envDur("TXINDEX_STALE_AFTER", 15*time.Minute),
 		IndexingWindowCapBSC:      envInt64Default("TXINDEX_WINDOW_CAP_BSC", 100000),
 		TracingDeadline:           envDur("TRACING_DEADLINE", 60*time.Second),
+		ProviderConfigKEK:         os.Getenv("PROVIDER_CONFIG_KEK"),
 		BootstrapAdminKey:         os.Getenv("API_BOOTSTRAP_ADMIN_KEY"),
 		BootstrapReaderKey:        os.Getenv("API_BOOTSTRAP_READER_KEY"),
 	}
