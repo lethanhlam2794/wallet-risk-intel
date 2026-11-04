@@ -32,6 +32,7 @@ import (
 	"checkwallet/internal/platform/metrics"
 	"checkwallet/internal/provider"
 	"checkwallet/internal/provider/alchemy"
+	"checkwallet/internal/provider/blockscout"
 	"checkwallet/internal/provider/chainabuse"
 	"checkwallet/internal/provider/chainscan"
 	"checkwallet/internal/provider/goplus"
@@ -247,6 +248,13 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	if cfg.NoderealAPIKey == "" {
 		log.Info("nodereal disabled: NODEREAL_API_KEY not configured")
 	}
+	bs, err := blockscout.New(cfg.BlockscoutBaseURL,
+		strings.Split(cfg.BlockscoutEnabledChains, ","),
+		blockscout.WithHooks(hooksFor(blockscout.SourceCode)),
+		blockscout.WithDurationFunc(m.ProviderDurationHook(blockscout.SourceCode)))
+	if err != nil {
+		return nil, nil, err
+	}
 	if cfg.AlchemyAPIKey == "" {
 		log.Info("alchemy disabled: ALCHEMY_API_KEY not configured")
 	}
@@ -254,9 +262,10 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	// Registry of every selectable provider; TX_PROVIDER_<NET> picks the
 	// serving adapter per network (first entry — failover lands phase-12).
 	registry := map[string]provider.TxProvider{
-		chainscan.SourceCode: cs,
-		nodereal.SourceCode:  nr,
-		alchemy.SourceCode:   al,
+		chainscan.SourceCode:  cs,
+		nodereal.SourceCode:   nr,
+		alchemy.SourceCode:    al,
+		blockscout.SourceCode: bs,
 	}
 	ethAdapter, err := selectTxProvider("TX_PROVIDER_ETH", cfg.TxProviderETH,
 		chainscan.SourceCode, registry, log)
@@ -270,9 +279,10 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	}
 
 	budget := map[string]int{
-		chainscan.SourceCode: cfg.IndexingBudgetETH,
-		nodereal.SourceCode:  cfg.IndexingBudgetBSC,
-		alchemy.SourceCode:   cfg.IndexingBudgetAlchemy,
+		chainscan.SourceCode:  cfg.IndexingBudgetETH,
+		nodereal.SourceCode:   cfg.IndexingBudgetBSC,
+		alchemy.SourceCode:    cfg.IndexingBudgetAlchemy,
+		blockscout.SourceCode: cfg.IndexingBudgetBlockscout,
 	}
 	// Boot checks (plan invariants): every registered provider must resolve
 	// a data_sources row — a typo'd Name() silently disables the

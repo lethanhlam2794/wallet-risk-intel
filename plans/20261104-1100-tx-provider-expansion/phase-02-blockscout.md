@@ -1,7 +1,7 @@
 ---
 phase: 02
 title: Blockscout transaction-history adapter
-status: pending
+status: completed
 priority: P0
 dependencies: [phase-01]
 ---
@@ -92,16 +92,16 @@ Follow internal/provider/nodereal + internal/provider/chainscan:
 6. Live-verify gate: REQUIRED (keyless — always verify).
 
 ## Success Criteria
-- [ ] TxProvider implemented; Enabled() gating correct
-- [ ] Streams report Finished per real upstream partition; ascending block order
-- [ ] UpstreamCalls accurate; budget charged correctly
-- [ ] data_sources row via migration (up+down apply)
-- [ ] Unit tests green with real-wire-shape mock
-- [ ] `Name()` == `data_sources.code` pinned by wiring test or boot check (swallowed `sourceID()` error → reset never fires)
-- [ ] `Budget[Name()] > 0` enforced (missing/typo'd `TXINDEX_BUDGET_<NAME>` env → pool 0 = unlimited)
-- [ ] if live-verify BLOCKED: adapter absent from ALL default `TX_PROVIDER_*` selectors
-- [ ] Gates pass; one conventional commit `feat(provider): add blockscout transaction-history adapter`
-- [ ] Live-verify evidence = ALL of: upstream HeadBlock + upstream LookupTransfers on a real address + booted `GET /api/v1/wallets/<net>/<addr>/transactions?refresh=1` showing `provider_status:"ok"` (curl a lone HeadBlock does NOT count) — OR `live-verify: BLOCKED (no key)` reported
+- [x] TxProvider implemented; Enabled() gating correct
+- [x] Streams report Finished per real upstream partition; ascending block order
+- [x] UpstreamCalls accurate; budget charged correctly
+- [x] data_sources row via migration (up+down apply)
+- [x] Unit tests green with real-wire-shape mock
+- [x] `Name()` == `data_sources.code` pinned by wiring test or boot check (swallowed `sourceID()` error → reset never fires)
+- [x] `Budget[Name()] > 0` enforced (missing/typo'd `TXINDEX_BUDGET_<NAME>` env → pool 0 = unlimited)
+- [x] if live-verify BLOCKED: adapter absent from ALL default `TX_PROVIDER_*` selectors
+- [x] Gates pass; one conventional commit `feat(provider): add blockscout transaction-history adapter`
+- [x] Live-verify evidence = ALL of: upstream HeadBlock + upstream LookupTransfers on a real address + booted `GET /api/v1/wallets/<net>/<addr>/transactions?refresh=1` showing `provider_status:"ok"` (curl a lone HeadBlock does NOT count) — OR `live-verify: BLOCKED (no key)` reported
 
 ## Risk Assessment
 - Contract drift: docs-first verification + real-shape mock.
@@ -118,3 +118,20 @@ progress token, quota burns honestly. If history depth outruns the
 practical page budget → permanent honest PARTIAL. Incremental indexing
 (watermark near head) works fine. This bound is accepted and stated so
 phase-12 failover expectations stay calibrated.
+
+## Phase Report
+- Docs/live probe verified (eth.blockscout.com v2): `{items,next_page_params}`
+  envelope; items `block_number,timestamp,from.hash,to.hash|null`; native adds
+  `hash,value,status,confirmations`; token adds `transaction_hash,log_index,
+  token.address_hash,total.value`; `type=ERC-20` pins the token list.
+  `next_page_params` is opaque keyset — forwarded verbatim as query params.
+- Streams: `native` (transactions) + `token` (token-transfers) — unified
+  lists, no direction faking. Zero-value calls never emit as NATIVE.
+- Drain/buffer as pinned: deterministic key (net|wallet|fetchFrom),
+  ≤BLOCKSCOUT_MAX_SCAN_PAGES(10)/call split round-robin, strict
+  `floor < fetchFrom` coverage, head-segment catch-up on fetchTo drift,
+  30m TTL + 256-scan LRU + 20k row cap → internal error + drop.
+- LIVE-VERIFY PASSED: HeadBlock=26340027; LookupTransfers returned real
+  rows; booted API `GET /api/v1/wallets/ethereum/0x...12345/transactions
+  ?refresh=1` → `provider_status:"ok"`, `index_status:"fresh"`,
+  `indexed_until_block:26340033`, `history_truncated:false`, rows_indexed:7.
