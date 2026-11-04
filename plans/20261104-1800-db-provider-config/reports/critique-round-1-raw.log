@@ -1,0 +1,73 @@
+I'll start by mapping the plan directory and reading all mandatory compliance inputs in parallel.Now let me read the rest of the engineering standard, the remainder of the learning ledger (P-pattern stubs), and all four phase files.Plan files and compliance inputs read. Now grounding in actual code — the attack surface requires `internal/transaction/service.go`, boot wiring, config, middleware, and migrations.Migration 000020 is the correct next number. Now the core files.The chain walk and boot wiring are clear. Now I need: the worker entrypoint (does it build tx adapters too?), the auth middleware's admin/actor exposure, `GetSourceByCode` semantics, SSRF enforcement in adapters, and how `Enabled()` works.The SSRF allowlist exists inside adapters. Now I need to see how each adapter validates hosts, what `Enabled()` does, and whether the allowlists are exported (phase-04 claims the admin API can reuse "the same check adapters apply").Allowlists are package-private and enforced at adapter construction. Now checking where `data_sources.is_active` is consumed today, the httpserver admin wiring, and the TxProvider interface.Now checking `data_sources` writers (who can flip `is_active`), config struct field mapping, and how index state surfaces to the API.Now the greatify reference implementation and the OpenAPI pagination convention.The OpenAPI uses cursor pagination (`next_cursor`, `cursor` params). Now verifying the greatify reference claims — note the prompt-master cited `internal-provider.controller.ts` but the directory listing doesn't show it.A few last verifications: Makefile targets, `data_sources` DDL shape for the FK, and the existing admin handler conventions.All evidence gathered. Cross-verified the plan against the actual chain walk, boot wiring, adapter allowlists, middleware, and the greatify reference. Writing the review.
+
+---
+
+# Devin Critic — Plan Review: `db-provider-config`
+
+## Verdict: CHANGES_REQUESTED
+
+The core design is sound and consistent with the codebase's honesty culture: DB-wins-if-set precedence with env parity on absent rows, reuse of the exact disabled-skip path for the kill-switch (`service.go:248` already runs before `MarkWalletIndexing`/`prepay`, so "zero quota burn" is inherited for free), `writeDisabled` under `firstSrc` already gives an honest all-inactive verdict (`service.go:277-281`), and `middleware.ClientFrom(c)` gives real actor identity for audit (`auth.go:64-72`). All 4 phase files exist (structural gate PASS). But the plan has one honesty hole on the API contract, several unspecified failure modes, an unowned encryption write-path, and a mechanical impossibility in the SSRF requirement as written.
+
+## Findings
+
+### MAJOR
+
+**M1 — Runtime-vs-boot asymmetry is never disclosed to the API consumer.**
+Adapters bake `apiKey`/`baseURL`/`chains` at construction (`chainscan/adapter.go:91-99`, `Enabled` reads `a.apiKey` at :150-151). `status` becomes live within ~30s (phase-03), but `api_key`/`base_url`/`enabled_chains` do **not** take effect until restart. `PUT .../{code}` returning 200 + an audit row while the old key keeps serving is a silent no-op — the exact "clean-looking dishonest result" class this repo fights elsewhere. plan.md:53-55 buries it in the risk matrix; phase-04 requires no disclosure. Operator rotating a leaked key will believe the leak is closed.
+*Amend:* phase-04 must require a `requires_restart: ["api_key","base_url","enabled_chains"]` (or per-field `effective_on: "next_restart"`) marker on GET/PUT responses, documented in OpenAPI; add a `warnings` string array on PUT response when stored≠in-effect (borrowed from greatify `provider.service.ts:161-184`).
+
+**M2 — Failure semantics for invalid DB values are unspecified → boot bomb or silent fallback.**
+`adapter.New()` runs `validateBaseURL` and returns error → `buildTransactions` propagates → **the whole API fails to boot** (`main.go:237`, `chainscan/adapter.go:104,129-143`). A bad `base_url` written via SQL (or a host later dropped from a compiled allowlist) turns one row into a total outage. Likewise: malformed `enabled_chains` JSONB, and decrypt failure — phase-02 tests "corrupt ciphertext ⇒ error" but never says where the error lands. If resolution silently falls back to env on error, a wrong KEK silently ignores all DB config (worse: a wrong KEK + `enc:v1:` row = silent plaintext fallback is already excluded by tests, but the *routing* of the error is unpinned).
+*Amend:* pin in phase-02: "any resolution error — DB query failure, decrypt failure, allowlist rejection, malformed JSON — is **boot-fatal** and names the provider/field; never falls back to env on error (fallback only on *absent* values)."
+
+**M3 — The encryption write-path is unowned; silent plaintext downgrade possible.**
+Phase-04's requirements never mention encryption. If the PUT service stores raw `api_key` while `PROVIDER_CONFIG_KEK` is set, reads still succeed (no `enc:v1:` marker ⇒ plaintext path) — at-rest protection silently never engaged. Marker collision is unhandled: a legitimate plaintext key literally starting `enc:v1:` stored while KEK unset becomes undecryptable the day ops sets KEK → boot error with a confusing message.
+*Amend:* phase-04: "api_key writes pass through the phase-02 keystore (encrypt iff KEK set); reject client-supplied values already bearing the `enc:` prefix." phase-02: "marker check must validate full `enc:v1:<b64 nonce>:<b64 ct>` shape before decrypting; document that enabling KEK on rows containing plaintext `enc:v1:`-prefixed values is a boot-fatal misconfiguration."
+
+**M4 — "Same check adapters apply" for SSRF is not implementable as written.**
+Allowlists are package-private `defaultAllowedHosts`; `validateBaseURL` is a private method run inside `New()` (`chainscan/adapter.go:41-42,96,104`; same pattern in alchemy/ankr/bitquery/blockscout). The admin service cannot reuse it without constructing a throwaway adapter (which also builds rate-limiters/breakers) or duplicating host lists.
+*Amend:* phase-04 must add an exported surface — e.g. `provider.AllowedHostsFor(code) []string` or per-adapter exported `ValidateBaseURL` — and state it edits phase-02 to export it. Also disclose in OpenAPI that editable `base_url` is bounded by compiled-in hosts: for `chainscan` (`api.etherscan.io` only), `ankr`, `blockscout` the field is near-useless; the PUT error should echo the allowed host list.
+
+### MINOR
+
+**m1 — `enabled_chains` `[]` vs NULL is unpinned.** "DB wins when non-empty/non-null" (phase-02:16): is `[]` an override-to-none (a second kill channel) or "no override"? Same edge: `base_url=""` can't express alchemy's meaningful "empty = per-network endpoints" (`config.go:72`). *Amend:* pin "`[]`/empty-string are explicit overrides, not 'absent'; only NULL falls back to env" — or reject empty at write-validation. Document choice.
+
+**m2 — Lost-update risk on concurrent PUTs.** If `UpsertProviderConfig` writes the full row after a find-then-mutate read, two concurrent PUTs lose each other's fields and `previous_value` in audit rows lies (eng-standard §3). *Amend:* phase-04: "column-scoped UPDATE of patched fields only, or `SELECT ... FOR UPDATE` inside the tx; add a two-field concurrent-PUT test."
+
+**m3 — Dual kill switches lack a stated winner.** `data_sources.is_active` is today dead weight for tx providers (`GetSourceByCode` has no filter — `queries/ingestion_runs.sql:2`; nothing else reads `IsActive`). Phase-03:16 gives it live AND-semantics (`is_active=false` ⇒ inactive regardless of `provider_configs.status`) — a real behavior change vs today and absent from plan.md's invariant list. *Amend:* add to plan.md: "effective_active = `data_sources.is_active AND (provider_configs.status='active' OR row absent)`; document which switch is the operator-facing one (status) and which is the catalog-level one (is_active)."
+
+**m4 — Package placement creates a layering smell.** `internal/config/providercfg.go` taking `*db.Queries` makes leaf-package `config` import `internal/db`; then `internal/transaction` (killswitch) and the admin service both import config for status/keystore. *Amend:* consolidate into `internal/providerconfig/` — repository (sqlc), resolver, keystore, status-source, admin service — consumed by `cmd/api`, `transaction.Service`, `httpserver`. Keeps `config` env-pure.
+
+**m5 — Stale `indexing` claim rows linger under a killed source.** Kill-skip `continue`s (`service.go:249-250`) without touching the row; a mid-flight `indexing` row under a flipped-inactive source stays `indexing` in `wallet_index_state` indefinitely (never served — the disabled case intercepts first — and nothing else reads it; self-heals via `StaleAfter` on reactivation). *Amend:* phase-03 should state this explicitly as the chosen behavior.
+
+**m6 — Env-descriptor mapping unspecified; mechanical naming breaks on chainscan.** `chainscan`'s key env is `ETHERSCAN_API_KEY`, not `CHAINSCAN_API_KEY` (`config.go:169`); prompt-master's `<SRC>_API_KEY` shorthand is wrong there. *Amend:* phase-02 must require an explicit descriptor map `sourceCode → {key, baseURL, chains}` injected into the resolver — which also makes non-tx providers (goplus/chainabuse) a data-add later, not rework (attack item 7).
+
+**m7 — `actor_id`/`updated_by` source unpinned; `last4` type inconsistent.** `ClientIdentity.ID` is `int64`, `Name` string — audit stores `VARCHAR(64)`; pin which lands where. `last4` appears as number (plan.md:58), `n` (phase-04:23), string `"…wxyz"` (prompt-master:94). *Amend:* pin `{"set":bool,"last4":string|null}` and omit `last4` when key length < 8.
+
+**m8 — PUT on unknown code → FK violation → 500.** `source_code REFERENCES data_sources(code)`; PUT to an unregistered code will hit the FK. *Amend:* phase-04: "unknown code ⇒ 404/422, never 500; GET list should LEFT JOIN registered tx providers so unconfigured codes are discoverable as PUT targets."
+
+**m9 — No declared risk level / rollback story.** Eng-standard §0.3 requires an R-level for R2+; this is **R3** (schema change + credential-handling surface). *Amend:* plan.md: "Risk: R3. Rollback: feature is inert without rows (absent rows = env parity is the built-in flag); down-migration drops both tables."
+
+### NIT
+
+- **n1** `limit/offset` on `/changes` deviates from the repo's `next_cursor` convention (`openapi.yaml:186-190`; AGENTS §9) — greatify uses offset too (`provider.service.ts:259-264`), so conform to cursor or state the deviation.
+- **n2** "9 combos" truth table is a number without a table — enumerate: per field {row absent, db null/empty, db set} × {env set, env unset}.
+- **n3** Phase-02 "identical adapter inputs" parity test can only observe resolver output (adapter fields unexported) — reword to "identical resolved config".
+- **n4** `provider_config_changes.id UUID` — pin `gen_random_uuid()` default vs app-generated in phase-01.
+- **n5** StatusCache must be documented goroutine-safe (singleflight is per-wallet only — `service.go:168`; different wallets' ensures run concurrently).
+- **n6** Borrow greatify's last-active warning (`provider.service.ts:164-175`): PUT `status=inactive` on the last active member of a chain should return a warning the operator sees.
+- **n7** Phase-03 "disabled-ish state" → the wire state is exactly `disabled` via `writeDisabled` (`service.go:589-619`); tighten wording.
+- **n8** Add missing test axes: decrypt-failure-at-boot, invalid DB `base_url`, concurrent PUT, write-path-encrypt-on (KEK set ⇒ stored value carries marker).
+- **n9** KEK justification is defensible (DB-dump exfil is the realistic threat; env leaks via /proc too, so it's marginal but cheap) — but phase-02 should note ops reality: KEK rotation = manual re-encrypt job, out of v1 scope.
+
+## Required amendments (concrete)
+
+1. **phase-04**: add `requires_restart`/`effective_on` disclosure to GET/PUT contracts + OpenAPI; add encryption-on-write requirement + `enc:`-prefix rejection; add exported SSRF-check mechanism; unknown-code ⇒ 4xx; column-scoped update or FOR UPDATE; pin `{"set":bool,"last4":string|null}` with <8-char suppression; actor from `middleware.ClientFrom`.
+2. **phase-02**: pin "resolution error = boot-fatal, env fallback on absent only"; add descriptor map keyed by source code (covers `ETHERSCAN_API_KEY`); move resolver+keystore to `internal/providerconfig/`; pin `[]`/empty-as-explicit-override semantics; enumerate the truth table.
+3. **phase-03**: state stale-`indexing`-row posture; require goroutine-safe cache; fix "disabled-ish" wording.
+4. **phase-01**: pin `changes.id` UUID generation; consider fail-closed `jsonb_typeof='array'` CHECK on `enabled_chains` (P-051).
+5. **plan.md**: declare Risk R3 + rollback note; add dual-switch effective-active formula to invariants; note stale rows for unregistered codes are ignored (boot warn log).
+
+Status: DONE_WITH_CONCERNS
+Summary: Structurally complete and philosophically consistent plan, but it would ship an admin API whose writes silently don't take effect, with unspecified boot-failure and encryption-write semantics — fixable via concrete spec amendments rather than redesign.
+Concerns/Blockers: M1–M4 must land in the phase files before implementation; all are documentation-level fixes.

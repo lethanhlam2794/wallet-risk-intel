@@ -374,3 +374,16 @@ substitution, S6 docs published. Working tree intentionally uncommitted.
   - Live captures: `plans/20261104-1100-tx-provider-expansion/reports/stage5/` (6 files, all real API/DB output)
   - Review trail: `review-round-1.md` → `remediation-round-1.md` → `review-round-2.md` APPROVED
 - **Self-Audit Commitment**: every DB query in the guidebook was executed against the live dev DB and output captured; a tester can reproduce all flows independently.
+
+### [DPC_STAGE_1_VERIFICATION] - Stage 1: Grounded Pre-Planning & Adversarial Debate (db-provider-config)
+- **Completion Timestamp**: 2026-11-04 18:40:00
+- **Status**: PASSED — CONSENSUS_READY
+- **Completed Tasks**:
+  - [x] Scouted greatify-api partner/provider pattern (providers catalog, provider_changes audit, authInfo credentials, boot fail-loud guard)
+  - [x] Grounded design against check-wallet anchors (data_sources, boot checks, chain walk, adapter allowlists, admin middleware)
+  - [x] Canonical plan scaffold: plan.md + phase-01..04 at plans/20261104-1800-db-provider-config/
+  - [x] Critic R1 → CHANGES_REQUESTED (4 MAJOR, 9 MINOR, 9 NIT) → all conceded, amendments applied → R2 verify → CONSENSUS_READY; stale-text sweep (N-A..N-D) applied
+- **Machine Evidence**:
+  - Plan: `plans/20261104-1800-db-provider-config/plan.md` (+ phase-01..04, prompt-master.md)
+  - Critique logs: `reports/critique-round-{1,2}-raw.log`; prompts `reports/prompt-critic-round-{1,2}.md`
+- **Self-Audit Commitment**: every amendment grounded in verified code anchors (ClientFrom auth.go:65, ETHERSCAN_API_KEY config.go:169, writeDisabled service.go:587, private defaultAllowedHosts); decisions D1–D5 user-approved.

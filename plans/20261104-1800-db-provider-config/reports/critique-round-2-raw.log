@@ -1,0 +1,47 @@
+I'll verify the R1 amendments. Starting with the mandatory compliance inputs and the plan artifacts.Now the prior critique log to know exactly what I'm verifying.Now reading the plan and all four phase files to verify amendments.Amendment sections are present in all five files. Before adjudicating, I'll spot-check the key codebase anchors the amendments rely on (per engineering-standard §5.3 — verify from source, don't trust the R1 log's claims).Codebase anchors verified: `ClientFrom`/`ClientIdentity{ID,Name,Role}` at `internal/middleware/auth.go:65`, `ETHERSCAN_API_KEY` at `config.go:169`, `writeDisabled` at `service.go:587`, package-private `defaultAllowedHosts` per adapter, next migration = 000020. A few more anchors to confirm — the `internal/provider` root package (for `AllowedHostsFor`), `data_sources` shape, and the OpenAPI cursor convention.All anchors check out. One more consistency pass — how existing audit columns store client identity (ID vs Name), and whether the round-2 log file already has content.All verification complete. The round-2 log is this session's own transcript (being written by the harness) — nothing prior to reconcile. Compiling the verdict.
+
+---
+
+# Devin Critic — Round 2: `db-provider-config` amendment verification
+
+## Verdict: CONSENSUS_READY
+
+Every R1 finding is addressed in substance by the "Amendments (critic R1)" sections now present in all five documents. Codebase anchors were independently re-verified (not trusted from the R1 log): `middleware.ClientFrom` → `ClientIdentity{ID,Name,Role}` (`internal/middleware/auth.go:52,65`), `ETHERSCAN_API_KEY` (`internal/config/config.go:169`, `cmd/api/main.go:233`), `writeDisabled` (`internal/transaction/service.go:587`), package-private `defaultAllowedHosts` per adapter, `internal/provider/provider.go` exists as a viable home for the exported surface, `data_sources.is_active` exists (`migrations/000001`), OpenAPI already uses `cursor`/`next_cursor`, next migration number is 000020.
+
+## Per-finding
+
+### MAJOR — all FIXED
+
+- **M1 restart-asymmetry — FIXED.** phase-04:48–51 adds `requires_restart:["api_key","base_url","enabled_chains"]` on GET/PUT + `warnings[]` on PUT when stored≠in-effect + OpenAPI disclosure that `status` is the only runtime-effective field. plan.md:69–71 pins the same as an invariant.
+- **M2 error semantics — FIXED.** phase-02:57–59: any resolution error (DB, decrypt, allowlist rejection, malformed JSON) is boot-fatal naming provider+field; env fallback only on absent. Mirrored in plan.md:72–74.
+- **M3 encryption write-path — FIXED.** phase-04:52–54 routes api_key writes through the phase-02 keystore (encrypt iff KEK) and 400-rejects `enc:`-prefixed client input. phase-02:68–71 requires full `enc:v1:<b64 nonce>:<b64 ct>` marker-shape validation and documents prefixed-plaintext + KEK as boot-fatal misconfiguration. Both M3 holes (silent plaintext downgrade, marker collision) covered.
+- **M4 SSRF — FIXED.** phase-04:55–59 specifies exported `provider.AllowedHostsFor(code) []string` with adapters publishing their allowlists, echoes allowed hosts in the 400, and discloses in OpenAPI that `base_url` is bounded by compiled-in hosts (chainscan near-useless).
+
+### MINOR — all FIXED
+
+- **m1** ✅ phase-02:60–62 + plan.md:75–77 pin `[]`/`""` as explicit overrides; only NULL falls back.
+- **m2** ✅ phase-04:62–63 column-scoped UPDATE or `FOR UPDATE` in one tx + concurrent two-field PUT test.
+- **m3** ✅ plan.md:65–68 pins `effective_active = is_active AND (status='active' OR row absent)` and names operator-facing (`status`) vs catalog (`is_active`); consistent with phase-03:16.
+- **m4** ✅ phase-02:51–53 consolidates resolver/keystore/status-source/admin-service into `internal/providerconfig/`.
+- **m5** ✅ phase-03:51–53 states stale `indexing` rows as chosen behavior (never served, self-heals via StaleAfter).
+- **m6** ✅ phase-02:54–56 explicit descriptor map incl. `chainscan`→`ETHERSCAN_API_KEY`, all 12 providers (matches D5).
+- **m7** ✅ phase-04:64–67 pins `{"set":bool,"last4":string|null}` with <8 suppression; `actor_id`=client Name, `actor_type`="api_client", `updated_by` same source.
+- **m8** ✅ phase-04:60–61 unknown code ⇒ 404, never FK-500; unconfigured-but-registered codes discoverable via list.
+- **m9** ✅ plan.md:62–64 Risk R3 + rollback (inert-without-rows = built-in flag; down-migration drops both tables).
+
+### NIT — all FIXED in substance
+
+n1 cursor (phase-04:68–69), n2 8-case table (phase-02:63–65), n3 parity reworded (phase-02:67), n4 `gen_random_uuid()` (phase-01:43), n5 goroutine-safe (phase-03:54–55), n6 last-active warning (phase-04:70–71), n7 `disabled` wire-state (phase-03:48–50), n8 test axes (semantics pinned; concurrent-PUT explicit), n9 KEK-rotation scope note (phase-02:72). phase-01:44–45 also lands the P-051 `jsonb_typeof='array'` fail-closed CHECK.
+
+## NEW findings — nits only, none blocking
+
+- **N-A**: `warnings[]` "stored≠in-effect" needs a boot-time resolved-config snapshot to compare against; no phase pins who retains it. Obvious to implement (the resolver holds it), but unpinned.
+- **N-B**: Stale original text contradicts amendments in-place: phase-02 Overview/Related-Code-Files still say `internal/config/providercfg.go`/`keystore.go` vs the providerconfig move; "9 combos" vs 8 cases and "identical adapter inputs" vs "resolved config" in phase-02 success criteria; `?limit&offset` + `ListProviderConfigChanges(code, limit, offset)` (phase-04:24, phase-01:22) vs cursor pagination — an offset signature can't implement a keyset cursor; `last4:n`/`last4:4` (phase-04:23, plan.md:58) vs pinned `string|null`; phase-03's `internal/transaction/killswitch.go` vs "status-source in providerconfig" placement ambiguity.
+- **N-C**: `actor_id` column type unpinned in phase-01 while phase-04 pins it to a varchar Name — implementer could type it BIGINT against `api_clients.id`.
+- **N-D**: `AllowedHostsFor` is assigned to phase-02 but recorded only in phase-04's amendment; phase-02's own file never mentions it.
+
+All N-findings are implementer-facing doc inconsistencies where the labeled amendment explicitly wins — none re-opens an R1 defect.
+
+Status: DONE_WITH_CONCERNS
+Summary: All R1 majors/minors/nits are substantively amended with correct codebase grounding; verdict CONSENSUS_READY. Residual stale-text contradictions (old file paths, offset signature, `last4` shape, "9 combos") should be swept before implementation to avoid ambiguity, but each amendment is explicit enough to resolve them.
+Concerns/Blockers: N-B/N-C stale-text reconciliation recommended as a cheap pass before cook; nothing blocking.
