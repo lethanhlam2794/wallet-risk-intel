@@ -1,0 +1,16 @@
+# Phase 1 — Provider seam + schema (plan §3.1, §3.4)
+
+status: pending
+
+## Tasks
+- [ ] `migrations/000008_transactions.up.sql`: `transactions` spec §7.13 **+ `is_error BOOL NOT NULL DEFAULT false`** (deviation §6) + `wallet_index_state` (network_id+wallet_id PK, `source_id` BIGINT FK→data_sources(id), indexed_until_block=watermark, indexed_at=last terminal write, status lowercase enum {not_indexed,indexing,fresh,partial,failed,disabled} — `stale` derived bool at read vs IndexingFreshTTL, error cleared-on-success, rows_indexed+rows_skipped_missing_contract+rows_skipped_invalid_address cumulative, history_truncated BOOL written together with status='partial', cleared on unbounded success); `data_sources` rows chainscan/nodereal (source_type='api')
+- [ ] `queries/transactions.sql`: batch upsert `ON CONFLICT … DO UPDATE` mutable set {confirmation_status,block_number,block_timestamp,is_error}; keyset list (block_timestamp DESC,id) over UNION of from/to scans — W→W self-row emitted once, direction='self' always; hop-join edge queries **filter is_error=false**; index-state get/upsert; bulk wallet resolve `…DO UPDATE SET updated_at=wallets.updated_at RETURNING` (address_type='evm'); **bulk label match** `WHERE network_id=$1 AND normalized_address=ANY($2) AND revoked_at IS NULL` SELECTing join set (risk_categories code+category_type, LEFT entities name, data_sources.code)
+- [ ] `TxProvider` seam: `LookupTransfers(ctx,net,normalized,opts{FromBlock,ToBlock,Kinds,PageToken,PageSize})` → `TransferPage{Transfers,NextPageToken}`; `PageToken` encodes per-stream cursors `{streamA,streamB}` (nodereal: fromKey/toKey; chainscan: txlistPage/tokentxPage); Transfer{TxHash(lowercase),Type,From,To,Asset,AmountRaw(raw-integer field only),BlockNumber,BlockTimestamp,Confirmations,IsError}
+- [ ] indexer derives `{kind}:{sha256(canonical immutable)[0:16]}` + `.{k}` where k = **max over per-stream occurrence counts** per (tx_hash,h) in assembled scan (premise: no stream lists a real copy twice, ≥1 stream covered the block)
+- [ ] `internal/provider/chainscan/`: `txlist`(value>0 client-side filter — scope exclusion, not rows_skipped)+`tokentx`(no isError — token rows is_error=false)+`eth_blockNumber`; `enabled_chains` config (default ethereum; bsc DISABLED default, overridable); wraps `resilience.NewClient` (limiter ~3/s)
+- [ ] `internal/provider/nodereal/`: `nr_getAssetTransfers` "external"+"20", `excludeZeroValue`, direction streams, pageKey, span ≤100k (fetch_to−fetch_from), confirmations=head−blockNum+1, `receiptsStatus`→IsError, amount_raw=`rawContract.value`/`value` hex pinned, tolerant blockTime[s]tamp; empty key → DISABLED; limiter 0.6/s
+- [ ] Config: adapter registry (single/net; conflict=startup error), keys, page_size 1000, max_pages hop0=5/hop2=2 stream-pair steps, reorg_tail ETH=64/BSC=100, IndexingFreshTTL=10m, IndexingStaleAfter (≠ EnrichmentDeadline), per-adapter max_provider_requests (bsc=8 global pool)
+- [ ] Fixtures: multi-transfer tx, identical-content dupes (.{k}), cross-wallet same-tx streams, W→W self-transfer in both direction streams, failed tx, missing contractAddress, missing from/to
+
+## Success criteria
+- migration up/down clean; Enabled matrix; content-derived identity context-free; persisted coverage fields serve no-fetch responses; INTERNAL excluded w/ index_scope="native+token"
