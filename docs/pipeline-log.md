@@ -404,3 +404,55 @@ substitution, S6 docs published. Working tree intentionally uncommitted.
   - Devin Cook session id: `swift-saxophone` (`devin -p --permission-mode dangerous`); raw log `plans/20261104-1800-db-provider-config/reports/cook-raw.log`; report `reports/cook-report.md`
 - **Self-Audit Commitment**:
   - Verification executed by orchestrator in a real terminal — build/vet/gofmt/full-suite all green; no test weakening observed in diff summary; pinned semantics (enc:v1 marker, NULL-only env fallback, disabled-skip reuse, masked audit, requires_restart+warnings) are test-covered per cook-report matrix.
+
+### [DPC_STAGE_3_VERIFICATION] - Stage 3: Devin Review Independent Code Audit (db-provider-config)
+- **Completion Timestamp**: 2026-11-04 23:48:29
+- **Reviewer Verdict**: APPROVED (round 2; round 1 was CHANGES_REQUESTED — 3 Major, 2 Minor, 4 Nit, all remediated)
+- **Audited Dimensions**:
+  - [x] Complete `git diff e2af931..HEAD` audit across all 42 files (+3,583/−79) + remediation commit `1d8d8da` (+261/−62)
+  - [x] Pinned-semantics conformance: resolution truth table, `enc:v1` keystore, kill-switch formula, masked admin API, schema DDL
+  - [x] Test integrity: real `_test` DB fixtures, migration up+down re-verified, no weakened assertions
+  - [x] HTTP status mapping (400/401/403/404 vs 500), parameterized SQL only, secrets hygiene
+- **Machine Evidence**:
+  - Round-1 session `innovative-situation` — first attempt (`auto` mode) died on exec rejection; re-dispatched `dangerous` mode per established downgrade path; tree-hash `e40e9e9c…` identical before/after ⇒ read-only honored. Report: `reports/review-round-1-raw.log`
+  - Round-2 session: fresh `devin -p --permission-mode dangerous`, read-only mandate; tree-hash `4215e774…` identical before/after. Report: `reports/review-round-2-raw.log`; prompts `reports/prompt-review{,-round-2}.md`
+  - Round-1 findings→remediation `1d8d8da`: M1 NULL-vs-empty conflation in Update (stored-representation compare); M2 concurrent two-field PUT test; M3 driftWarnings coverage; m4 first-write race → ON CONFLICT DO NOTHING; m5 VARCHAR widths 32/64; n6 undecryptable-key audit {set:true}; n7 dead TouchProviderConfig removed; n8 resolver https check; n9 PUT {} no-op
+  - Reviewer-verified: 12/12 TestService PASS, `-race` clean, `tests/` 46.6s ok, migration widths confirmed on live DB
+- **Self-Audit Commitment**: both review rounds ran as independent fresh sessions with zero author bias; verdict APPROVED clears the Stage 3 gate; non-blocking observations recorded (warnings:null wire shape, probabilistic race tests, edited-in-place migration mitigated by verified ALTER).
+
+### [DPC_STAGE_4_VERIFICATION] - Stage 4: Remediation, Blind Test Saturation & Session Cleanup (db-provider-config)
+- **Completion Timestamp**: 2026-11-05 00:05:00
+- **Status**: PASSED — 10/10
+- **Completed Tasks**:
+  - [x] All 9 review round-1 findings remediated by orchestrator (commit `1d8d8da`) and re-reviewed → APPROVED (round 2)
+  - [x] Anonymous/blind randomized saturation: `reports/saturation/run.sh` — 20 packages in freshly-shuffled order per iteration, `-shuffle=on` random seeds, `-count=1` no-cache; harness never names individual tests
+  - [x] Race suite over blast radius: `go test -count=1 -race ./internal/providerconfig/ ./internal/transaction/ ./tests/` — all ok (8.6s / 15.4s / 90.2s), zero race detections
+  - [x] Session cleanup: `pgrep -f "devin -p|devin -r"` → no headless pipeline workers remain
+  - [x] Plan status: `status: completed` in plan.md + all 4 phase files
+- **Machine Evidence**:
+  - Saturation: `reports/saturation/summary.txt` — iter-01..10 all PASS, 20/20 ok each (~54s/iter), per-iter logs `iter-*.log`
+  - Worker session ids: cook `swift-saxophone`; review `innovative-situation` (rounds 1–2); critic `sleepy-radio` (prior session, R2)
+- **Self-Audit Commitment**: no code changes after final saturation; backend is production-ready.
+
+### [DPC_STAGE_5_VERIFICATION] - Stage 5: Browser Autonomy — SKIPPED-NO-UI + live substitution (db-provider-config)
+- **Completion Timestamp**: 2026-11-05 00:15:00
+- **Status**: SKIPPED-NO-UI (justified; live-API substitution executed)
+- **Justification**: backend-only change — Go REST API + worker, zero UI surface in diff. Substitute evidence: live API traffic, latency, masked-secret verification, live kill-switch behavior, DB state.
+- **Machine Evidence** (live captures in `plans/20261104-1800-db-provider-config/reports/stage5/`):
+  - Boot resolution: `provider config resolved` per provider — origins (`env`/`default`) only, never values; `TX_PROVIDER_ETH=chainscan,blockscout` chain resolved; API on `:8090` (8080 host-bound by unrelated process)
+  - `GET /admin/provider-configs` → 200, 7.5ms, 12 providers masked view; `GET /chainscan` → 200
+  - `PUT /covalent {api_key,base_url,enabled_chains}` → 200 — `{"set":true,"last4":"7777"}` masked; `requires_restart` warnings on drifted fields only (base_url == boot env ⇒ no warning)
+  - `GET /covalent/changes` → 200 — masked audit rows, actor `bootstrap-admin`/`api_client`
+  - Kill-switch LIVE: `PUT chainscan {status:inactive}` → `effective_active:false` → TTL-expired `transactions?refresh=1` served by blockscout (2.30s, fresh/ok) while chainscan `indexed_until_block` stayed frozen 26340489 (zero upstream spend) — exact disabled-skip semantics proven against real upstream
+  - Flip-back `{status:active}` → `effective_active:true` — runtime-effective, no restart
+  - Validation matrix: reader 403 / no-key 401 / unknown code 404 / bad host 400 echoing `allowed_hosts`
+  - SQL dump: `provider_config_changes` masked `{set,last4}` — plaintext key never persisted; dev rows deleted post-capture (`DELETE 2`, env parity restored)
+- **Report**: `plans/20261104-1800-db-provider-config/reports/stage5-report.md`
+- **Self-Audit Commitment**: substitute evidence is real API traffic + real upstream fetch (blockscout), not mocks; all JSON/SQL captured verbatim.
+
+### [DPC_STAGE_6_VERIFICATION] - Stage 6: Guidebook + Feature Map Seal (db-provider-config)
+- **Completion Timestamp**: 2026-11-05 00:30:00
+- **Status**: PASSED
+- **Guidebook**: `docs/feature-maps/db-provider-config.md` — operational guidebook: what ships, source map, pinned semantics, API contract, step-by-step ops (boot → list → PUT → audit → kill-switch live proof → flip-back), executable DB verification queries with captured outputs, env contract, test coverage map, known limits. Backend-only → no screenshots; live JSON/SQL captures linked throughout.
+- **Machine Evidence**: all stage5 captures verified on disk; dev DB restored to env parity (`DELETE 2`, `remaining_rows=0`); API process stopped; no headless devin workers remain (session records only).
+- **Self-Audit Commitment**: pipeline complete — plan → cook → review APPROVED → saturation 10/10 → live API proof → documented + sealed.

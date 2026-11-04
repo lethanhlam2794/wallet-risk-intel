@@ -1,0 +1,83 @@
+I'll execute this review systematically. First, let me invoke the matching skill and gather the mandatory compliance inputs.Now let me read the pinned task brief and plan files — the contract for this review.Contract absorbed. Now let me set up tracking and pull the diff.StatusCache looks right. Now the critical wiring: `service.go` chain walk diff and `main.go` boot wiring.The chain-walk hook is in the exact disabled-skip case. Let me verify the surrounding `ensure` logic (all-inactive ⇒ disabled under chain[0], zero upstream spend) and check an adapter's `Name()` + `init()` allowlist registration.Kill-switch wiring verified — same `disabledSkips++` path, `writeDisabled` under `firstSrc` (chain[0]). Now the admin service — the biggest file.Found a strong candidate defect in `Update`: the "unchanged" comparisons collapse NULL vs empty. Let me verify `slices.Equal` semantics and check the handler + adapter https rule before judging.`slices.Equal` confirms the defect ("Empty and nil slices are considered equal"). Now the test files.Let me check for the concurrent-PUT test and read the remaining test files.No concurrent-PUT test exists — pinned acceptance requires one. Now verify the 12 adapter `SourceCode` constants match descriptor keys (a mismatch would nil-panic at boot), and check OpenAPI + models.Now the runtime verification: build, vet, gofmt, and the test suites.Down+up verified on `check_wallet_test`. Quick constraint + secrets spot checks, then the generated code sanity pass.The table is missing after my down+up — the migrate runner likely tracks versions and skipped re-apply. Let me check the runner and repair the test DB.Let me verify `Name()` returns the source code, and check whether the drift-warning path (resolver snapshot) is exercised by any test.Confirmed: `resolver=nil` in both service test call sites — the `driftWarnings` path (stored≠in-effect ⇒ `warnings[]`) has **zero test coverage**. Let me scan the generated sqlc code and remaining details.All checks done. One last sweep — `WithTx` existence, pipeline-log diff, and a sanity grep for raw SQL in non-test code.All evidence gathered. Compiling the verdict.
+
+**Summary of key verification:**
+- `git diff` scoped correctly — forbidden files (data_sources semantics, `TX_PROVIDER_*`, failover whitelist, goplus/publicaml/chainabuse, migrations <20, `.env`) untouched
+- Build/vet/gofmt/tests/-race all green; migration down+up verified on `check_wallet_test` (I also repaired a schema_migrations/table skew I briefly caused during manual down-verify — restored and cleaned up)
+- One real defect found in the admin write path; two pinned-acceptance tests missing
+
+---
+
+# Code Review — `e2af931..HEAD` (db-provider-config)
+
+## Verdict: **CHANGES_REQUESTED**
+
+## Executive Summary
+
+The implementation is high-quality and faithful to most pinned semantics: resolution/keystore/kill-switch are correct, boot-fatal, and honestly tested against real DBs. However, the admin write path contains a genuine defect that silently drops the pinned "explicit-empty override" writes (`enabled_chains=[]`, `base_url=""`, `api_key=""`) whenever the stored column is NULL — which is the default state — and two pinned acceptance tests are absent entirely (concurrent two-field PUT; `warnings[]` stored≠in-effect drift, which is unreachable in every test because `NewService` receives `resolver=nil`).
+
+## Verification Evidence
+
+| Command | Result |
+|---|---|
+| `git log e2af931..HEAD` / `git diff --stat` | 7 commits (6 feature+docs + `c42d9b4` log), 43 files +3,600/−79 — matches scope |
+| `go build ./...` | clean (exit 0) |
+| `go vet ./...` | clean |
+| `gofmt -l .` | empty |
+| `go test -count=1 ./internal/providerconfig/ ./internal/transaction/ ./tests/ ./internal/provider/` | all `ok` |
+| `go test -race ./internal/providerconfig/ ./internal/transaction/` | clean |
+| `make migrate-test` + manual `down.sql` + re-apply | up+down honest on `check_wallet_test`; both CHECKs exercised and reject (`{"a":1}`, `status='bogus'`); `[]`/`inactive` accepted |
+| Forbidden-scope diff | empty for `.env`, `configs/`, `data_sources` semantics, `failoverKinds`, goplus/publicaml/chainabuse, migrations <000020 |
+
+## Detailed Findings
+
+### [Major] Explicit-empty overrides silently no-op when the stored column is NULL
+`internal/providerconfig/service.go`:
+- `enabled_chains`: line 343 `!slices.Equal(*p.EnabledChains, old)` — `old` is `nil` when the column is SQL NULL; `slices.Equal([]string{}, nil)` is **true** (std doc: "Empty and nil slices are considered equal"). `PUT {"enabled_chains":[]}` on a NULL field is skipped — no write, no audit, 200 OK.
+- `base_url`: lines 318–322 — `old=""` when `!row.BaseUrl.Valid`; `PUT {"base_url":""}` vs NULL compares equal → skipped.
+- `api_key`: lines 295–299 — `oldPlain=""` when `!row.ApiKey.Valid`; `PUT {"api_key":""}` vs NULL → skipped.
+
+Pinned semantics (brief §1, plan amendments): "`enabled_chains=[]` and `base_url=""` are explicit overrides — only NULL falls back to env." The resolver implements this correctly at boot (resolver_test.go:166–192 proves `[]`/`""` win), but **the API cannot express these overrides from the default NULL state** — including `InsertProviderConfigRow` (queries/provider_configs.sql:17) which materializes all-NULL rows, so the bug hits every first-write. The operator's `enabled_chains=[]` kill-channel PUT returns 200 while storing NULL → env fallback continues serving. Workaround exists (write non-empty, then write empty) but the contract is dishonest. Fix: compare stored-representation vs patch (e.g. `row.EnabledChains == nil` vs `p.EnabledChains != nil`), not Go values.
+
+### [Major] Pinned acceptance test missing: concurrent two-field PUT (no lost update)
+Brief acceptance: "concurrent two-field PUT no lost update"; phase-04:62–63 pins the test. No such test exists anywhere (`service_test.go`, `tests/`). Design looks right — `GetProviderConfigForUpdate` (queries/provider_configs.sql:14) + column-scoped updates serialize correctly for existing rows — but the criterion is unmet, and it would have exposed the next finding.
+
+### [Major] `warnings[]` drift mechanism has zero test coverage
+`driftWarnings` (service.go:434–465) requires `s.resolver` non-nil; **both** test constructors pass `nil`: `service_test.go:27` (`NewService(pool, q, keys, nil, …)`) and `tests/provider_configs_api_test.go:39` (`NewService(pool, queries, nil, nil, …)`). The stored≠in-effect `requires_restart` warning is unreachable in tests; the API test's `assert.Contains(body, "requires_restart")` (line 106) is satisfied by the static `View.RequiresRestart` field, not the warning. Code inspects correct; the pinned disclosure path is unverified.
+
+### [Minor] Concurrent first-write race → 500, not a clean conflict
+`FOR UPDATE` on an absent row locks nothing (service.go:261); two concurrent PUTs to a never-written code both take the `ErrNoRows` → `InsertProviderConfigRow` branch → loser gets 23505 → `InternalError` 500 (handler line 116). No `ON CONFLICT`, no retry. Integrity is preserved (nothing is lost) but the API returns 500 on a legitimate admin race.
+
+### [Minor] Schema deviations from pinned DDL
+`migrations/000020_provider_configs.up.sql:23–24`: `actor_type VARCHAR(30)` (pinned `VARCHAR(32)`) and `field VARCHAR(30)` (pinned `VARCHAR(64)`). Fits current values (`api_client`=10, `enabled_chains`=14) but diverges from the pinned contract and the `actor_id VARCHAR(64)` convention.
+
+### [Nit] Undecryptable stored key: read vs audit masking disagree
+`maskStored` (service.go:225) degrades to `{set:true}`; the audit path (line 297) swallows the decrypt error → `maskPlain("")` → `{set:false}` — `previous_value` under-reports that a value existed.
+
+### [Nit] Dead/over-broad generated queries
+`TouchProviderConfig` (queries/provider_configs.sql:56) has zero callers; `UpsertProviderConfig` is used only by test fixtures.
+
+### [Nit] Resolver allowlist check is host-only
+`checkAllowedHost` (resolver.go:225–236) skips the scheme check adapters enforce (`https`; chainscan/adapter.go:134). A manually-injected `http://allowed-host` passes resolution then dies at `adapter.New` — still boot-fatal, but the error names the adapter, not provider+field via the resolver contract.
+
+### [Nit] `PUT {}` on an absent code materializes an all-NULL row
+`InsertProviderConfigRow` runs before any field writes (service.go:264); an empty patch turns `configured:false`→`true` with nothing stored and no audit.
+
+## Cook-declared deviations — adjudicated
+- **`base_url` requires `https` at PUT**: APPROVED — mirrors the adapter construction rule; prevents writing a boot-breaking value.
+- **Masked object for both audit sides**: APPROVED — meets/exceeds the pinned mask contract.
+- **Same-`changed_at` ordering relaxed to full-page assert**: APPROVED — uuid-tiebreak ordering is the real contract; the test still proves stable pagination.
+
+## What verified clean
+Resolution truth table + env parity + named boot-fatal errors (resolver_test.go, all 8 cases for api_key, distinguishing cases for base_url/chains); keystore wire-shape/tamper/no-KEK/`enc:` marker rules; kill-switch formula, TTL, last-known/cold, disabled-path reuse, `-race`, all-inactive→`writeDisabled` under chain[0] (service.go:296–299); 401/403/404/400 mapping; masked wire contract; `actor_id`/`actor_type`/`updated_by` from `ClientFrom(c).Name`; OpenAPI disclosures; secrets hygiene; parameterized SQL only.
+
+## Required Actions to Approve
+1. Fix the NULL-vs-empty "unchanged" comparisons for `api_key`, `base_url`, `enabled_chains` so explicit-empty writes land from NULL (add regression tests: PUT `[]`/`""` on absent row and NULL column).
+2. Add the pinned concurrent two-field PUT lost-update test (existing row).
+3. Cover `warnings[]` drift: construct the service with a non-nil `Resolver` snapshot and assert `requires_restart` warning appears when stored≠in-effect.
+4. (Recommended) Handle the first-write race (`ON CONFLICT` or retry on 23505).
+5. (Recommended) Align `actor_type`/`field` widths to pinned `VARCHAR(32)`/`VARCHAR(64)`.
+
+---
+Status: DONE_WITH_CONCERNS
+Summary: Solid implementation of resolution, keystore, and kill-switch — but the admin write path silently drops pinned explicit-empty overrides from NULL state, and two pinned acceptance tests (concurrent PUT, drift warnings) are missing.
+Concerns/Blockers: `Update` NULL-vs-empty equality collapse (service.go:294–365); untested `driftWarnings` (resolver=nil in all test constructors); missing concurrent-PUT test; first-write race 500; minor DDL width deviations.

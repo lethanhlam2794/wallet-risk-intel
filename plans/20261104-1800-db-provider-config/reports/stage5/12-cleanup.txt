@@ -1,0 +1,6 @@
+DELETE 2
+ remaining_rows 
+----------------
+              0
+(1 row)
+

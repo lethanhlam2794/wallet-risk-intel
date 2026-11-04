@@ -1,0 +1,54 @@
+I'm reviewing round 2 of `db-provider-config` remediation commit `1d8d8da`. Starting with the remediation diff itself.Now the rest of the remediation diff — resolver, queries, generated code, migration.Now the new tests in the remediation commit.Remediation diff reviewed. Now reading the current `service.go` to audit the changed paths in context — especially `Get`, `UpdateResult`, `record`, `maskPlain`, and the status branch.Service code read. Now checking helpers the diff touches: `Keystore` nil-receiver behavior (drift test passes `keys=nil`), `Resolver.Get`/`resolved` field, resolver's `""` base_url handling, and the handler's error mapping.`Keystore` is nil-receiver safe (`Enabled()` guards, keystore.go:48) so `keys=nil` tests run plaintext mode. Stored `base_url=""` skips `checkAllowedHost` (resolver.go:186) — no boot-fatal regression from the https check. Now checking test helpers, handler error mapping, and the migration.Handler confirmed: unmapped errors → `InternalError` 500 (provider_configs.go:116). Under PG semantics, a losing `ON CONFLICT DO NOTHING` insert proceeds when the winner aborts, so the re-select always finds a row — need to verify behavior empirically though. First, confirm no `TouchProviderConfig` callers remain and check the test DB schema width state.Test DB is already at `actor_type=32`/`field=64` with migration version 20 clean — consistent with the claim. `TouchProviderConfig` fully removed. Now running the verification suite.Build, vet, gofmt all clean. Running the test suites now.All tests green. Checking the migration down-file consistency, the OpenAPI `warnings` contract, and descriptor coverage for test codes.All verification complete. Compiling the final verdict.
+
+---
+
+# Code Review Round 2 — `1d8d8da` (db-provider-config remediation)
+
+## Verdict: **APPROVED**
+
+All nine round-1 findings verified FIXED against source and runner output. Remediation diff is clean — no regressions, no new defects at Major/Minor level.
+
+## Per-Finding Re-Verification
+
+| # | Verdict | Evidence |
+|---|---|---|
+| M1 | **FIXED** | `service.go:332` — `!row.ApiKey.Valid \|\| !readable \|\| *p.APIKey != oldPlain` (NULL ⇒ always changed); `service.go:352` — `!row.BaseUrl.Valid \|\| row.BaseUrl.String != *p.BaseURL`; `service.go:373-381` — `changed := true`, only overwritten when `row.EnabledChains != nil` and unmarshal+`slices.Equal` runs. `TestService_ExplicitEmptyOverridesFromNull` asserts stored `""`/`""`/`[]` (not NULL) + 3 audit rows + `no_enabled_chains` warning — PASS |
+| M2 | **FIXED** | `TestService_ConcurrentTwoFieldPUTNoLostUpdate` (service_test.go:222) — existing row, two goroutines on different fields, asserts both columns land, status preserved, audit rows for both — PASS |
+| M3 | **FIXED** | `TestService_DriftWarningsRequiresRestart` (service_test.go:281) — non-nil `&Resolver{resolved: …}` snapshot; asserts warn-on-drift for `base_url`+`enabled_chains`, no-warn when patch == boot snapshot, `api_key` drift warns — PASS |
+| m4 | **FIXED** | `queries/provider_configs.sql:18` `ON CONFLICT DO NOTHING` → `:exec`; `service.go:281-288` inserts then re-selects `FOR UPDATE`. Loser blocks on speculative wait → sees winner's committed row (READ COMMITTED per-statement snapshot) → serialized. `TestService_ConcurrentFirstWriteSerialized` PASS. On winner-abort PG confirms the loser's own speculative tuple — re-select always finds a row |
+| m5 | **FIXED** | `migrations/000020_provider_configs.up.sql:23-24` now `VARCHAR(32)`/`VARCHAR(64)`; test DB `information_schema` confirms `actor_type=32, field=64` — ALTER applied |
+| n6 | **FIXED** | `service.go:324-325` — decrypt failure ⇒ `oldMask={set:true}`, `readable=false`; `service.go:332` `!readable` forces write+audit |
+| n7 | **FIXED** | `TouchProviderConfig` removed from `queries/provider_configs.sql` and regenerated code; grep shows zero remaining references; build clean |
+| n8 | **FIXED** | `resolver.go:232-234` — `checkAllowedHost` rejects non-`https` scheme naming provider+field; stored `""` still bypasses (resolver.go:186) so no boot regression on explicit-empty |
+| n9 | **FIXED** | `service.go:89-92` `Patch.empty()` + `service.go:259-266` early no-op read via `s.Get` — `TestService_EmptyPatchMaterializesNothing` asserts `configured:false` + zero rows — PASS |
+
+## Remediation Diff Audit
+
+- **Changed-detection correctness**: stored `""`+patch `""` → silent (Valid, equal); stored `[]`+patch `[]` → silent (non-nil JSONB, `slices.Equal`); stored enc-empty + patch `""` → silent post-decrypt. NULL+empty patch writes exactly once + audits once (`prev=null` / `{set:false}` for api_key) — no double-audit, no mis-reported previous.
+- **`p.empty()` path**: runs after `descriptorFor`+`validate` (unknown code still 404s), returns read view without tx/materialization — correct.
+- **`Keystore` nil-receiver safe** (`Enabled()` guards, keystore.go:48) — `keys=nil` tests run documented plaintext mode; `assert.Equal(key, row.ApiKey.String)` is honest.
+- **`UpdateResult.Warnings` nil** → `"warnings": null` wire — pre-existing for no-warning updates; the empty-patch path is one more producer. OpenAPI declares `type: array` — loose, but consistent with existing behavior (nit, not introduced here).
+- **Migration file edited post-application**: works only because golang-migrate doesn't checksum applied files; live divergence was closed via manual ALTER (verified on test DB). Converged but fragile convention — observation.
+- **Concurrent tests** have no scheduling barrier — they verify outcome contracts probabilistically; the serialization guarantee is structural (FOR UPDATE + speculative wait), verified by inspection. Observation.
+- **Undecryptable-key audit path** (n6) has no dedicated test — mechanism verified by inspection only. Observation.
+
+## Verification Evidence
+
+| Command | Result |
+|---|---|
+| `go build ./...` | clean |
+| `go vet ./...` | clean |
+| `gofmt -l .` | empty |
+| `go test -count=1 -v -run 'TestService_' ./internal/providerconfig/` | 12/12 PASS incl. all 5 new tests |
+| `go test -count=1 -race ./internal/providerconfig/` | `ok` 5.68s |
+| `go test -count=1 ./tests/ ./internal/transaction/` | `ok` 46.6s / 14.7s |
+| psql `information_schema` on `check_wallet_providerconfig_test` | `actor_type=32`, `field=64`; `schema_migrations` v20 clean |
+| Forbidden-scope diff | `1d8d8da` touches only service/resolver/test/queries/generated/migration |
+
+## New Findings
+
+None blocking. Nits/observations only: `warnings:null` vs `type: array` (pre-existing), no barrier in race tests, no dedicated undecryptable-key test, edited-in-place migration file (mitigated by verified ALTER).
+
+Status: DONE
+Summary: All 9 round-1 findings verified fixed with passing regression tests against a real DB; remediation diff introduces no new defects — the explicit-empty override, first-write serialization, drift warnings, and audit-masking contracts are now honest end-to-end.
+Concerns/Blockers: none.

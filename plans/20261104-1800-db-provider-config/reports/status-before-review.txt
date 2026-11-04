@@ -1,0 +1,5 @@
+ M plans/20261104-1800-db-provider-config/reports/cook-raw.log
+?? plans/20261104-1800-db-provider-config/reports/prompt-review.md
+?? plans/20261104-1800-db-provider-config/reports/review-round-1-raw.log
+?? plans/20261104-1800-db-provider-config/reports/status-before-review.txt
+?? plans/20261104-1800-db-provider-config/reports/treehash-before-review.txt

@@ -1,0 +1,8 @@
+== reader on admin route ==
+{"error":{"code":"FORBIDDEN","message":"insufficient role","request_id":"dab271e8-d29c-4b8d-ba58-bf72d8612448"}} HTTP:403
+== no key ==
+{"error":{"code":"UNAUTHORIZED","message":"valid API key required","request_id":"d7a3e520-a2fa-4620-8cd1-9254fb7459ad"}} HTTP:401
+== unknown code ==
+{"error":{"code":"NOT_FOUND","message":"unknown provider","request_id":"e89836b7-1f11-4bea-bdde-71f5b68c11cb"}} HTTP:404
+== bad base_url ==
+{"error":{"allowed_hosts":["api.covalenthq.com"],"code":"BAD_REQUEST","message":"base_url host \"evil.example.com\" not in allowlist [api.covalenthq.com]"}} HTTP:400

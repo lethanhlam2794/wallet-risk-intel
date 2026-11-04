@@ -1,0 +1,60 @@
+== provider_configs (dev check_wallet) ==
+-[ RECORD 1 ]--+------------------------------
+source_code    | chainscan
+api_key_stored | NULL
+base_url       | 
+enabled_chains | 
+status         | active
+updated_by     | bootstrap-admin
+updated_at     | 2026-11-04 17:04:25.495085+00
+-[ RECORD 2 ]--+------------------------------
+source_code    | covalent
+api_key_stored | ***len:20
+base_url       | https://api.covalenthq.com
+enabled_chains | ["ethereum"]
+status         | active
+updated_by     | bootstrap-admin
+updated_at     | 2026-11-04 17:03:07.097235+00
+
+== provider_config_changes ==
+-[ RECORD 1 ]--+-------------------------------
+source_code    | covalent
+field          | enabled_chains
+previous_value | null
+new_value      | ["ethereum"]
+actor_id       | bootstrap-admin
+actor_type     | api_client
+changed_at     | 2026-11-04 17:03:07.097235+00
+-[ RECORD 2 ]--+-------------------------------
+source_code    | covalent
+field          | api_key
+previous_value | {"set": false, "last4": null}
+new_value      | {"set": true, "last4": "7777"}
+actor_id       | bootstrap-admin
+actor_type     | api_client
+changed_at     | 2026-11-04 17:03:07.097235+00
+-[ RECORD 3 ]--+-------------------------------
+source_code    | covalent
+field          | base_url
+previous_value | null
+new_value      | "https://api.covalenthq.com"
+actor_id       | bootstrap-admin
+actor_type     | api_client
+changed_at     | 2026-11-04 17:03:07.097235+00
+-[ RECORD 4 ]--+-------------------------------
+source_code    | chainscan
+field          | status
+previous_value | "active"
+new_value      | "inactive"
+actor_id       | bootstrap-admin
+actor_type     | api_client
+changed_at     | 2026-11-04 17:03:20.759889+00
+-[ RECORD 5 ]--+-------------------------------
+source_code    | chainscan
+field          | status
+previous_value | "inactive"
+new_value      | "active"
+actor_id       | bootstrap-admin
+actor_type     | api_client
+changed_at     | 2026-11-04 17:04:25.495085+00
+
