@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: Runtime kill-switch — TTL-cached status in chain walk
-status: pending
+status: completed
 priority: high
 dependencies: [2]
 ---
@@ -55,3 +55,14 @@ per-attempt budget prepay so no quota burns on skipped sources.
   wallets' ensures run concurrently; singleflight is per-wallet only.
 - Last-known on DB error documented: cache keeps serving last value;
   cold-start DB error ⇒ `active=true` (env parity) + error log.
+
+## Outcome (cook)
+- Commit `11bc1a7`. `providerconfig.StatusCache` (TTL, mutex-serialized
+  refresh, last-known on error, cold ⇒ active+error log) wired via
+  `Service.SetStatusChecker`; the skip sits in the same case as
+  `!adapter.Enabled(net)` — byte-identical disabled path, before any
+  budget prepay. `StatusChecker` interface lives in `transaction` (ISP).
+- Tests: effective-active truth table incl. ErrNoRows⇒active, TTL window,
+  flip/flip-back, all-inactive disabled under chain[0], mid-flight
+  `indexing` row untouched (self-heals), nil-checker env parity, real
+  DB-backed flip via `ttl=0` cache. `go test -race` clean.

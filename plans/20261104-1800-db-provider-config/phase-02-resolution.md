@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: Config resolution layer + boot wiring
-status: pending
+status: completed
 priority: high
 dependencies: [1]
 ---
@@ -75,3 +75,14 @@ Medium — touches boot wiring; parity test is the guard.
   stored vs in-effect (N-A).
 - **`provider.AllowedHostsFor(code)`** export is implemented HERE
   (adapters publish allowlists); phase-04 consumes it (N-D).
+
+## Outcome (cook)
+- Commit `b32cba2`. `internal/providerconfig/` = resolver + keystore +
+  descriptor map (12 providers, `chainscan`→`ETHERSCAN_API_KEY`) +
+  snapshot. `provider.AllowedHostsFor` via `init()`-registered adapter
+  allowlists. `cmd/api` builds all 12 adapters from resolved config and
+  logs per-field origins. Tests: 8-case truth table per field, enc
+  round-trip/tamper/malformed-marker, env parity, fatal named errors,
+  stale-row ignore. Verified by real boot: origin log lines only.
+- Note: keystore nil-receiver safe (`keys == nil` = plaintext), so
+  `ResolveAll` tolerates a nil `*Keystore`.

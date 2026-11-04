@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: Schema + sqlc queries — provider_configs & provider_config_changes
-status: pending
+status: completed
 priority: high
 dependencies: []
 ---
@@ -45,3 +45,12 @@ Low — additive tables only; no change to existing rows.
   jsonb_typeof(enabled_chains)='array')` — fail-closed on non-array.
 
 - `actor_id`/`updated_by` are `VARCHAR(64)` storing the api_client Name (not the numeric id).
+
+## Outcome (cook)
+- Commit `b633f12`. Migration 000020 applied + down-verified on
+  `check_wallet_test` (both CHECKs exercised: non-array JSONB and invalid
+  status rejected). `queries/provider_configs.sql` adds the five planned
+  queries plus `GetProviderConfigForUpdate`, `InsertProviderConfigRow`,
+  column-scoped `UpdateProviderConfig{APIKey,BaseURL,EnabledChains,Status}`,
+  `TouchProviderConfig`, and `GetProviderEffectiveStatus` (ds.is_active AND
+  config status) for phases 3–4. No deviations.

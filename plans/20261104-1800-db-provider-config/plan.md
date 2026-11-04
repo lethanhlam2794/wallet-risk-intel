@@ -1,6 +1,6 @@
 # Plan — DB-managed Provider Config (port of greatify partner/provider pattern)
 
-status: pending
+status: completed
 feature: db-provider-config
 spec: plans/20261104-1800-db-provider-config/prompt-master.md
 reference: /home/lethanhlam/Desktop/GSW-2/gsw-nx-monorepo/apps/greatify-api (read-only)

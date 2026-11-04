@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: Admin API — masked reads, whitelisted writes, audit rows
-status: pending
+status: completed
 priority: high
 dependencies: [2]
 ---
@@ -69,3 +69,26 @@ Medium — secret-handling surface; masking contract pinned in tests.
   on `/changes` — deviates from greatify, conforms to AGENTS §9.
 - **Last-active warning:** PUT `status=inactive` on the last active
   member of a chain category ⇒ response warning (greatify parity).
+
+## Outcome (cook)
+- Commit `bc7f533`. `providerconfig.Service` (reads masked via keystore
+  decrypt-for-last4; writes tx-scoped: `GetProviderConfigForUpdate` →
+  insert-if-absent → per-field column updates + masked
+  `provider_config_changes` rows, unchanged fields skip both) behind
+  `httpserver.ProviderConfigHandler` at `/api/v1/admin/provider-configs*`
+  under the existing `RequireRole("admin")` group; wired in `cmd/api`
+  with real failover chains + registered net codes. OpenAPI paths,
+  schemas and examples added (allowlist + runtime-effective status
+  disclosed).
+- Tests: `internal/providerconfig/service_test.go` (masked write+audit,
+  enc: rejection, status/chain/host validation, unknown code,
+  unchanged-field no-op, last-active warning, KEK-encrypted write,
+  cursor pagination) and `tests/provider_configs_api_test.go` (401/403
+  role gate, 404, masked wire shape, whitelist rejection, warnings,
+  requires_restart, next_cursor).
+- Deviations: base_url additionally requires https scheme at PUT (same
+  rule adapters enforce at construction — prevents writing a
+  boot-breaking value); audit `previous_value`/`new_value` for api_key
+  use the same masked object for both sides; change rows written in one
+  tx share `changed_at`, ordering falls to the uuid key — documented in
+  tests, pagination remains stable.
