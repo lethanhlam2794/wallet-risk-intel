@@ -19,19 +19,6 @@ import (
 var bscNet = network.Network{ID: 2, Code: "bsc", ChainReference: "56"}
 var ethNet = network.Network{ID: 1, Code: "ethereum", ChainReference: "1"}
 
-func direction(req struct {
-	Method string `json:"method"`
-	Params struct {
-		FromAddress string `json:"fromAddress"`
-		ToAddress   string `json:"toAddress"`
-	} `json:"params"`
-}) string {
-	if req.Params.FromAddress != "" {
-		return "from"
-	}
-	return "to"
-}
-
 // fakeUpstream returns a canned JSON-RPC result per method.
 func fakeUpstream(t *testing.T, results map[string]any) *Adapter {
 	t.Helper()
@@ -39,14 +26,20 @@ func fakeUpstream(t *testing.T, results map[string]any) *Adapter {
 		body, _ := io.ReadAll(r.Body)
 		var req struct {
 			Method string `json:"method"`
-			Params struct {
+			// NodeReal requires positional array params; element 0
+			// carries the filter object.
+			Params []struct {
 				FromAddress string `json:"fromAddress"`
 				ToAddress   string `json:"toAddress"`
 			} `json:"params"`
 		}
 		_ = json.Unmarshal(body, &req)
 		res := results[req.Method]
-		if m, ok := results[req.Method+":"+direction(req)]; ok {
+		dir := "to"
+		if len(req.Params) > 0 && req.Params[0].FromAddress != "" {
+			dir = "from"
+		}
+		if m, ok := results[req.Method+":"+dir]; ok {
 			res = m
 		}
 		resp, _ := json.Marshal(map[string]any{

@@ -324,7 +324,9 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network,
 		} else {
 			params.ToAddress = normalized
 		}
-		raw, err := a.call(ctx, "nr_getAssetTransfers", params)
+		// NodeReal rejects object params with -32700; wrap in the
+		// JSON-RPC positional array form.
+		raw, err := a.call(ctx, "nr_getAssetTransfers", []any{params})
 		if err != nil {
 			return nil, err
 		}
