@@ -1,7 +1,7 @@
 ---
 phase: 05
 title: Moralis transaction-history adapter
-status: pending
+status: completed
 priority: P1
 dependencies: [phase-04]
 ---
@@ -53,18 +53,27 @@ Follow internal/provider/nodereal + internal/provider/chainscan:
 6. Live-verify gate: BLOCKED (no MORALIS_API_KEY).
 
 ## Success Criteria
-- [ ] TxProvider implemented; Enabled() gating correct
-- [ ] Streams report Finished per real upstream partition; ascending block order
-- [ ] UpstreamCalls accurate; budget charged correctly
-- [ ] data_sources row via migration (up+down apply)
-- [ ] Unit tests green with real-wire-shape mock
-- [ ] `Name()` == `data_sources.code` pinned by wiring test or boot check (swallowed `sourceID()` error → reset never fires)
-- [ ] `Budget[Name()] > 0` enforced (missing/typo'd `TXINDEX_BUDGET_<NAME>` env → pool 0 = unlimited)
-- [ ] if live-verify BLOCKED: adapter absent from ALL default `TX_PROVIDER_*` selectors
-- [ ] Gates pass; one conventional commit `feat(provider): add moralis transaction-history adapter`
-- [ ] Live-verify evidence = ALL of: upstream HeadBlock + upstream LookupTransfers on a real address + booted `GET /api/v1/wallets/<net>/<addr>/transactions?refresh=1` showing `provider_status:"ok"` (curl a lone HeadBlock does NOT count) — OR `live-verify: BLOCKED (no key)` reported
+- [x] TxProvider implemented; Enabled() gating correct
+- [x] Streams report Finished per real upstream partition; ascending block order
+- [x] UpstreamCalls accurate; budget charged correctly
+- [x] data_sources row via migration (up+down apply)
+- [x] Unit tests green with real-wire-shape mock
+- [x] `Name()` == `data_sources.code` pinned by wiring test or boot check (swallowed `sourceID()` error → reset never fires)
+- [x] `Budget[Name()] > 0` enforced (missing/typo'd `TXINDEX_BUDGET_<NAME>` env → pool 0 = unlimited)
+- [x] if live-verify BLOCKED: adapter absent from ALL default `TX_PROVIDER_*` selectors
+- [x] Gates pass; one conventional commit `feat(provider): add moralis transaction-history adapter`
+- [x] Live-verify evidence = ALL of: upstream HeadBlock + upstream LookupTransfers on a real address + booted `GET /api/v1/wallets/<net>/<addr>/transactions?refresh=1` showing `provider_status:"ok"` (curl a lone HeadBlock does NOT count) — OR `live-verify: BLOCKED (no key)` reported
 
 ## Risk Assessment
 - Contract drift: docs-first verification + real-shape mock.
 - Native-transfer gap: probe confirms coverage or NOT-VIABLE.
 - Rate limits: conservative client rate like nodereal.
+
+## Phase Report
+- Docs verified (docs.moralis.io v2.2): `GET /api/v2.2/{addr}` native txs +
+  `GET /api/v2.2/{addr}/erc20/transfers` token — both accept
+  `chain,from_block,to_block,order=ASC,limit,cursor`; X-API-Key header;
+  `dateToBlock` for head. Decimal-string amounts, RFC3339 timestamps.
+- Streams: `native` + `token` kind-partitioned (independently paginated
+  upstream endpoints); server-side block window ⇒ no local buffer needed.
+- live-verify: BLOCKED (no MORALIS_API_KEY) — absent from defaults.

@@ -38,6 +38,7 @@ import (
 	"checkwallet/internal/provider/chainscan"
 	"checkwallet/internal/provider/covalent"
 	"checkwallet/internal/provider/goplus"
+	"checkwallet/internal/provider/moralis"
 	"checkwallet/internal/provider/nodereal"
 	"checkwallet/internal/provider/ofac"
 	"checkwallet/internal/provider/publicaml"
@@ -277,8 +278,18 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	if cfg.AnkrAPIKey == "" {
 		log.Info("ankr disabled: ANKR_API_KEY not configured")
 	}
+	mo, err := moralis.New(cfg.MoralisBaseURL, cfg.MoralisAPIKey,
+		strings.Split(cfg.MoralisEnabledChains, ","),
+		moralis.WithHooks(hooksFor(moralis.SourceCode)),
+		moralis.WithDurationFunc(m.ProviderDurationHook(moralis.SourceCode)))
+	if err != nil {
+		return nil, nil, err
+	}
 	if cfg.CovalentAPIKey == "" {
 		log.Info("covalent disabled: COVALENT_API_KEY not configured")
+	}
+	if cfg.MoralisAPIKey == "" {
+		log.Info("moralis disabled: MORALIS_API_KEY not configured")
 	}
 
 	// Registry of every selectable provider; TX_PROVIDER_<NET> picks the
@@ -290,6 +301,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		blockscout.SourceCode: bs,
 		ankr.SourceCode:       an,
 		covalent.SourceCode:   cv,
+		moralis.SourceCode:    mo,
 	}
 	ethAdapter, err := selectTxProvider("TX_PROVIDER_ETH", cfg.TxProviderETH,
 		chainscan.SourceCode, registry, log)
@@ -309,6 +321,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		blockscout.SourceCode: cfg.IndexingBudgetBlockscout,
 		ankr.SourceCode:       cfg.IndexingBudgetAnkr,
 		covalent.SourceCode:   cfg.IndexingBudgetCovalent,
+		moralis.SourceCode:    cfg.IndexingBudgetMoralis,
 	}
 	// Boot checks (plan invariants): every registered provider must resolve
 	// a data_sources row — a typo'd Name() silently disables the
