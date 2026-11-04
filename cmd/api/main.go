@@ -33,6 +33,7 @@ import (
 	"checkwallet/internal/provider"
 	"checkwallet/internal/provider/alchemy"
 	"checkwallet/internal/provider/ankr"
+	"checkwallet/internal/provider/bitquery"
 	"checkwallet/internal/provider/blockscout"
 	"checkwallet/internal/provider/chainabuse"
 	"checkwallet/internal/provider/chainscan"
@@ -302,6 +303,16 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	if cfg.TatumAPIKey == "" {
 		log.Info("tatum disabled: TATUM_API_KEY not configured")
 	}
+	bq, err := bitquery.New(cfg.BitqueryBaseURL, cfg.BitqueryAPIKey,
+		strings.Split(cfg.BitqueryEnabledChains, ","),
+		bitquery.WithHooks(hooksFor(bitquery.SourceCode)),
+		bitquery.WithDurationFunc(m.ProviderDurationHook(bitquery.SourceCode)))
+	if err != nil {
+		return nil, nil, err
+	}
+	if cfg.BitqueryAPIKey == "" {
+		log.Info("bitquery disabled: BITQUERY_API_KEY not configured")
+	}
 
 	// Registry of every selectable provider; TX_PROVIDER_<NET> picks the
 	// serving adapter per network (first entry — failover lands phase-12).
@@ -314,6 +325,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		covalent.SourceCode:   cv,
 		moralis.SourceCode:    mo,
 		tatum.SourceCode:      ta,
+		bitquery.SourceCode:   bq,
 	}
 	ethAdapter, err := selectTxProvider("TX_PROVIDER_ETH", cfg.TxProviderETH,
 		chainscan.SourceCode, registry, log)
@@ -335,6 +347,7 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		covalent.SourceCode:   cfg.IndexingBudgetCovalent,
 		moralis.SourceCode:    cfg.IndexingBudgetMoralis,
 		tatum.SourceCode:      cfg.IndexingBudgetTatum,
+		bitquery.SourceCode:   cfg.IndexingBudgetBitquery,
 	}
 	// Boot checks (plan invariants): every registered provider must resolve
 	// a data_sources row — a typo'd Name() silently disables the

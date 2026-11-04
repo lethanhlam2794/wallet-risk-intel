@@ -98,6 +98,11 @@ type Config struct {
 	TatumEnabledChains  string
 	IndexingBudgetTatum int
 
+	BitqueryAPIKey         string
+	BitqueryBaseURL        string
+	BitqueryEnabledChains  string
+	IndexingBudgetBitquery int
+
 	IndexingFreshTTL     time.Duration // fresh-serve horizon for index state
 	IndexingStaleAfter   time.Duration // stale 'indexing' claim retry horizon
 	IndexingPageSize     int
@@ -170,6 +175,9 @@ func Load() (*Config, error) {
 		TatumAPIKey:               os.Getenv("TATUM_API_KEY"),
 		TatumBaseURL:              envOr("TATUM_BASE_URL", "https://api.tatum.io"),
 		TatumEnabledChains:        envOr("TATUM_ENABLED_CHAINS", "bsc"),
+		BitqueryAPIKey:            os.Getenv("BITQUERY_API_KEY"),
+		BitqueryBaseURL:           envOr("BITQUERY_BASE_URL", "https://streaming.bitquery.io"),
+		BitqueryEnabledChains:     envOr("BITQUERY_ENABLED_CHAINS", "bsc"),
 		IndexingFreshTTL:          envDur("TXINDEX_FRESH_TTL", 10*time.Minute),
 		IndexingStaleAfter:        envDur("TXINDEX_STALE_AFTER", 15*time.Minute),
 		IndexingWindowCapBSC:      envInt64Default("TXINDEX_WINDOW_CAP_BSC", 100000),
@@ -246,6 +254,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if cfg.IndexingBudgetTatum, err = envInt("TXINDEX_BUDGET_TATUM", 8); err != nil {
+		return nil, err
+	}
+	if cfg.IndexingBudgetBitquery, err = envInt("TXINDEX_BUDGET_BITQUERY", 8); err != nil {
 		return nil, err
 	}
 	if cfg.TracingMaxNodes, err = envInt("TRACING_MAX_NODES", 50); err != nil {

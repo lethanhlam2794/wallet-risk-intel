@@ -26,7 +26,7 @@ func TestRequireTestPool_SeededSchema(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx,
 		"SELECT array_agg(code ORDER BY code) FROM data_sources").Scan(&sources))
 	assert.Equal(t,
-		[]string{"alchemy", "ankr", "blockscout", "chainabuse", "chainscan",
+		[]string{"alchemy", "ankr", "bitquery", "blockscout", "chainabuse", "chainscan",
 			"covalent", "goplus", "moralis", "nodereal", "ofac_sdn",
 			"publicaml", "tatum", "wallet_attribution"},
 		sources, "all migration-seeded data sources must survive truncation")
