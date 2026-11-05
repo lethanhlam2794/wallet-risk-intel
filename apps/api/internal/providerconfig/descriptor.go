@@ -53,6 +53,13 @@ var descriptors = map[string]Descriptor{
 		base:   func(c *config.Config) string { return c.BlockscoutBaseURL },
 		chains: func(c *config.Config) string { return c.BlockscoutEnabledChains },
 	},
+	"blockscout_pro": {
+		SourceCode: "blockscout_pro",
+		KeyEnv:     "BLOCKSCOUT_PRO_API_KEY", BaseURLEnv: "BLOCKSCOUT_PRO_BASE_URL", ChainsEnv: "BLOCKSCOUT_PRO_ENABLED_CHAINS",
+		apiKey: func(c *config.Config) string { return c.BlockscoutProAPIKey },
+		base:   func(c *config.Config) string { return c.BlockscoutProBaseURL },
+		chains: func(c *config.Config) string { return c.BlockscoutProEnabledChains },
+	},
 	"chainbase": {
 		SourceCode: "chainbase",
 		KeyEnv:     "CHAINBASE_API_KEY", BaseURLEnv: "CHAINBASE_BASE_URL", ChainsEnv: "CHAINBASE_ENABLED_CHAINS",

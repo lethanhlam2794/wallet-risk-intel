@@ -83,6 +83,11 @@ type Config struct {
 	AnkrEnabledChains  string
 	IndexingBudgetAnkr int
 
+	BlockscoutProAPIKey         string
+	BlockscoutProBaseURL        string
+	BlockscoutProEnabledChains  string
+	IndexingBudgetBlockscoutPro int
+
 	CovalentAPIKey         string
 	CovalentBaseURL        string
 	CovalentEnabledChains  string
@@ -145,74 +150,86 @@ type Config struct {
 
 	BootstrapAdminKey  string
 	BootstrapReaderKey string
+
+	// AdminJWTSecret signs system-user Bearer tokens (HS256). Empty → an
+	// ephemeral random secret is generated at boot; sessions then die on
+	// restart. Set it in any environment that needs durable sessions.
+	AdminJWTSecret string
+	// AdminJWTTTL is the issued-token lifetime (default 8h).
+	AdminJWTTTL time.Duration
 }
 
 // Load reads configuration from the environment and fails fast when a
 // required value is missing.
 func Load() (*Config, error) {
 	cfg := &Config{
-		HTTPAddr:                  envOr("HTTP_ADDR", ":8010"),
-		DatabaseURL:               os.Getenv("DATABASE_URL"),
-		RedisURL:                  envOr("REDIS_URL", "redis://127.0.0.1:6380/0"),
-		LogLevel:                  envOr("LOG_LEVEL", "info"),
-		OFACSnapshotURL:           envOr("OFAC_SNAPSHOT_URL", defaultOFACSnapshotURL),
-		WattrDataBaseURL:          envOr("WATTR_DATA_BASE_URL", defaultWattrDataBaseURL),
-		SanctionsStaleAfter:       envDur("SANCTIONS_STALE_AFTER", 48*time.Hour),
-		LabelsStaleAfter:          envDur("LABELS_STALE_AFTER", 168*time.Hour),
-		RateLimitWindow:           envDur("RATE_LIMIT_WINDOW", time.Minute),
-		GoPlusBaseURL:             envOr("GOPLUS_BASE_URL", defaultGoPlusBaseURL),
-		GoPlusAPIKey:              os.Getenv("GOPLUS_API_KEY"),
-		PublicAMLBaseURL:          envOr("PUBLICAML_BASE_URL", defaultPublicAMLBaseURL),
-		PublicAMLAPIKey:           os.Getenv("PUBLICAML_API_KEY"),
-		ChainabuseBaseURL:         envOr("CHAINABUSE_BASE_URL", defaultChainabuseBaseURL),
-		ChainabuseAPIKey:          os.Getenv("CHAINABUSE_API_KEY"),
-		EnrichmentCacheTTL:        envDur("ENRICHMENT_CACHE_TTL", 15*time.Minute),
-		EnrichmentNegativeTTL:     envDur("ENRICHMENT_NEGATIVE_TTL", time.Minute),
-		EnrichmentRefreshCooldown: envDur("ENRICHMENT_REFRESH_COOLDOWN", time.Minute),
-		EnrichmentDeadline:        envDur("ENRICHMENT_DEADLINE", 25*time.Second),
-		EtherscanAPIKey:           os.Getenv("ETHERSCAN_API_KEY"),
-		ChainscanBaseURL:          envOr("CHAINSCAN_BASE_URL", "https://api.etherscan.io/v2/api"),
-		ChainscanEnabledChains:    envOr("CHAINSCAN_ENABLED_CHAINS", "ethereum"),
-		NoderealAPIKey:            os.Getenv("NODEREAL_API_KEY"),
-		NoderealBaseURL:           envOr("NODEREAL_BASE_URL", "https://bsc-mainnet.nodereal.io/v1"),
-		TxProviderETH:             os.Getenv("TX_PROVIDER_ETH"),
-		TxProviderBSC:             os.Getenv("TX_PROVIDER_BSC"),
-		AlchemyAPIKey:             os.Getenv("ALCHEMY_API_KEY"),
-		AlchemyBaseURL:            os.Getenv("ALCHEMY_BASE_URL"),
-		AlchemyEnabledChains:      envOr("ALCHEMY_ENABLED_CHAINS", "ethereum,bsc"),
-		BlockscoutBaseURL:         envOr("BLOCKSCOUT_BASE_URL", "https://eth.blockscout.com"),
-		BlockscoutEnabledChains:   envOr("BLOCKSCOUT_ENABLED_CHAINS", "ethereum"),
-		AnkrAPIKey:                os.Getenv("ANKR_API_KEY"),
-		AnkrBaseURL:               envOr("ANKR_BASE_URL", "https://rpc.ankr.com/multichain"),
-		AnkrEnabledChains:         envOr("ANKR_ENABLED_CHAINS", "ethereum,bsc"),
-		CovalentAPIKey:            os.Getenv("COVALENT_API_KEY"),
-		CovalentBaseURL:           envOr("COVALENT_BASE_URL", "https://api.covalenthq.com"),
-		CovalentEnabledChains:     envOr("COVALENT_ENABLED_CHAINS", "bsc"),
-		MoralisAPIKey:             os.Getenv("MORALIS_API_KEY"),
-		MoralisBaseURL:            envOr("MORALIS_BASE_URL", "https://deep-index.moralis.io"),
-		MoralisEnabledChains:      envOr("MORALIS_ENABLED_CHAINS", "bsc"),
-		TatumAPIKey:               os.Getenv("TATUM_API_KEY"),
-		TatumBaseURL:              envOr("TATUM_BASE_URL", "https://api.tatum.io"),
-		TatumEnabledChains:        envOr("TATUM_ENABLED_CHAINS", "bsc"),
-		BitqueryAPIKey:            os.Getenv("BITQUERY_API_KEY"),
-		BitqueryBaseURL:           envOr("BITQUERY_BASE_URL", "https://streaming.bitquery.io"),
-		BitqueryEnabledChains:     envOr("BITQUERY_ENABLED_CHAINS", "bsc"),
-		OklinkAPIKey:              os.Getenv("OKLINK_API_KEY"),
-		OklinkBaseURL:             envOr("OKLINK_BASE_URL", "https://www.oklink.com"),
-		OklinkEnabledChains:       envOr("OKLINK_ENABLED_CHAINS", "bsc"),
-		TokenviewAPIKey:           os.Getenv("TOKENVIEW_API_KEY"),
-		TokenviewBaseURL:          envOr("TOKENVIEW_BASE_URL", "https://services.tokenview.io"),
-		TokenviewEnabledChains:    envOr("TOKENVIEW_ENABLED_CHAINS", "ethereum,bsc"),
-		ChainbaseAPIKey:           os.Getenv("CHAINBASE_API_KEY"),
-		ChainbaseBaseURL:          envOr("CHAINBASE_BASE_URL", "https://api.chainbase.online"),
-		ChainbaseEnabledChains:    envOr("CHAINBASE_ENABLED_CHAINS", "ethereum,bsc"),
-		IndexingFreshTTL:          envDur("TXINDEX_FRESH_TTL", 10*time.Minute),
-		IndexingStaleAfter:        envDur("TXINDEX_STALE_AFTER", 15*time.Minute),
-		IndexingWindowCapBSC:      envInt64Default("TXINDEX_WINDOW_CAP_BSC", 100000),
-		TracingDeadline:           envDur("TRACING_DEADLINE", 60*time.Second),
-		ProviderConfigKEK:         os.Getenv("PROVIDER_CONFIG_KEK"),
-		BootstrapAdminKey:         os.Getenv("API_BOOTSTRAP_ADMIN_KEY"),
-		BootstrapReaderKey:        os.Getenv("API_BOOTSTRAP_READER_KEY"),
+		HTTPAddr:                   envOr("HTTP_ADDR", ":8010"),
+		DatabaseURL:                os.Getenv("DATABASE_URL"),
+		RedisURL:                   envOr("REDIS_URL", "redis://127.0.0.1:6380/0"),
+		LogLevel:                   envOr("LOG_LEVEL", "info"),
+		OFACSnapshotURL:            envOr("OFAC_SNAPSHOT_URL", defaultOFACSnapshotURL),
+		WattrDataBaseURL:           envOr("WATTR_DATA_BASE_URL", defaultWattrDataBaseURL),
+		SanctionsStaleAfter:        envDur("SANCTIONS_STALE_AFTER", 48*time.Hour),
+		LabelsStaleAfter:           envDur("LABELS_STALE_AFTER", 168*time.Hour),
+		RateLimitWindow:            envDur("RATE_LIMIT_WINDOW", time.Minute),
+		GoPlusBaseURL:              envOr("GOPLUS_BASE_URL", defaultGoPlusBaseURL),
+		GoPlusAPIKey:               os.Getenv("GOPLUS_API_KEY"),
+		PublicAMLBaseURL:           envOr("PUBLICAML_BASE_URL", defaultPublicAMLBaseURL),
+		PublicAMLAPIKey:            os.Getenv("PUBLICAML_API_KEY"),
+		ChainabuseBaseURL:          envOr("CHAINABUSE_BASE_URL", defaultChainabuseBaseURL),
+		ChainabuseAPIKey:           os.Getenv("CHAINABUSE_API_KEY"),
+		EnrichmentCacheTTL:         envDur("ENRICHMENT_CACHE_TTL", 15*time.Minute),
+		EnrichmentNegativeTTL:      envDur("ENRICHMENT_NEGATIVE_TTL", time.Minute),
+		EnrichmentRefreshCooldown:  envDur("ENRICHMENT_REFRESH_COOLDOWN", time.Minute),
+		EnrichmentDeadline:         envDur("ENRICHMENT_DEADLINE", 25*time.Second),
+		EtherscanAPIKey:            os.Getenv("ETHERSCAN_API_KEY"),
+		ChainscanBaseURL:           envOr("CHAINSCAN_BASE_URL", "https://api.etherscan.io/v2/api"),
+		ChainscanEnabledChains:     envOr("CHAINSCAN_ENABLED_CHAINS", "ethereum"),
+		NoderealAPIKey:             os.Getenv("NODEREAL_API_KEY"),
+		NoderealBaseURL:            envOr("NODEREAL_BASE_URL", "https://bsc-mainnet.nodereal.io/v1"),
+		TxProviderETH:              os.Getenv("TX_PROVIDER_ETH"),
+		TxProviderBSC:              os.Getenv("TX_PROVIDER_BSC"),
+		AlchemyAPIKey:              os.Getenv("ALCHEMY_API_KEY"),
+		AlchemyBaseURL:             os.Getenv("ALCHEMY_BASE_URL"),
+		AlchemyEnabledChains:       envOr("ALCHEMY_ENABLED_CHAINS", "ethereum,bsc"),
+		BlockscoutBaseURL:          envOr("BLOCKSCOUT_BASE_URL", "https://eth.blockscout.com"),
+		BlockscoutEnabledChains:    envOr("BLOCKSCOUT_ENABLED_CHAINS", "ethereum"),
+		AnkrAPIKey:                 os.Getenv("ANKR_API_KEY"),
+		AnkrBaseURL:                envOr("ANKR_BASE_URL", "https://rpc.ankr.com/multichain"),
+		AnkrEnabledChains:          envOr("ANKR_ENABLED_CHAINS", "ethereum,bsc"),
+		BlockscoutProAPIKey:        os.Getenv("BLOCKSCOUT_PRO_API_KEY"),
+		BlockscoutProBaseURL:       envOr("BLOCKSCOUT_PRO_BASE_URL", "https://api.blockscout.com/v2/api"),
+		BlockscoutProEnabledChains: envOr("BLOCKSCOUT_PRO_ENABLED_CHAINS", "ethereum"),
+		CovalentAPIKey:             os.Getenv("COVALENT_API_KEY"),
+		CovalentBaseURL:            envOr("COVALENT_BASE_URL", "https://api.covalenthq.com"),
+		CovalentEnabledChains:      envOr("COVALENT_ENABLED_CHAINS", "bsc"),
+		MoralisAPIKey:              os.Getenv("MORALIS_API_KEY"),
+		MoralisBaseURL:             envOr("MORALIS_BASE_URL", "https://deep-index.moralis.io"),
+		MoralisEnabledChains:       envOr("MORALIS_ENABLED_CHAINS", "bsc"),
+		TatumAPIKey:                os.Getenv("TATUM_API_KEY"),
+		TatumBaseURL:               envOr("TATUM_BASE_URL", "https://api.tatum.io"),
+		TatumEnabledChains:         envOr("TATUM_ENABLED_CHAINS", "bsc"),
+		BitqueryAPIKey:             os.Getenv("BITQUERY_API_KEY"),
+		BitqueryBaseURL:            envOr("BITQUERY_BASE_URL", "https://streaming.bitquery.io"),
+		BitqueryEnabledChains:      envOr("BITQUERY_ENABLED_CHAINS", "bsc"),
+		OklinkAPIKey:               os.Getenv("OKLINK_API_KEY"),
+		OklinkBaseURL:              envOr("OKLINK_BASE_URL", "https://www.oklink.com"),
+		OklinkEnabledChains:        envOr("OKLINK_ENABLED_CHAINS", "bsc"),
+		TokenviewAPIKey:            os.Getenv("TOKENVIEW_API_KEY"),
+		TokenviewBaseURL:           envOr("TOKENVIEW_BASE_URL", "https://services.tokenview.io"),
+		TokenviewEnabledChains:     envOr("TOKENVIEW_ENABLED_CHAINS", "ethereum,bsc"),
+		ChainbaseAPIKey:            os.Getenv("CHAINBASE_API_KEY"),
+		ChainbaseBaseURL:           envOr("CHAINBASE_BASE_URL", "https://api.chainbase.online"),
+		ChainbaseEnabledChains:     envOr("CHAINBASE_ENABLED_CHAINS", "ethereum,bsc"),
+		IndexingFreshTTL:           envDur("TXINDEX_FRESH_TTL", 10*time.Minute),
+		IndexingStaleAfter:         envDur("TXINDEX_STALE_AFTER", 15*time.Minute),
+		IndexingWindowCapBSC:       envInt64Default("TXINDEX_WINDOW_CAP_BSC", 100000),
+		TracingDeadline:            envDur("TRACING_DEADLINE", 60*time.Second),
+		ProviderConfigKEK:          os.Getenv("PROVIDER_CONFIG_KEK"),
+		BootstrapAdminKey:          os.Getenv("API_BOOTSTRAP_ADMIN_KEY"),
+		BootstrapReaderKey:         os.Getenv("API_BOOTSTRAP_READER_KEY"),
+		AdminJWTSecret:             os.Getenv("ADMIN_JWT_SECRET"),
+		AdminJWTTTL:                envDur("ADMIN_JWT_TTL", 8*time.Hour),
 	}
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("config: DATABASE_URL is required")
@@ -274,6 +291,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if cfg.IndexingBudgetAnkr, err = envInt("TXINDEX_BUDGET_ANKR", 8); err != nil {
+		return nil, err
+	}
+	if cfg.IndexingBudgetBlockscoutPro, err = envInt("TXINDEX_BUDGET_BLOCKSCOUT_PRO", 8); err != nil {
 		return nil, err
 	}
 	if cfg.IndexingBudgetCovalent, err = envInt("TXINDEX_BUDGET_COVALENT", 8); err != nil {
