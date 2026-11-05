@@ -9,24 +9,32 @@ live enrichment). Later phases (scoring, tracing) are intentionally absent.
 
 ## Architecture
 
+Monorepo layout — the Go backend (module `checkwallet`) lives in
+`apps/api/`; sibling apps go under `apps/<name>/`:
+
 ```
-cmd/api      REST API (Gin) — lookups, admin triggers, /metrics
-cmd/worker   one-shot snapshot ingestion (-source ofac_sdn [-file x.xml])
-cmd/migrate  embedded golang-migrate runner
-internal/
-  config/          env-only config (DATABASE_URL required)
-  platform/        database, cache, logger, metrics adapters
-  network/         chain registry + resolver (eip155:1, eip155:56)
-  wallet/          EVM address normalization + get-or-create
-  provider/ofac/   bounded downloader, streaming XML parser, mapper, stager
-  ingestion/       single-flight runs → staging → validate → atomic publish
-  sanctions/       read path: direct match, cross-chain, unresolved listings
-  middleware/      request-id, API-key auth, rate limit, error envelope
-  testutil/        _test-database harness (P-020 guard)
-migrations/  paired .up/.down SQL (000001 domain, 000002 staging, 000003 snapshots)
-queries/     sqlc inputs → generated internal/db (committed)
-api/         openapi.yaml (OpenAPI 3.1, implemented endpoints only)
-tests/       cross-package integration tests on check_wallet_test
+apps/api/
+  cmd/api      REST API (Gin) — lookups, admin triggers, /metrics
+  cmd/worker   one-shot snapshot ingestion (-source ofac_sdn [-file x.xml])
+  cmd/migrate  embedded golang-migrate runner
+  internal/
+    config/          env-only config (DATABASE_URL required)
+    platform/        database, cache, logger, metrics adapters
+    network/         chain registry + resolver (eip155:1, eip155:56)
+    wallet/          EVM address normalization + get-or-create
+    provider/ofac/   bounded downloader, streaming XML parser, mapper, stager
+    ingestion/       single-flight runs → staging → validate → atomic publish
+    sanctions/       read path: direct match, cross-chain, unresolved listings
+    middleware/      request-id, API-key auth, rate limit, error envelope
+    testutil/        _test-database harness (P-020 guard)
+  migrations/  paired .up/.down SQL (000001 domain, 000002 staging, 000003 snapshots)
+  queries/     sqlc inputs → generated internal/db (committed)
+  api/         openapi.yaml (OpenAPI 3.1, implemented endpoints only)
+  tests/       cross-package integration tests on check_wallet_test
+  docker-compose.yml  postgres :5433 + redis :6380 dev stack
+docs/          design spec (tailieu.md) + guidebooks
+plans/         implementation plans
+Makefile       repo root — forwards all targets to apps/api
 ```
 
 Key invariants: non-match is never "safe"; sanctions reasons are never
@@ -37,7 +45,11 @@ snapshot untouched.
 
 ## Setup
 
+All backend commands run inside `apps/api/` (or via the repo-root
+`Makefile`, which forwards there):
+
 ```bash
+cd apps/api
 cp .env.example .env            # then edit values
 docker compose up -d            # postgres :5433, redis :6380
 export DATABASE_URL='postgres://wallet:devonly@127.0.0.1:5433/check_wallet?sslmode=disable'
@@ -54,6 +66,8 @@ export API_BOOTSTRAP_READER_KEY='dev-reader-key'
 ```
 
 ## Run
+
+From `apps/api/`:
 
 ```bash
 # API on :8080
@@ -146,6 +160,8 @@ curl -H "X-API-Key: dev-reader-key" http://localhost:8080/metrics
 
 ## Test
 
+From `apps/api/` (or `make test` / `make vet` / `make fmt` at repo root):
+
 ```bash
 go test ./...          # unit + integration (check_wallet_test only)
 go test ./... -race    # race detector
@@ -169,5 +185,5 @@ migration manifest, and truncates mutable tables between tests.
   `status='RUNNING'` — a second trigger gets `409 INGESTION_RUNNING`.
 - **Stuck runs**: `RUNNING` rows older than 1h are reaped as
   `FAILED`/`"worker restarted"` at boot and at run start.
-- API contract: `api/openapi.yaml` — the only implemented endpoints,
-  with real examples.
+- API contract: `apps/api/api/openapi.yaml` — the only implemented
+  endpoints, with real examples.

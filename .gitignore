@@ -4,9 +4,13 @@
 !.env.example
 
 # Build output
-/bin/
+bin/
 *.test
 *.out
+
+# Node / future apps (e.g. apps/web)
+node_modules/
+dist/
 
 # Downloaded sanctions snapshots (never commit bulk data)
 sdn_advanced*.xml

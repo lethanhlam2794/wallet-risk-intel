@@ -42,33 +42,41 @@ No microservices in MVP. No paid providers without approval.
 
 ## 3. Project Structure
 
-Follow the modular-monolith layout from spec §6:
+This is a monorepo. The Go backend (module `checkwallet`) lives in
+`apps/api/` and follows the modular-monolith layout from spec §6; sibling
+apps (e.g. a web frontend) go under `apps/<name>/` later.
 
 ```text
-cmd/api/            REST API entrypoint
-cmd/worker/         ingestion & background jobs entrypoint
-internal/
-  config/           configuration loading
-  platform/         database, cache, logger adapters
-  network/          blockchain network management
-  wallet/           wallet management
-  entity/           entity attribution
-  sanctions/        sanctions intelligence (handler/service/repository/model)
-  attribution/      attribution workflows
-  label/            wallet label domain
-  screening/        screening orchestration
-  scoring/          risk scoring engine
-  tracing/          transaction graph traversal
-  transaction/      transaction indexing
-  provider/         external adapters: ofac, walletattribution, goplus,
+apps/api/           Go backend — module root, all go commands run here
+  cmd/api/          REST API entrypoint
+  cmd/worker/       ingestion & background jobs entrypoint
+  cmd/migrate/      embedded migration runner
+  internal/
+    config/         configuration loading
+    platform/       database, cache, logger adapters
+    network/        blockchain network management
+    wallet/         wallet management
+    entity/         entity attribution
+    sanctions/      sanctions intelligence (handler/service/repository/model)
+    attribution/    attribution workflows
+    label/          wallet label domain
+    screening/      screening orchestration
+    scoring/        risk scoring engine
+    tracing/        transaction graph traversal
+    transaction/    transaction indexing
+    provider/       external adapters: ofac, walletattribution, goplus,
                     chainabuse, publicaml, blockscout
-  ingestion/        ingestion service/worker/scheduler
-  middleware/       auth, rate limiting
-migrations/         SQL migrations
-queries/            sqlc queries
-api/openapi.yaml    API contract
-configs/            configuration files
-tests/              cross-package integration tests
+    ingestion/      ingestion service/worker/scheduler
+    middleware/     auth, rate limiting
+  migrations/       SQL migrations (embedded via migrations/migrations.go)
+  queries/          sqlc queries
+  api/openapi.yaml  API contract
+  tests/            cross-package integration tests
+  docker-compose.yml  postgres + redis dev stack (+ docker/)
+  Makefile          app-level targets
+docs/               design spec (tailieu.md) + guidebooks
+plans/              implementation plans
+Makefile            repo root — delegates every target to apps/api
 ```
 
 Layering rule: keep HTTP handlers thin; business rules in services;
@@ -77,8 +85,12 @@ adapter under `internal/provider/<name>/`.
 
 ## 4. Build, Test, and Development Commands
 
-The Go module is not yet scaffolded. Once `go.mod` exists, baseline commands:
+All Go commands run from `apps/api/` (the module root). The repo-root
+`Makefile` forwards every target there — `make test` at root equals
+`cd apps/api && make test`.
 
+- `make deps-up` / `make deps-down` — postgres + redis dev stack
+- `make migrate` / `make migrate-test` — apply migrations
 - `go run ./cmd/api` — run the REST API locally
 - `go run ./cmd/worker` — run ingestion and background jobs
 - `go build ./...` — compile every package
@@ -86,9 +98,6 @@ The Go module is not yet scaffolded. Once `go.mod` exists, baseline commands:
 - `go test -race ./...` — detect concurrency defects
 - `go vet ./...` — static analysis
 - `gofmt -l .` — verify formatting (must be empty)
-
-Do not claim these commands pass until `go.mod` and the referenced packages
-exist. Add a `Makefile` when the module is initialized.
 
 ## 5. Domain Invariants — Never Violate
 

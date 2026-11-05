@@ -508,6 +508,9 @@ Background workflow:
 
 # 6. PROJECT STRUCTURE
 
+> Monorepo note: the tree below is the Go backend module root, which lives
+> at `apps/api/` in the repository root (see AGENTS.md §3).
+
 ```text
 wallet-risk/
 |
