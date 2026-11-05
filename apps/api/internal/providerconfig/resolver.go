@@ -145,6 +145,22 @@ func ResolveAll(ctx context.Context, cfg *config.Config, store Store,
 	return r, nil
 }
 
+// ResolveStored re-resolves one provider's effective config against live
+// state — used by the admin test-probe so "does this saved key work"
+// tests the stored values, not the boot-time snapshot.
+func ResolveStored(ctx context.Context, cfg *config.Config, store Store,
+	keys *Keystore, code string) (*Resolved, error) {
+	if descriptorFor(code) == nil {
+		return nil, &Error{Provider: code, Field: "source_code",
+			Err: fmt.Errorf("unregistered provider code")}
+	}
+	return resolveOne(ctx, cfg, store, keys, &resolverDeps{
+		log:          slog.New(slog.DiscardHandler),
+		allowedHosts: provider.AllowedHostsFor,
+		getenv:       os.Getenv,
+	}, code)
+}
+
 func resolveOne(ctx context.Context, cfg *config.Config, store Store,
 	keys *Keystore, deps *resolverDeps, code string) (*Resolved, error) {
 
