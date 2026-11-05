@@ -79,15 +79,28 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 		allowed[r] = true
 	}
 	return func(c *gin.Context) {
-		client := ClientFrom(c)
-		if client == nil {
-			RespondError(c, http.StatusUnauthorized, CodeUnauthorized, "valid API key required")
+		role, ok := PrincipalRole(c)
+		if !ok {
+			RespondError(c, http.StatusUnauthorized, CodeUnauthorized, "authentication required")
 			return
 		}
-		if !allowed[client.Role] {
+		if !allowed[role] && !(role == "superadmin" && allowed["admin"]) {
 			RespondError(c, http.StatusForbidden, CodeForbidden, "insufficient role")
 			return
 		}
 		c.Next()
 	}
+}
+
+// PrincipalRole returns the role of whichever principal is authenticated —
+// API client (X-API-Key) or system user (Bearer JWT). superadmin satisfies
+// any "admin" requirement via the check in RequireRole.
+func PrincipalRole(c *gin.Context) (string, bool) {
+	if cl := ClientFrom(c); cl != nil {
+		return cl.Role, true
+	}
+	if u := UserFrom(c); u != nil {
+		return u.Role, true
+	}
+	return "", false
 }

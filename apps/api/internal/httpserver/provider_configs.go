@@ -61,6 +61,10 @@ func (h *ProviderConfigHandler) Update(c *gin.Context) {
 	if cl := middleware.ClientFrom(c); cl != nil {
 		actor.ID = cl.Name
 	}
+	if u := middleware.UserFrom(c); u != nil {
+		actor.Type = "system_user"
+		actor.ID = u.Username
+	}
 	res, err := h.svc.Update(c.Request.Context(), c.Param("code"), actor,
 		providerconfig.Patch{
 			APIKey:        body.APIKey,

@@ -268,6 +268,16 @@ type StgWalletLabel struct {
 	Evidence         []byte      `json:"evidence"`
 }
 
+type SystemUser struct {
+	ID           int64              `json:"id"`
+	Username     string             `json:"username"`
+	PasswordHash string             `json:"password_hash"`
+	Role         string             `json:"role"`
+	IsActive     bool               `json:"is_active"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+}
+
 type Transaction struct {
 	ID                 int64              `json:"id"`
 	NetworkID          int64              `json:"network_id"`

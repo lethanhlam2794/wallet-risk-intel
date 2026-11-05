@@ -139,5 +139,8 @@ func clientActor(c *gin.Context) apiclient.Actor {
 		a.ID = cl.ID
 		a.Name = cl.Name
 	}
+	if u := middleware.UserFrom(c); u != nil {
+		a.Name = "system_user:" + u.Username
+	}
 	return a
 }
