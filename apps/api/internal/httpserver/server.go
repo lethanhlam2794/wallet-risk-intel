@@ -22,9 +22,11 @@ import (
 	"checkwallet/internal/middleware"
 	"checkwallet/internal/network"
 	"checkwallet/internal/platform/metrics"
+	"checkwallet/internal/probetest"
 	"checkwallet/internal/providerconfig"
 	"checkwallet/internal/sanctions"
 	"checkwallet/internal/screening"
+	"checkwallet/internal/systemuser"
 	"checkwallet/internal/tracing"
 	"checkwallet/internal/transaction"
 	"checkwallet/internal/wallet"
@@ -69,6 +71,15 @@ type Deps struct {
 	ProviderConfigs *providerconfig.Service
 	// Clients wires /api/v1/admin/clients* when set.
 	Clients *apiclient.Service
+	// SystemUsers wires POST /api/v1/auth/login (public) and the
+	// superadmin-only /api/v1/admin/system-users surface when set.
+	SystemUsers *systemuser.Service
+	// AdminJWTSecret signs/verifies Bearer tokens; empty disables user auth.
+	AdminJWTSecret []byte
+	// AdminJWTTTL is the issued-token lifetime.
+	AdminJWTTTL time.Duration
+	// Probe wires POST /api/v1/admin/provider-configs/{code}/test when set.
+	Probe *probetest.Service
 }
 
 // New builds the Gin engine with the full middleware chain and routes.
@@ -92,9 +103,17 @@ func New(d Deps) *gin.Engine {
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
 	r.GET("/readyz", readyzHandler(d.Pool, d.RDB))
 
+	// System-user login is the only credential-issuing public route; it is
+	// rate-limited like the anonymous bucket to blunt brute force.
+	if d.SystemUsers != nil && len(d.AdminJWTSecret) > 0 {
+		ah := NewAuthHandler(d.SystemUsers, d.AdminJWTSecret, d.AdminJWTTTL)
+		r.POST("/api/v1/auth/login", limiter.Middleware(), ah.Login)
+	}
+
 	// Authenticated API surface: identify → rate-limit → enforce role.
 	api := r.Group("/api/v1",
 		middleware.IdentifyClient(d.Queries),
+		middleware.IdentifyUser(d.AdminJWTSecret),
 		limiter.Middleware(),
 		middleware.RequireRole("reader", "admin"),
 	)
@@ -148,9 +167,10 @@ func New(d Deps) *gin.Engine {
 
 	// Admin surface: same auth chain, admin role only. The group exists
 	// when any admin dep is wired; each dep guards its own routes.
-	if d.Admin != nil || d.Clients != nil {
+	if d.Admin != nil || d.Clients != nil || d.SystemUsers != nil {
 		adm := r.Group("/api/v1/admin",
 			middleware.IdentifyClient(d.Queries),
+			middleware.IdentifyUser(d.AdminJWTSecret),
 			limiter.Middleware(),
 			middleware.RequireRole("admin"),
 		)
@@ -165,11 +185,21 @@ func New(d Deps) *gin.Engine {
 			adm.PUT("/provider-configs/:code", ph.Update)
 			adm.GET("/provider-configs/:code/changes", ph.Changes)
 		}
+		if d.Probe != nil {
+			pb := NewProbeHandler(d.Probe, d.Resolver)
+			adm.POST("/provider-configs/:code/test", pb.Test)
+		}
 		if d.Clients != nil {
 			ch := NewClientHandler(d.Clients)
 			adm.GET("/clients", ch.List)
 			adm.POST("/clients", ch.Create)
 			adm.PATCH("/clients/:id", ch.Update)
+		}
+		if d.SystemUsers != nil {
+			uh := NewSystemUserHandler(d.SystemUsers)
+			sa := adm.Group("", middleware.RequireRole("superadmin"))
+			sa.GET("/system-users", uh.List)
+			sa.POST("/system-users", uh.Create)
 		}
 	}
 

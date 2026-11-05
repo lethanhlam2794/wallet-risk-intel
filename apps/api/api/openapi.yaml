@@ -81,6 +81,48 @@ paths:
               schema: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: System-user login (admin console)
+      description: |
+        Public endpoint — the only credential-issuing route. Verifies a
+        `system_users` username+password (bcrypt) and returns an HS256 JWT
+        to send as `Authorization: Bearer <token>` on subsequent calls.
+        Bad username, bad password, and inactive accounts all collapse to
+        a single `401 INVALID_CREDENTIALS` — no account-enumeration
+        signal. Rate-limited with the anonymous bucket.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              additionalProperties: false
+              properties:
+                username: { type: string, minLength: 3, maxLength: 80 }
+                password: { type: string, format: password }
+            example: { username: superadmin, password: "••••••••" }
+      responses:
+        "200":
+          description: Issued Bearer token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/LoginResponse" }
+              example:
+                data:
+                  token: "eyJhbGciOiJIUzI1NiIs..."
+                  token_type: Bearer
+                  expires_at: "2026-11-05T20:00:00Z"
+                  user: { username: superadmin, role: superadmin }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/InvalidCredentials" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
   /api/v1/networks:
     get:
       tags: [reference]
@@ -1116,7 +1158,7 @@ paths:
         description: Transaction provider code (a `data_sources.code`).
         schema:
           type: string
-          enum: [alchemy, blockscout, ankr, covalent, moralis, tatum,
+          enum: [alchemy, blockscout, blockscout_pro, ankr, covalent, moralis, tatum,
                  bitquery, oklink, tokenview, chainbase, chainscan, nodereal]
     get:
       tags: [admin]
@@ -1217,7 +1259,7 @@ paths:
         required: true
         schema:
           type: string
-          enum: [alchemy, blockscout, ankr, covalent, moralis, tatum,
+          enum: [alchemy, blockscout, blockscout_pro, ankr, covalent, moralis, tatum,
                  bitquery, oklink, tokenview, chainbase, chainscan, nodereal]
     get:
       tags: [admin]
@@ -1264,6 +1306,71 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/admin/provider-configs/{code}/test:
+    post:
+      tags: [admin]
+      summary: Test a provider's stored config against the live upstream
+      description: |
+        Builds a throwaway adapter from the **stored** provider_configs
+        row (not the boot-time registry — works even while
+        `requires_restart` is pending) and runs a bounded live call:
+        `HeadBlock`, then a small `LookupTransfers` window for the
+        supplied address. The result reports `ok`, latency, head block,
+        transfers seen, and honest `error_kind`/`http_status` — upstream
+        failure is a status field, never a 500. Requires admin role
+        (API key or system-user JWT).
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [network, address]
+              additionalProperties: false
+              properties:
+                network: { type: string, enum: [ethereum, bsc] }
+                address: { type: string, description: EVM 20-byte hex }
+            example:
+              network: ethereum
+              address: "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+      responses:
+        "200":
+          description: Probe outcome — `ok:false` carries error_kind.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      ok: { type: boolean }
+                      enabled_for_network: { type: boolean }
+                      http_status: { type: integer }
+                      latency_ms: { type: integer }
+                      head_block: { type: ["integer", "null"] }
+                      transfers_seen: { type: integer }
+                      error_kind: { type: string }
+                      message: { type: string }
+              example:
+                data:
+                  ok: true
+                  enabled_for_network: true
+                  http_status: 200
+                  latency_ms: 412
+                  head_block: 23104555
+                  transfers_seen: 3
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /api/v1/admin/clients:
     get:
@@ -1426,12 +1533,91 @@ paths:
               example:
                 error: { code: ADMIN_LOCKOUT, message: "operation would remove the last active admin", request_id: "req_..." }
 
+  /api/v1/admin/system-users:
+    get:
+      tags: [admin]
+      summary: List system users (superadmin only)
+      description: |
+        Every system_users row, username-ordered. `password_hash` never
+        appears on the wire. Requires the `superadmin` role — an `admin`
+        system user or API client gets `403`.
+      responses:
+        "200":
+          description: System users.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/SystemUser" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      summary: Create a system user (superadmin only)
+      description: |
+        Provisions a username+password login for the admin console.
+        `username` must match `[a-zA-Z0-9_.-]{3,80}`; `password` must be
+        12–72 characters (bcrypt input cap); `role` is `admin` or
+        `superadmin`. The password is hashed with bcrypt at rest and
+        never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, role]
+              additionalProperties: false
+              properties:
+                username: { type: string, pattern: "^[a-zA-Z0-9_.-]{3,80}$" }
+                password: { type: string, format: password, minLength: 12, maxLength: 72 }
+                role: { type: string, enum: [superadmin, admin] }
+            example: { username: ops.lead, password: "correct horse battery", role: admin }
+      responses:
+        "201":
+          description: Created system user (no password material).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/SystemUser" }
+              example:
+                data:
+                  id: 2
+                  username: ops.lead
+                  role: admin
+                  is_active: true
+                  created_at: "2026-11-05T12:00:00Z"
+                  last_login_at: null
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Username already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: BAD_REQUEST, message: "username already exists", request_id: "req_..." }
+
 components:
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
       in: header
       name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        HS256 JWT issued by POST /api/v1/auth/login for system users
+        (admin console). Either `X-API-Key` or `Authorization: Bearer`
+        authenticates a request; each maps to its own principal and role.
 
   parameters:
     Network:
@@ -1780,6 +1966,29 @@ components:
         snapshot_checksum: { type: ["string", "null"] }
         snapshot_version: { type: ["string", "null"] }
         error_message: { type: ["string", "null"] }
+    SystemUser:
+      type: object
+      description: |
+        One system_users row on the wire — `password_hash` never appears.
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        role: { type: string, enum: [superadmin, admin] }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_login_at: { type: ["string", "null"], format: date-time }
+    LoginResponse:
+      type: object
+      description: POST /auth/login payload — Bearer JWT for a system user.
+      properties:
+        token: { type: string }
+        token_type: { type: string, enum: [Bearer] }
+        expires_at: { type: string, format: date-time }
+        user:
+          type: object
+          properties:
+            username: { type: string }
+            role: { type: string, enum: [superadmin, admin] }
     ApiClient:
       type: object
       description: |
@@ -2385,7 +2594,14 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
           example:
-            error: { code: UNAUTHORIZED, message: "valid API key required", request_id: "req_..." }
+            error: { code: UNAUTHORIZED, message: "authentication required", request_id: "req_..." }
+    InvalidCredentials:
+      description: Login failed — bad username/password or inactive account (single generic error).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: INVALID_CREDENTIALS, message: "invalid username or password", request_id: "req_..." }
     Forbidden:
       description: Insufficient role (admin required).
       content:

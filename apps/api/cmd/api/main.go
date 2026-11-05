@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	crand "crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,11 +32,13 @@ import (
 	"checkwallet/internal/platform/database"
 	"checkwallet/internal/platform/logger"
 	"checkwallet/internal/platform/metrics"
+	"checkwallet/internal/probetest"
 	"checkwallet/internal/provider"
 	"checkwallet/internal/provider/alchemy"
 	"checkwallet/internal/provider/ankr"
 	"checkwallet/internal/provider/bitquery"
 	"checkwallet/internal/provider/blockscout"
+	"checkwallet/internal/provider/blockscoutpro"
 	"checkwallet/internal/provider/chainabuse"
 	"checkwallet/internal/provider/chainbase"
 	"checkwallet/internal/provider/chainscan"
@@ -53,6 +56,7 @@ import (
 	"checkwallet/internal/providerconfig"
 	"checkwallet/internal/sanctions"
 	"checkwallet/internal/screening"
+	"checkwallet/internal/systemuser"
 	"checkwallet/internal/tracing"
 	"checkwallet/internal/transaction"
 	"checkwallet/internal/wallet"
@@ -92,6 +96,14 @@ func run() error {
 
 	queries := db.New(pool)
 	bootstrapAPIClients(ctx, cfg, queries, log)
+
+	jwtSecret := []byte(cfg.AdminJWTSecret)
+	if len(jwtSecret) == 0 {
+		jwtSecret = randomSecret(32)
+		log.Warn("ADMIN_JWT_SECRET unset — generated ephemeral secret; issued sessions die on restart")
+	}
+	userSvc := systemuser.New(queries, log)
+	userSvc.EnsureSuperAdmin(ctx, randomPassword)
 
 	resolver, err := loadResolver(ctx, queries)
 	if err != nil {
@@ -185,6 +197,10 @@ func run() error {
 		Tracing:         tracingSvc,
 		ProviderConfigs: pcAdmin,
 		Clients:         apiclient.New(pool, queries, bootstrapKeyHashes(cfg), log),
+		SystemUsers:     userSvc,
+		AdminJWTSecret:  jwtSecret,
+		AdminJWTTTL:     cfg.AdminJWTTTL,
+		Probe:           probetest.NewService(cfg, queries, pcKeys),
 	})
 
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
@@ -297,6 +313,17 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	bsp, err := blockscoutpro.New(resolved(blockscoutpro.SourceCode).BaseURL,
+		resolved(blockscoutpro.SourceCode).APIKey,
+		resolved(blockscoutpro.SourceCode).EnabledChains,
+		blockscoutpro.WithHooks(hooksFor(blockscoutpro.SourceCode)),
+		blockscoutpro.WithDurationFunc(m.ProviderDurationHook(blockscoutpro.SourceCode)))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if resolved(blockscoutpro.SourceCode).APIKey == "" {
+		log.Info("blockscout_pro disabled: no api key configured")
+	}
 	an, err := ankr.New(resolved(ankr.SourceCode).BaseURL,
 		resolved(ankr.SourceCode).APIKey,
 		resolved(ankr.SourceCode).EnabledChains,
@@ -392,18 +419,19 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	// Registry of every selectable provider; TX_PROVIDER_<NET> resolves the
 	// ordered failover chain per network.
 	registry := map[string]provider.TxProvider{
-		chainscan.SourceCode:  cs,
-		nodereal.SourceCode:   nr,
-		alchemy.SourceCode:    al,
-		blockscout.SourceCode: bs,
-		ankr.SourceCode:       an,
-		covalent.SourceCode:   cv,
-		moralis.SourceCode:    mo,
-		tatum.SourceCode:      ta,
-		bitquery.SourceCode:   bq,
-		oklink.SourceCode:     ok,
-		tokenview.SourceCode:  tv,
-		chainbase.SourceCode:  cb,
+		chainscan.SourceCode:     cs,
+		nodereal.SourceCode:      nr,
+		alchemy.SourceCode:       al,
+		blockscout.SourceCode:    bs,
+		blockscoutpro.SourceCode: bsp,
+		ankr.SourceCode:          an,
+		covalent.SourceCode:      cv,
+		moralis.SourceCode:       mo,
+		tatum.SourceCode:         ta,
+		bitquery.SourceCode:      bq,
+		oklink.SourceCode:        ok,
+		tokenview.SourceCode:     tv,
+		chainbase.SourceCode:     cb,
 	}
 	ethChain, err := selectTxProviderChain("TX_PROVIDER_ETH", cfg.TxProviderETH,
 		chainscan.SourceCode, registry, log)
@@ -417,18 +445,19 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	}
 
 	budget := map[string]int{
-		chainscan.SourceCode:  cfg.IndexingBudgetETH,
-		nodereal.SourceCode:   cfg.IndexingBudgetBSC,
-		alchemy.SourceCode:    cfg.IndexingBudgetAlchemy,
-		blockscout.SourceCode: cfg.IndexingBudgetBlockscout,
-		ankr.SourceCode:       cfg.IndexingBudgetAnkr,
-		covalent.SourceCode:   cfg.IndexingBudgetCovalent,
-		moralis.SourceCode:    cfg.IndexingBudgetMoralis,
-		tatum.SourceCode:      cfg.IndexingBudgetTatum,
-		bitquery.SourceCode:   cfg.IndexingBudgetBitquery,
-		oklink.SourceCode:     cfg.IndexingBudgetOklink,
-		tokenview.SourceCode:  cfg.IndexingBudgetTokenview,
-		chainbase.SourceCode:  cfg.IndexingBudgetChainbase,
+		chainscan.SourceCode:     cfg.IndexingBudgetETH,
+		nodereal.SourceCode:      cfg.IndexingBudgetBSC,
+		alchemy.SourceCode:       cfg.IndexingBudgetAlchemy,
+		blockscout.SourceCode:    cfg.IndexingBudgetBlockscout,
+		blockscoutpro.SourceCode: cfg.IndexingBudgetBlockscoutPro,
+		ankr.SourceCode:          cfg.IndexingBudgetAnkr,
+		covalent.SourceCode:      cfg.IndexingBudgetCovalent,
+		moralis.SourceCode:       cfg.IndexingBudgetMoralis,
+		tatum.SourceCode:         cfg.IndexingBudgetTatum,
+		bitquery.SourceCode:      cfg.IndexingBudgetBitquery,
+		oklink.SourceCode:        cfg.IndexingBudgetOklink,
+		tokenview.SourceCode:     cfg.IndexingBudgetTokenview,
+		chainbase.SourceCode:     cfg.IndexingBudgetChainbase,
 	}
 	// Boot checks (plan invariants): every registered provider must resolve
 	// a data_sources row — a typo'd Name() silently disables the
@@ -554,6 +583,25 @@ func bootstrapKeyHashes(cfg *config.Config) []string {
 		}
 	}
 	return out
+}
+
+const passwordAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+// randomPassword returns a 24-char base62 password from crypto/rand.
+func randomPassword() string {
+	return string(randomSecret(24))
+}
+
+func randomSecret(n int) []byte {
+	buf := make([]byte, n)
+	raw := make([]byte, n)
+	if _, err := crand.Read(raw); err != nil {
+		panic("crypto/rand unavailable: " + err.Error())
+	}
+	for i := range buf {
+		buf[i] = passwordAlphabet[int(raw[i])%len(passwordAlphabet)]
+	}
+	return buf
 }
 
 func loadResolver(ctx context.Context, q *db.Queries) (*network.Resolver, error) {
