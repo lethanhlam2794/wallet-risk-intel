@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -80,6 +81,8 @@ type Service struct {
 	metrics   interface {
 		IncTracingNodesExamined(int64)
 	}
+	enqueuer Enqueuer     // warm index queue — nil disables the hook
+	log      *slog.Logger // warm-hook failures; set via SetEnqueuer
 }
 
 // New builds the tracing service; resolver scopes cross-network label
@@ -87,7 +90,8 @@ type Service struct {
 func New(q *db.Queries, tx *transaction.Service, sanctions *sanctions.Service,
 	resolver *network.Resolver, cfg Config) *Service {
 	cfg.defaults()
-	return &Service{q: q, tx: tx, sanctions: sanctions, resolver: resolver, cfg: cfg}
+	return &Service{q: q, tx: tx, sanctions: sanctions, resolver: resolver,
+		cfg: cfg, log: slog.New(slog.DiscardHandler)}
 }
 
 // SetMetrics attaches the metrics collector (optional).
@@ -424,6 +428,9 @@ func (s *Service) Exposures(ctx context.Context, net network.Network,
 			continue
 		}
 		c := rootSet.cands[cp]
+		if !c.sentinel {
+			s.warmEnqueue(ctx, net.ID, net.Code, cp, sigs)
+		}
 		it := Item{
 			Counterparty:   cp,
 			Category:       cat,

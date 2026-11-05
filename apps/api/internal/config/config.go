@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -143,6 +144,16 @@ type Config struct {
 	TracingMaxEdges    int
 	TracingDeadline    time.Duration
 	TracingResponseCap int
+
+	// Warm index queue (warm-index-queue v1, plan D7). Feature-flagged
+	// OFF by default; the drain worker consumes only allowlisted
+	// providers under a per-provider daily call cap.
+	WarmIndexEnabled      bool
+	WarmIndexProviders    []string
+	WarmIndexDailyCap     int
+	WarmIndexPollInterval time.Duration
+	WarmIndexItemBudget   int
+	WarmIndexMaxPages     int
 
 	// ProviderConfigKEK encrypts provider_configs.api_key at rest when set
 	// (32-byte base64/hex, AES-256-GCM); unset = honest plaintext storage.
@@ -340,6 +351,21 @@ func Load() (*Config, error) {
 	if cfg.TracingResponseCap, err = envInt("TRACING_RESPONSE_CAP", 256<<10); err != nil {
 		return nil, err
 	}
+	if cfg.WarmIndexEnabled, err = envBool("WARM_INDEX_ENABLED", false); err != nil {
+		return nil, err
+	}
+	cfg.WarmIndexProviders = splitCSV(envOr("WARM_INDEX_PROVIDERS",
+		"blockscout,blockscout_pro"))
+	if cfg.WarmIndexDailyCap, err = envInt("WARM_INDEX_DAILY_CAP", 200); err != nil {
+		return nil, err
+	}
+	cfg.WarmIndexPollInterval = envDur("WARM_INDEX_POLL_INTERVAL", time.Minute)
+	if cfg.WarmIndexItemBudget, err = envInt("WARM_INDEX_ITEM_BUDGET", 8); err != nil {
+		return nil, err
+	}
+	if cfg.WarmIndexMaxPages, err = envInt("WARM_INDEX_MAX_PAGES", 10); err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -348,6 +374,32 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// envBool parses exactly the strconv.ParseBool vocabulary
+// (1/t/T/true/TRUE/True/0/f/F/false/FALSE/False); anything else is a boot
+// error — a malformed feature flag must never silently default.
+func envBool(key string, fallback bool) (bool, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("config: %s: %w", key, err)
+	}
+	return b, nil
+}
+
+// splitCSV parses a comma list, trimming entries and dropping empties.
+func splitCSV(raw string) []string {
+	var out []string
+	for _, p := range strings.Split(raw, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func envDur(key string, fallback time.Duration) time.Duration {

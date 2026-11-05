@@ -82,3 +82,64 @@ func TestLoad_ProviderOverrides(t *testing.T) {
 	assert.Equal(t, 10*time.Second, cfg.EnrichmentDeadline)
 	assert.Equal(t, 5*time.Minute, cfg.EnrichmentCacheTTL)
 }
+
+func TestLoad_WarmIndexDefaults(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://wallet:devonly@127.0.0.1:5433/check_wallet?sslmode=disable")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.False(t, cfg.WarmIndexEnabled)
+	assert.Equal(t, []string{"blockscout", "blockscout_pro"}, cfg.WarmIndexProviders)
+	assert.Equal(t, 200, cfg.WarmIndexDailyCap)
+	assert.Equal(t, time.Minute, cfg.WarmIndexPollInterval)
+	assert.Equal(t, 8, cfg.WarmIndexItemBudget)
+	assert.Equal(t, 10, cfg.WarmIndexMaxPages)
+}
+
+func TestLoad_WarmIndexOverrides(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://wallet:devonly@127.0.0.1:5433/check_wallet?sslmode=disable")
+	t.Setenv("WARM_INDEX_ENABLED", "true")
+	t.Setenv("WARM_INDEX_PROVIDERS", " blockscout , ankr ")
+	t.Setenv("WARM_INDEX_DAILY_CAP", "50")
+	t.Setenv("WARM_INDEX_POLL_INTERVAL", "30s")
+	t.Setenv("WARM_INDEX_ITEM_BUDGET", "4")
+	t.Setenv("WARM_INDEX_MAX_PAGES", "3")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.True(t, cfg.WarmIndexEnabled)
+	assert.Equal(t, []string{"blockscout", "ankr"}, cfg.WarmIndexProviders)
+	assert.Equal(t, 50, cfg.WarmIndexDailyCap)
+	assert.Equal(t, 30*time.Second, cfg.WarmIndexPollInterval)
+	assert.Equal(t, 4, cfg.WarmIndexItemBudget)
+	assert.Equal(t, 3, cfg.WarmIndexMaxPages)
+}
+
+func TestLoad_WarmIndexEnabledBoolVocabulary(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://wallet:devonly@127.0.0.1:5433/check_wallet?sslmode=disable")
+	for _, v := range []string{"1", "t", "T", "true", "TRUE", "True",
+		"0", "f", "F", "false", "FALSE", "False"} {
+		t.Setenv("WARM_INDEX_ENABLED", v)
+		_, err := Load()
+		require.NoError(t, err, "ParseBool must accept %q", v)
+	}
+	for _, v := range []string{"yes", "no", "on", "off", "2", "abc"} {
+		t.Setenv("WARM_INDEX_ENABLED", v)
+		_, err := Load()
+		require.Error(t, err, "ParseBool must reject %q", v)
+		assert.Contains(t, err.Error(), "WARM_INDEX_ENABLED")
+	}
+}
+
+func TestLoad_WarmIndexNumericErrors(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://wallet:devonly@127.0.0.1:5433/check_wallet?sslmode=disable")
+	for _, env := range []string{
+		"WARM_INDEX_DAILY_CAP", "WARM_INDEX_ITEM_BUDGET", "WARM_INDEX_MAX_PAGES",
+	} {
+		t.Setenv(env, "abc")
+		_, err := Load()
+		require.Error(t, err, "%s=abc must fail boot", env)
+		assert.Contains(t, err.Error(), env)
+		t.Setenv(env, "")
+	}
+}

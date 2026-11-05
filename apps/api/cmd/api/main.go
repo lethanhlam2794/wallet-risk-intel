@@ -60,6 +60,7 @@ import (
 	"checkwallet/internal/tracing"
 	"checkwallet/internal/transaction"
 	"checkwallet/internal/wallet"
+	"checkwallet/internal/warmindex"
 )
 
 func main() {
@@ -174,6 +175,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Warm index producer (warm-index-queue v1): always wired — the Queue
+	// no-ops when WARM_INDEX_ENABLED is off, so the interactive path is
+	// byte-identical with the feature dark.
+	tracingSvc.SetEnqueuer(warmindex.NewQueue(queries, cfg.WarmIndexEnabled, log), log)
 
 	// Admin provider-config surface (db-provider-config phase 4): masked
 	// reads, whitelisted writes with per-field audit rows.

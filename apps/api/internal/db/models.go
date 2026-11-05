@@ -339,3 +339,23 @@ type WalletLabel struct {
 	LastSeenAt         pgtype.Timestamptz `json:"last_seen_at"`
 	RevokedAt          pgtype.Timestamptz `json:"revoked_at"`
 }
+
+type WarmQueue struct {
+	ID                int64              `json:"id"`
+	NetworkID         int64              `json:"network_id"`
+	Address           string             `json:"address"`
+	Priority          int32              `json:"priority"`
+	Reason            string             `json:"reason"`
+	SourceScreeningID pgtype.UUID        `json:"source_screening_id"`
+	Status            string             `json:"status"`
+	Attempts          int32              `json:"attempts"`
+	ClaimedAt         pgtype.Timestamptz `json:"claimed_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WarmQuotaLedger struct {
+	ProviderCode string      `json:"provider_code"`
+	PeriodStart  pgtype.Date `json:"period_start"`
+	Calls        int32       `json:"calls"`
+}
