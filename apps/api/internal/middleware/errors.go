@@ -19,6 +19,7 @@ const (
 	CodeConflict       = "INGESTION_RUNNING"
 	CodeInvalidCursor  = "INVALID_CURSOR"
 	CodeInvalidSource  = "INVALID_SOURCE"
+	CodeAdminLockout   = "ADMIN_LOCKOUT"
 
 	// Screening idempotency conflicts (plan §3.3).
 	CodeIdempotencyConflict = "IDEMPOTENCY_CONFLICT"

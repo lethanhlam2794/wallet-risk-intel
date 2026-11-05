@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"checkwallet/internal/apiclient"
 	"checkwallet/internal/config"
 	"checkwallet/internal/db"
 	"checkwallet/internal/enrichment"
@@ -66,6 +67,8 @@ type Deps struct {
 	Metrics *metrics.Metrics
 	// ProviderConfigs wires /api/v1/admin/provider-configs* when set.
 	ProviderConfigs *providerconfig.Service
+	// Clients wires /api/v1/admin/clients* when set.
+	Clients *apiclient.Service
 }
 
 // New builds the Gin engine with the full middleware chain and routes.
@@ -143,21 +146,30 @@ func New(d Deps) *gin.Engine {
 			gin.WrapH(d.Metrics.Handler()))
 	}
 
-	// Admin surface: same auth chain, admin role only.
-	if d.Admin != nil {
+	// Admin surface: same auth chain, admin role only. The group exists
+	// when any admin dep is wired; each dep guards its own routes.
+	if d.Admin != nil || d.Clients != nil {
 		adm := r.Group("/api/v1/admin",
 			middleware.IdentifyClient(d.Queries),
 			limiter.Middleware(),
 			middleware.RequireRole("admin"),
 		)
-		adm.POST("/ingestion-runs", d.Admin.TriggerRun)
-		adm.GET("/ingestion-runs/:id", d.Admin.GetRun)
+		if d.Admin != nil {
+			adm.POST("/ingestion-runs", d.Admin.TriggerRun)
+			adm.GET("/ingestion-runs/:id", d.Admin.GetRun)
+		}
 		if d.ProviderConfigs != nil {
 			ph := NewProviderConfigHandler(d.ProviderConfigs)
 			adm.GET("/provider-configs", ph.List)
 			adm.GET("/provider-configs/:code", ph.Get)
 			adm.PUT("/provider-configs/:code", ph.Update)
 			adm.GET("/provider-configs/:code/changes", ph.Changes)
+		}
+		if d.Clients != nil {
+			ch := NewClientHandler(d.Clients)
+			adm.GET("/clients", ch.List)
+			adm.POST("/clients", ch.Create)
+			adm.PATCH("/clients/:id", ch.Update)
 		}
 	}
 

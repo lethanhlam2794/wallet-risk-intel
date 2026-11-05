@@ -18,6 +18,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 
+	"checkwallet/internal/apiclient"
 	"checkwallet/internal/config"
 	"checkwallet/internal/db"
 	"checkwallet/internal/enrichment"
@@ -183,6 +184,7 @@ func run() error {
 		Transactions:    txSvc,
 		Tracing:         tracingSvc,
 		ProviderConfigs: pcAdmin,
+		Clients:         apiclient.New(pool, queries, bootstrapKeyHashes(cfg), log),
 	})
 
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
@@ -539,6 +541,19 @@ func bootstrapAPIClients(ctx context.Context, cfg *config.Config, q *db.Queries,
 	}
 	seed(cfg.BootstrapAdminKey, "bootstrap-admin", "admin")
 	seed(cfg.BootstrapReaderKey, "bootstrap-reader", "reader")
+}
+
+// bootstrapKeyHashes returns the SHA-256 digests of configured bootstrap
+// keys. Rows seeded by API_BOOTSTRAP_* are resurrected by the boot
+// upsert, so PATCHes against them carry the env_managed warning.
+func bootstrapKeyHashes(cfg *config.Config) []string {
+	var out []string
+	for _, raw := range []string{cfg.BootstrapAdminKey, cfg.BootstrapReaderKey} {
+		if raw != "" {
+			out = append(out, middleware.HashAPIKey(raw))
+		}
+	}
+	return out
 }
 
 func loadResolver(ctx context.Context, q *db.Queries) (*network.Resolver, error) {

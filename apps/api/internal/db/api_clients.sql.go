@@ -7,7 +7,44 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const countOtherActiveAdmins = `-- name: CountOtherActiveAdmins :one
+SELECT count(*) FROM api_clients
+WHERE role = 'admin' AND is_active AND id != $1
+`
+
+// Post-state lockout guard: active admins other than the target row.
+func (q *Queries) CountOtherActiveAdmins(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countOtherActiveAdmins, id)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getAPIClientByID = `-- name: GetAPIClientByID :one
+
+SELECT id, name, key_hash, role, is_active, created_at, last_seen_at FROM api_clients WHERE id = $1
+`
+
+// Admin client-management surface (admin-api-clients plan). key_hash and
+// raw keys never leave the service layer — views are built in apiclient.
+func (q *Queries) GetAPIClientByID(ctx context.Context, id int64) (ApiClient, error) {
+	row := q.db.QueryRow(ctx, getAPIClientByID, id)
+	var i ApiClient
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.KeyHash,
+		&i.Role,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+	)
+	return i, err
+}
 
 const getAPIClientByKeyHash = `-- name: GetAPIClientByKeyHash :one
 SELECT id, name, key_hash, role, is_active, created_at, last_seen_at FROM api_clients WHERE key_hash = $1
@@ -28,12 +65,161 @@ func (q *Queries) GetAPIClientByKeyHash(ctx context.Context, keyHash string) (Ap
 	return i, err
 }
 
+const getAPIClientForUpdate = `-- name: GetAPIClientForUpdate :one
+SELECT id, name, key_hash, role, is_active, created_at, last_seen_at FROM api_clients WHERE id = $1 FOR UPDATE
+`
+
+// Row lock for the read-modify-write admin patch; taken after the
+// namespaced advisory lock so A↔B demotes serialize without deadlock.
+func (q *Queries) GetAPIClientForUpdate(ctx context.Context, id int64) (ApiClient, error) {
+	row := q.db.QueryRow(ctx, getAPIClientForUpdate, id)
+	var i ApiClient
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.KeyHash,
+		&i.Role,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+	)
+	return i, err
+}
+
+const insertAPIClient = `-- name: InsertAPIClient :one
+INSERT INTO api_clients (name, key_hash, role)
+VALUES ($1, $2, $3)
+RETURNING id, name, key_hash, role, is_active, created_at, last_seen_at
+`
+
+type InsertAPIClientParams struct {
+	Name    string `json:"name"`
+	KeyHash string `json:"key_hash"`
+	Role    string `json:"role"`
+}
+
+func (q *Queries) InsertAPIClient(ctx context.Context, arg InsertAPIClientParams) (ApiClient, error) {
+	row := q.db.QueryRow(ctx, insertAPIClient, arg.Name, arg.KeyHash, arg.Role)
+	var i ApiClient
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.KeyHash,
+		&i.Role,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+	)
+	return i, err
+}
+
+const listAPIClients = `-- name: ListAPIClients :many
+SELECT id, name, key_hash, role, is_active, created_at, last_seen_at FROM api_clients
+WHERE ($1::timestamptz IS NULL
+       OR (created_at, id)
+          < ($1, $2::bigint))
+ORDER BY created_at DESC, id DESC
+LIMIT $3::bigint
+`
+
+type ListAPIClientsParams struct {
+	CursorTs pgtype.Timestamptz `json:"cursor_ts"`
+	CursorID pgtype.Int8        `json:"cursor_id"`
+	Lim      int64              `json:"lim"`
+}
+
+// Newest first, keyset cursor on (created_at, id) — repo convention.
+func (q *Queries) ListAPIClients(ctx context.Context, arg ListAPIClientsParams) ([]ApiClient, error) {
+	rows, err := q.db.Query(ctx, listAPIClients, arg.CursorTs, arg.CursorID, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ApiClient{}
+	for rows.Next() {
+		var i ApiClient
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.KeyHash,
+			&i.Role,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockClientAdminTransitions = `-- name: LockClientAdminTransitions :exec
+SELECT pg_advisory_xact_lock(hashtext('apiclient.admin_guard'))
+`
+
+// Serializes every admin-lockout-guarded mutation inside its tx.
+// Namespaced via hashtext — ingestion's session advisory lock space is
+// raw source_id. Invariant: every role/is_active writer holds it
+// (UpsertAPIClient is exempt — it never removes admins).
+func (q *Queries) LockClientAdminTransitions(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockClientAdminTransitions)
+	return err
+}
+
 const touchAPIClient = `-- name: TouchAPIClient :exec
 UPDATE api_clients SET last_seen_at = NOW() WHERE id = $1
 `
 
 func (q *Queries) TouchAPIClient(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, touchAPIClient, id)
+	return err
+}
+
+const updateAPIClientActive = `-- name: UpdateAPIClientActive :exec
+UPDATE api_clients SET is_active = $2 WHERE id = $1
+`
+
+type UpdateAPIClientActiveParams struct {
+	ID       int64 `json:"id"`
+	IsActive bool  `json:"is_active"`
+}
+
+func (q *Queries) UpdateAPIClientActive(ctx context.Context, arg UpdateAPIClientActiveParams) error {
+	_, err := q.db.Exec(ctx, updateAPIClientActive, arg.ID, arg.IsActive)
+	return err
+}
+
+const updateAPIClientName = `-- name: UpdateAPIClientName :exec
+UPDATE api_clients SET name = $2 WHERE id = $1
+`
+
+type UpdateAPIClientNameParams struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// Column-scoped writes (provider_configs convention): a concurrent PATCH
+// on another field never clobbers it, and last_seen_at is never reset.
+func (q *Queries) UpdateAPIClientName(ctx context.Context, arg UpdateAPIClientNameParams) error {
+	_, err := q.db.Exec(ctx, updateAPIClientName, arg.ID, arg.Name)
+	return err
+}
+
+const updateAPIClientRole = `-- name: UpdateAPIClientRole :exec
+UPDATE api_clients SET role = $2 WHERE id = $1
+`
+
+type UpdateAPIClientRoleParams struct {
+	ID   int64  `json:"id"`
+	Role string `json:"role"`
+}
+
+func (q *Queries) UpdateAPIClientRole(ctx context.Context, arg UpdateAPIClientRoleParams) error {
+	_, err := q.db.Exec(ctx, updateAPIClientRole, arg.ID, arg.Role)
 	return err
 }
 

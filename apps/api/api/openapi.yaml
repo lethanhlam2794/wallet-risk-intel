@@ -25,7 +25,7 @@ info:
   contact:
     name: Engineering
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:8010
     description: Local development
 tags:
   - name: system
@@ -1265,6 +1265,167 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/admin/clients:
+    get:
+      tags: [admin]
+      summary: List API clients
+      description: |
+        Clients newest-first, keyset-paginated by `cursor` (opaque token
+        from `next_cursor`); `limit` defaults to 50, values over 200 clamp
+        to 200, non-positive/non-integer values are `400`. Every item is
+        the enumerated view only — `key_hash` and raw key material never
+        appear on this surface.
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Client page.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/ApiClient" }
+                      next_cursor: { type: string }
+              example:
+                data:
+                  items:
+                    - id: 42
+                      name: partner-acme
+                      role: reader
+                      is_active: true
+                      created_at: "2026-11-05T09:30:00Z"
+                      last_seen_at: "2026-11-05T10:12:44Z"
+                  next_cursor: "eyJ0IjoiMjAyNi0xMS0wNVQwOTozMDowMFoiLCJpIjo0Mn0"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      summary: Create an API client — plaintext key shown exactly once
+      description: |
+        The server generates a `cw_<rand>` key (base64url of 32 crypto/rand
+        bytes), stores only its SHA-256 hex digest, and returns the
+        plaintext **exactly once** in this response under
+        `Cache-Control: no-store`. There is no recovery: a lost key means
+        creating a new client and deactivating the old one.
+
+        `name` is display metadata (1–150 characters, duplicates allowed —
+        `id` is identity); `role` is `reader` (partners) or `admin`
+        (internal). The endpoint is intentionally not idempotent: a
+        retried create mints a second live key; duplicates are
+        list-visible and revocable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApiClientCreate" }
+            example: { name: partner-acme, role: reader }
+      responses:
+        "201":
+          description: Client created; `api_key` is shown exactly once.
+          headers:
+            Cache-Control:
+              description: Always `no-store` — plaintext key material must not be cached.
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ApiClientCreated" }
+              example:
+                data:
+                  id: 43
+                  name: partner-acme
+                  role: reader
+                  is_active: true
+                  created_at: "2026-11-05T09:31:07Z"
+                  last_seen_at: null
+                  api_key: "cw_9f3kQ2xVbN8pLmZ4tRwY7uHsA1dFgJ6kMnB5vCxZ0qE"
+                  note: "api_key is shown exactly once — store it securely; it cannot be retrieved again"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/clients/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Client id (BIGSERIAL). Non-numeric → `400`; absent → `404`.
+        schema: { type: integer, format: int64 }
+    patch:
+      tags: [admin]
+      summary: Update an API client (whitelisted fields)
+      description: |
+        Whitelisted fields only: `name`, `role`, `is_active`. Unknown JSON
+        keys are rejected with `400`; `PATCH {}` is a no-op returning the
+        current view. Writes are column-scoped, so `last_seen_at` and
+        concurrently patched sibling fields are preserved.
+
+        **Admin-lockout guards** — both return `409 ADMIN_LOCKOUT`:
+        (a) the acting client may never demote or deactivate **its own**
+        row (self no-ops like `{role:"admin"}` and self-renames pass);
+        (b) a mutation that removes an *active admin* is rejected when
+        zero other `role=admin AND is_active` rows remain — evaluated
+        post-state, so touching an already-inactive admin succeeds.
+
+        Patching a row seeded by `API_BOOTSTRAP_*` succeeds but returns a
+        `warnings[]` entry with code `env_managed`: the boot upsert
+        restores `name`/`role`/`is_active` at every restart, so a
+        revocation only persists after the env var is unset.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApiClientPatch" }
+            example: { is_active: false }
+      responses:
+        "200":
+          description: Post-write view plus warnings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ApiClient" }
+                  warnings:
+                    type: array
+                    items: { $ref: "#/components/schemas/ApiClientWarning" }
+              example:
+                data:
+                  id: 7
+                  name: bootstrap-admin
+                  role: admin
+                  is_active: false
+                  created_at: "2026-10-28T08:00:00Z"
+                  last_seen_at: "2026-11-05T10:12:44Z"
+                warnings:
+                  - code: env_managed
+                    message: "this client is managed by API_BOOTSTRAP_* env vars — the change is reverted at restart while the env var is set; unset API_BOOTSTRAP_* to revoke permanently"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Admin-lockout guard rejected the mutation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: ADMIN_LOCKOUT, message: "operation would remove the last active admin", request_id: "req_..." }
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -1619,6 +1780,67 @@ components:
         snapshot_checksum: { type: ["string", "null"] }
         snapshot_version: { type: ["string", "null"] }
         error_message: { type: ["string", "null"] }
+    ApiClient:
+      type: object
+      description: |
+        One api_clients row on the wire — enumerated fields only;
+        `key_hash` and raw key material never appear.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        role: { type: string, enum: [reader, admin] }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: ["string", "null"], format: date-time }
+    ApiClientCreated:
+      type: object
+      description: |
+        POST /admin/clients response — the ApiClient view plus `api_key`,
+        the only response that ever carries plaintext key material. The
+        row stores SHA-256 only; the key cannot be retrieved again.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        role: { type: string, enum: [reader, admin] }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: ["string", "null"], format: date-time }
+        api_key:
+          type: string
+          description: "`cw_` + base64url(32 bytes) — shown exactly once."
+        note: { type: string }
+    ApiClientCreate:
+      type: object
+      description: |
+        POST body — whitelisted fields only; unknown keys are `400`.
+        `name` counts characters (1–150), not bytes.
+      required: [name, role]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 150 }
+        role: { type: string, enum: [reader, admin] }
+    ApiClientPatch:
+      type: object
+      description: |
+        PATCH body — whitelisted fields only; unknown keys are `400`.
+        `{}` is a no-op returning the current view.
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 150 }
+        role: { type: string, enum: [reader, admin] }
+        is_active: { type: boolean }
+    ApiClientWarning:
+      type: object
+      description: |
+        Non-obvious effect of a write. `env_managed` means the row is
+        seeded by `API_BOOTSTRAP_*` and the boot upsert resurrects its
+        name/role/is_active at every restart — revocation persists only
+        after the env var is unset.
+      properties:
+        code:
+          type: string
+          enum: [env_managed]
+        message: { type: string }
     ProviderConfigView:
       type: object
       description: |
