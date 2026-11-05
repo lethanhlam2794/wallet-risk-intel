@@ -38,7 +38,7 @@ func TestLoad_Defaults(t *testing.T) {
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	assert.Equal(t, ":8080", cfg.HTTPAddr)
+	assert.Equal(t, ":8010", cfg.HTTPAddr)
 	assert.Equal(t, "info", cfg.LogLevel)
 	assert.Equal(t, 48*time.Hour, cfg.SanctionsStaleAfter)
 	assert.Equal(t, "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN_ADVANCED.XML", cfg.OFACSnapshotURL)

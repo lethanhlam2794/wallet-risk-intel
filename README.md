@@ -70,7 +70,7 @@ export API_BOOTSTRAP_READER_KEY='dev-reader-key'
 From `apps/api/`:
 
 ```bash
-# API on :8080
+# API on :8010
 DATABASE_URL=... REDIS_URL=... go run ./cmd/api
 
 # Ingest OFAC SDN (downloads the ~128MB Advanced XML)
@@ -97,12 +97,12 @@ and never auto-verified; an absent label is **no data, not a safe verdict**;
 ```bash
 # List a wallet's labels (reader key)
 curl -H "X-API-Key: dev-reader-key" \
-  'http://localhost:8080/api/v1/wallets/ethereum/0x…/labels?limit=50'
+  'http://localhost:8010/api/v1/wallets/ethereum/0x…/labels?limit=50'
 
 # Filters: category / source / source_field / verification_status /
 # active_only=false (shows soft-revoked rows) / cursor pagination
 curl -H "X-API-Key: dev-reader-key" \
-  'http://localhost:8080/api/v1/wallets/ethereum/0x…/labels?category=scam&active_only=false'
+  'http://localhost:8010/api/v1/wallets/ethereum/0x…/labels?category=scam&active_only=false'
 ```
 
 `data_status`/`last_synced_at` reflect the latest published label snapshot
@@ -136,7 +136,7 @@ source+wallet). Provider `Authorization` headers are never logged.
 
 ```bash
 curl -H "X-API-Key: dev-reader-key" \
-  'http://localhost:8080/api/v1/wallets/ethereum/0x098B716B8Aaf21512996dC57EB0615e2383E2f96/enrichment'
+  'http://localhost:8010/api/v1/wallets/ethereum/0x098B716B8Aaf21512996dC57EB0615e2383E2f96/enrichment'
 ```
 
 ## Example calls
@@ -144,18 +144,18 @@ curl -H "X-API-Key: dev-reader-key" \
 ```bash
 # Exact sanctions match (reader or admin key)
 curl -H "X-API-Key: dev-reader-key" \
-  'http://localhost:8080/api/v1/sanctions/wallets/ethereum/0x098B716B8Aaf21512996dC57EB0615e2383E2f96'
+  'http://localhost:8010/api/v1/sanctions/wallets/ethereum/0x098B716B8Aaf21512996dC57EB0615e2383E2f96'
 
 # Trigger an ingestion (admin key) → 202 + run id
 curl -X POST -H "X-API-Key: dev-admin-key" -H 'Content-Type: application/json' \
-  -d '{"source":"ofac_sdn"}' http://localhost:8080/api/v1/admin/ingestion-runs
+  -d '{"source":"ofac_sdn"}' http://localhost:8010/api/v1/admin/ingestion-runs
 
 # Poll run status
 curl -H "X-API-Key: dev-admin-key" \
-  http://localhost:8080/api/v1/admin/ingestion-runs/<run_id>
+  http://localhost:8010/api/v1/admin/ingestion-runs/<run_id>
 
 # Metrics (reader key)
-curl -H "X-API-Key: dev-reader-key" http://localhost:8080/metrics
+curl -H "X-API-Key: dev-reader-key" http://localhost:8010/metrics
 ```
 
 ## Test

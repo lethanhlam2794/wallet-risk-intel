@@ -151,7 +151,7 @@ type Config struct {
 // required value is missing.
 func Load() (*Config, error) {
 	cfg := &Config{
-		HTTPAddr:                  envOr("HTTP_ADDR", ":8080"),
+		HTTPAddr:                  envOr("HTTP_ADDR", ":8010"),
 		DatabaseURL:               os.Getenv("DATABASE_URL"),
 		RedisURL:                  envOr("REDIS_URL", "redis://127.0.0.1:6380/0"),
 		LogLevel:                  envOr("LOG_LEVEL", "info"),
