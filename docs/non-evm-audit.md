@@ -7,6 +7,14 @@ behavior. Enablement itself requires an AGENTS.md §15 review.
 
 Audited: 2026-11-06, post-implementation of `AddressFormat`,
 `wallet.Normalize` dispatch, and the D4b `is_active` predicates.
+Updated same-day by the TRON enablement-prep increment: `GetOrCreate`
+address_type stamping resolved (see below), and a **dormant, unwired**
+`provider.TxProvider` adapter for TRON now exists at
+`internal/provider/trongrid/` — decisions in
+`docs/tron-provider-decision.md` and `docs/tron-indexer-semantics.md`.
+Dormant runtime shape: an unwired network resolves to `len(chain)==0`
+providers → `writeDisabled` marks its index state `"disabled"`
+(`internal/transaction/service.go:296-300`) — never traffic.
 
 ## What groundwork already shipped
 
@@ -29,7 +37,10 @@ Audited: 2026-11-06, post-implementation of `AddressFormat`,
 - `transfer_index VARCHAR(100)` (L13) + `UNIQUE(network_id, tx_hash,
   transfer_index)` (L33): identity scheme for SPL inner instructions /
   TRC-20 log entries is **undefined** — the unique key holds, but the
-  indexer must define what a transfer_index is per chain.
+  indexer must define what a transfer_index is per chain. TRON is now
+  **defined**: `{n|t}:{contentHash16}.{k}` verbatim reuse, decided and
+  evidenced in `docs/tron-indexer-semantics.md` §a and implemented by the
+  dormant adapter. Solana SPL remains undefined.
 - `block_number BIGINT` (L22): fits Solana slots numerically, but slot ≠
   block (skipped slots, commitment levels) — semantics must be renamed or
   reinterpreted; queries that order/compare by it carry EVM assumptions.
@@ -46,7 +57,10 @@ Audited: 2026-11-06, post-implementation of `AddressFormat`,
   ordering requirement** the coverage watermark depends on (L269-271).
   Slot-based Solana needs a reviewed slot↔watermark mapping.
 - `Kinds` (`NATIVE`/`TOKEN`) vs SPL / TRC-20 transfer typing must be mapped
-  in the future adapter; comments/adapters assume hex-ish tx_hash.
+  in the future adapter; comments/adapters assume hex-ish tx_hash. TRON
+  mapping is **defined** (TRC-20 `type="Transfer"` → TOKEN, native
+  `TransferContract` → NATIVE, Approval excluded — semantics doc §e) and
+  the dormant `trongrid` adapter implements it.
 
 ### tracing — `internal/tracing/`
 - BFS keys off `network_id` + `normalized_address`; disjoint address
@@ -63,14 +77,24 @@ Audited: 2026-11-06, post-implementation of `AddressFormat`,
   (mapper.go:124 currently normalizes EVM only).
 
 ### scoring/screening — `address_type` `'evm'` literals
-- Literal sites: `queries/transactions.sql:27`,
-  `queries/ofac_publish.sql:54`, `queries/labels_publish.sql:9`,
-  `queries/stablecoin_freeze.sql:58`.
-- The real enablement blocker is `internal/wallet/service.go:25`:
-  `Service.GetOrCreate` stamps `AddressType: "evm"` via the `$4` param of
-  `GetOrCreateWallet` — its signature has no format/type argument. NOTE:
-  `queries/wallets.sql` is **not** a literal site (param-driven); no SQL
-  change needed there, only a service-signature change at enablement.
+- Literal sites: `queries/transactions.sql:30`,
+  `queries/ofac_publish.sql:57`, `queries/labels_publish.sql:12`,
+  `queries/stablecoin_freeze.sql:61` — each now carries a leading `--`
+  comment block explaining the literal is EVM-only because its upstream
+  feed is; format-aware stamping is still an enablement task.
+- ~~The real enablement blocker is `internal/wallet/service.go:25`~~
+  **RESOLVED** (enablement-prep): `Service.GetOrCreate` is now
+  `GetOrCreate(ctx, net network.Network, address, normalized string)` and
+  stamps `string(net.AddressFormat())` — `"evm"`/`"tron"`/`"solana"` —
+  failing closed with `ErrUnknownAddressFormat` when the namespace has no
+  mapped format (a wallet row can never carry an empty `address_type`).
+  Callers updated: `internal/screening/service.go:146`,
+  `internal/enrichment/service.go:117`,
+  `internal/transaction/service.go:182`,
+  `internal/httpserver/server.go:270` (this last one was **missed** by the
+  original audit — it calls `wallet.Service` directly, not through
+  `WalletStore`), plus the `screening.WalletStore` interface and ten test
+  call sites. `queries/wallets.sql` remains parameter-driven — unchanged.
 
 ### labels publish path — D4b (fixed this change, re-check pattern)
 - Five `bn.code` joins previously matched inactive codes unfiltered:
@@ -126,8 +150,14 @@ Audited: 2026-11-06, post-implementation of `AddressFormat`,
 
 ## Pending §15 review (not started, by design)
 - Flipping `is_active` on solana/tron (traffic enablement).
-- Any TxProvider/SnapshotSource adapter code (see
-  `non-evm-provider-discovery.md`).
+- ~~Any TxProvider/SnapshotSource adapter code~~ — TRON adapter code now
+  **exists but is dormant/unwired** (`internal/provider/trongrid/`,
+  provider decision + indexer semantics in the two docs above). Still
+  §15: `data_sources` row, providerconfig descriptor, selector wiring,
+  `TX_PROVIDER_TRON` env surface, and the `identity.go`/`list.go`/
+  `transactions.sql` normalize+literal switches enumerated in
+  `tron-indexer-semantics.md` §f. Solana adapter: none exists.
 - Transactions/indexer schema semantics for slot-based chains.
-- `Service.GetOrCreate` signature (address_type as a parameter).
+- ~~`Service.GetOrCreate` signature (address_type as a parameter)~~ —
+  RESOLVED (see above).
 - OpenAPI `Address` pattern generalization.
