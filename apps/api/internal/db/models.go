@@ -53,6 +53,15 @@ type Entity struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type FreezeScanState struct {
+	NetworkID        int64              `json:"network_id"`
+	ContractAddress  string             `json:"contract_address"`
+	GenesisBlock     int64              `json:"genesis_block"`
+	LastScannedBlock int64              `json:"last_scanned_block"`
+	LastHeadBlock    int64              `json:"last_head_block"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 type IngestionRun struct {
 	ID               pgtype.UUID        `json:"id"`
 	SourceID         int64              `json:"source_id"`
@@ -205,6 +214,20 @@ type ScreeningResult struct {
 	ScreenedAt           pgtype.Timestamptz `json:"screened_at"`
 	Request              []byte             `json:"request"`
 	Result               []byte             `json:"result"`
+}
+
+type StgFreezeEvent struct {
+	RunID           pgtype.UUID        `json:"run_id"`
+	ContractAddress string             `json:"contract_address"`
+	EventType       string             `json:"event_type"`
+	WalletAddress   string             `json:"wallet_address"`
+	TxHash          string             `json:"tx_hash"`
+	LogIndex        int32              `json:"log_index"`
+	BlockNumber     int64              `json:"block_number"`
+	BlockTs         pgtype.Timestamptz `json:"block_ts"`
+	Fingerprint     string             `json:"fingerprint"`
+	Label           string             `json:"label"`
+	Evidence        []byte             `json:"evidence"`
 }
 
 type StgSanctionsEntity struct {

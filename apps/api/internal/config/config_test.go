@@ -143,3 +143,43 @@ func TestLoad_WarmIndexNumericErrors(t *testing.T) {
 		t.Setenv(env, "")
 	}
 }
+
+func TestLoad_FreezeScanDefaults(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://wallet:devonly@127.0.0.1:5433/check_wallet?sslmode=disable")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, int64(50000), cfg.FreezeScanBlockRange)
+	assert.Equal(t, int64(2000000), cfg.FreezeScanMaxBlocksPerRun)
+	assert.Equal(t, int64(12), cfg.FreezeScanConfirmations)
+	assert.Equal(t, "ankr", cfg.FreezeScanRPCProvider)
+}
+
+func TestLoad_FreezeScanOverrides(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://wallet:devonly@127.0.0.1:5433/check_wallet?sslmode=disable")
+	t.Setenv("FREEZE_SCAN_RPC_PROVIDER", "ankr")
+	t.Setenv("FREEZE_SCAN_BLOCK_RANGE", "10000")
+	t.Setenv("FREEZE_SCAN_MAX_BLOCKS_PER_RUN", "100000")
+	t.Setenv("FREEZE_SCAN_CONFIRMATIONS", "20")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, int64(10000), cfg.FreezeScanBlockRange)
+	assert.Equal(t, int64(100000), cfg.FreezeScanMaxBlocksPerRun)
+	assert.Equal(t, int64(20), cfg.FreezeScanConfirmations)
+	assert.Equal(t, "ankr", cfg.FreezeScanRPCProvider)
+}
+
+func TestLoad_FreezeScanNumericErrors(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://wallet:devonly@127.0.0.1:5433/check_wallet?sslmode=disable")
+	for _, key := range []string{
+		"FREEZE_SCAN_BLOCK_RANGE", "FREEZE_SCAN_MAX_BLOCKS_PER_RUN",
+		"FREEZE_SCAN_CONFIRMATIONS",
+	} {
+		t.Setenv(key, "abc")
+		_, err := Load()
+		require.Error(t, err, "malformed %s must fail", key)
+		assert.Contains(t, err.Error(), key)
+		t.Setenv(key, "")
+	}
+}

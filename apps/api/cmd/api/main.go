@@ -50,6 +50,7 @@ import (
 	"checkwallet/internal/provider/oklink"
 	"checkwallet/internal/provider/publicaml"
 	"checkwallet/internal/provider/resilience"
+	"checkwallet/internal/provider/stablefreeze"
 	"checkwallet/internal/provider/tatum"
 	"checkwallet/internal/provider/tokenview"
 	"checkwallet/internal/provider/walletattribution"
@@ -137,6 +138,23 @@ func run() error {
 	fetchers := map[string]provider.SnapshotSource{
 		"ofac_sdn":                   ofacDl,
 		walletattribution.SourceCode: wattrDl,
+	}
+	// stablecoin_freeze: wire the chain-scan fetcher off the resolved RPC
+	// provider config. A gap (missing key, inactive row, ethereum
+	// disabled) fails CLOSED — the admin trigger still lands a run, but
+	// it lands FAILED ("no downloader configured"), never an empty
+	// artifact that reads as a clean scan.
+	fsc, err := stablefreeze.BuildScanner(queries, pcRes, cfg.FreezeScanRPCProvider,
+		stablefreeze.Config{
+			BlockRange:      cfg.FreezeScanBlockRange,
+			MaxBlocksPerRun: cfg.FreezeScanMaxBlocksPerRun,
+			Confirmations:   cfg.FreezeScanConfirmations,
+		})
+	if err != nil {
+		log.Warn("stablefreeze scanner unavailable — runs will fail closed",
+			"error", err)
+	} else {
+		fetchers[stablefreeze.SourceCode] = fsc
 	}
 	ingestSvc := ingestion.NewService(pool, resolver, fetchers, log)
 	ingestSvc.SweepStaleRuns(ctx) // crashed workers leave no zombie RUNNING rows

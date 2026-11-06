@@ -36,11 +36,17 @@ func (q *Queries) CountActiveWalletLabels(ctx context.Context, walletID int64) (
 
 const latestLabelSnapshotPublished = `-- name: LatestLabelSnapshotPublished :one
 SELECT id, source_id, version, checksum, published_at, row_count FROM data_source_snapshots
-WHERE source_id = (SELECT id FROM data_sources WHERE code = 'wallet_attribution')
+WHERE source_id IN (
+    SELECT id FROM data_sources
+    WHERE code IN ('wallet_attribution', 'stablecoin_freeze'))
 ORDER BY published_at DESC, id DESC
 LIMIT 1
 `
 
+// Latest publish across EVERY label-producing source — wallet-label and
+// screening caches embed this version, so a publish from either
+// wallet_attribution (full replace) or stablecoin_freeze (delta) must
+// invalidate them.
 func (q *Queries) LatestLabelSnapshotPublished(ctx context.Context) (DataSourceSnapshot, error) {
 	row := q.db.QueryRow(ctx, latestLabelSnapshotPublished)
 	var i DataSourceSnapshot

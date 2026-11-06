@@ -155,6 +155,15 @@ type Config struct {
 	WarmIndexItemBudget   int
 	WarmIndexMaxPages     int
 
+	// Stablecoin freeze chain-scan (stablecoin_freeze source). The scan
+	// floor is head-Confirmations; each eth_getLogs call spans at most
+	// BlockRange blocks; one run advances each contract cursor at most
+	// MaxBlocksPerRun blocks (until-caught-up loops the rest).
+	FreezeScanBlockRange      int64
+	FreezeScanMaxBlocksPerRun int64
+	FreezeScanConfirmations   int64
+	FreezeScanRPCProvider     string // provider_configs code supplying JSON-RPC
+
 	// ProviderConfigKEK encrypts provider_configs.api_key at rest when set
 	// (32-byte base64/hex, AES-256-GCM); unset = honest plaintext storage.
 	ProviderConfigKEK string
@@ -366,6 +375,16 @@ func Load() (*Config, error) {
 	if cfg.WarmIndexMaxPages, err = envInt("WARM_INDEX_MAX_PAGES", 10); err != nil {
 		return nil, err
 	}
+	if cfg.FreezeScanBlockRange, err = envInt64("FREEZE_SCAN_BLOCK_RANGE", 50000); err != nil {
+		return nil, err
+	}
+	if cfg.FreezeScanMaxBlocksPerRun, err = envInt64("FREEZE_SCAN_MAX_BLOCKS_PER_RUN", 2000000); err != nil {
+		return nil, err
+	}
+	if cfg.FreezeScanConfirmations, err = envInt64("FREEZE_SCAN_CONFIRMATIONS", 12); err != nil {
+		return nil, err
+	}
+	cfg.FreezeScanRPCProvider = envOr("FREEZE_SCAN_RPC_PROVIDER", "ankr")
 	return cfg, nil
 }
 

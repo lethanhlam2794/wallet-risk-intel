@@ -17,9 +17,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/joho/godotenv"
 
@@ -32,6 +34,7 @@ import (
 	"checkwallet/internal/platform/logger"
 	"checkwallet/internal/provider"
 	"checkwallet/internal/provider/ofac"
+	"checkwallet/internal/provider/stablefreeze"
 	"checkwallet/internal/provider/walletattribution"
 	"checkwallet/internal/providerconfig"
 	"checkwallet/internal/wallet"
@@ -42,12 +45,14 @@ func main() {
 	mode := flag.String("mode", "ingest", "worker mode: ingest|warmdrain")
 	source := flag.String("source", "ofac_sdn", "data source code to ingest")
 	file := flag.String("file", "", "local snapshot file (skips download)")
+	untilCaughtUp := flag.Bool("until-caught-up", false,
+		"stablecoin_freeze: repeat runs until all cursors reach head-confirmations")
 	flag.Parse()
 
 	var err error
 	switch *mode {
 	case "ingest":
-		err = run(*source, *file)
+		err = run(*source, *file, *untilCaughtUp)
 	case "warmdrain":
 		err = runWarmDrain()
 	default:
@@ -59,7 +64,11 @@ func main() {
 	}
 }
 
-func run(source, file string) error {
+func run(source, file string, untilCaughtUp bool) error {
+	if untilCaughtUp && file != "" {
+		return fmt.Errorf("-until-caught-up requires chain-scan mode (no -file); " +
+			"a file-mode artifact cannot advance cursors past its own toBlock")
+	}
 	_ = godotenv.Load() // .env optional; real env always wins
 	cfg, err := config.Load()
 	if err != nil {
@@ -104,28 +113,93 @@ func run(source, file string) error {
 		}
 		fetchers["ofac_sdn"] = ofacDl
 		fetchers[walletattribution.SourceCode] = wattrDl
+
+		// stablecoin_freeze: resolve the RPC provider's stored/env config,
+		// then build the scanner. Any gap (missing key, inactive row,
+		// ethereum disabled) fails CLOSED — the fetcher is simply absent
+		// so a triggered run lands FAILED ("no downloader configured")
+		// rather than emitting a fabricated artifact.
+		pcKeys, err := providerconfig.NewKeystore(cfg.ProviderConfigKEK)
+		if err != nil {
+			return err
+		}
+		pcRes, err := providerconfig.ResolveAll(ctx, cfg, queries, pcKeys,
+			providerconfig.WithLogger(log))
+		if err != nil {
+			return err
+		}
+		fsc, err := stablefreeze.BuildScanner(queries, pcRes, cfg.FreezeScanRPCProvider,
+			stablefreeze.Config{
+				BlockRange:      cfg.FreezeScanBlockRange,
+				MaxBlocksPerRun: cfg.FreezeScanMaxBlocksPerRun,
+				Confirmations:   cfg.FreezeScanConfirmations,
+			})
+		if err != nil {
+			log.Warn("stablefreeze scanner unavailable — runs will fail closed",
+				"error", err)
+		} else {
+			fetchers[stablefreeze.SourceCode] = fsc
+		}
 	}
 
 	svc := ingestion.NewService(pool, resolver, fetchers, log)
 	svc.SweepStaleRuns(ctx)
-	runID, err := svc.RunSync(ctx, ingestion.RunRequest{
-		SourceCode: source, TriggeredBy: "worker", FilePath: file,
-	})
-	if err != nil {
-		return err
-	}
 
-	run, err := queries.GetIngestionRun(context.Background(),
-		pgtype.UUID{Bytes: runID, Valid: true})
+	var runID uuid.UUID
+	for pass := 0; ; pass++ {
+		runID, err = svc.RunSync(ctx, ingestion.RunRequest{
+			SourceCode: source, TriggeredBy: "worker", FilePath: file,
+		})
+		if err != nil {
+			return err
+		}
+		run, err := queries.GetIngestionRun(context.Background(),
+			pgtype.UUID{Bytes: runID, Valid: true})
+		if err != nil {
+			return err
+		}
+		fmt.Printf("run_id=%s status=%s version=%s\n",
+			runID, run.Status, run.SnapshotVersion.String)
+		if run.Status != "COMPLETED" {
+			return fmt.Errorf("run %s: %s", run.Status, run.ErrorMessage.String)
+		}
+		if !untilCaughtUp || source != stablefreeze.SourceCode {
+			return nil
+		}
+		caught, err := freezeCaughtUp(ctx, queries, cfg.FreezeScanConfirmations)
+		if err != nil {
+			return err
+		}
+		if caught {
+			fmt.Println("all freeze cursors caught up to head-confirmations")
+			return nil
+		}
+		log.Info("freeze cursors behind head — next pass", "pass", pass+1)
+	}
+}
+
+// freezeCaughtUp reports whether every WATCHED contract cursor has
+// reached its run's head-confirmations floor — the honest exit for
+// -until-caught-up. Seeded rows for contracts the registry does not
+// scan are ignored: their cursor can never advance, so counting them
+// would loop forever.
+func freezeCaughtUp(ctx context.Context, q *db.Queries, conf int64) (bool, error) {
+	states, err := q.GetFreezeScanStates(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
-	fmt.Printf("run_id=%s status=%s version=%s\n",
-		runID, run.Status, run.SnapshotVersion.String)
-	if run.Status != "COMPLETED" {
-		return fmt.Errorf("run %s: %s", run.Status, run.ErrorMessage.String)
+	watched := stablefreeze.RegistryByAddress()
+	seen := 0
+	for _, st := range states {
+		if _, ok := watched[strings.ToLower(st.ContractAddress)]; !ok {
+			continue
+		}
+		seen++
+		if st.LastScannedBlock < st.LastHeadBlock-conf {
+			return false, nil
+		}
 	}
-	return nil
+	return seen > 0, nil
 }
 
 // runWarmDrain is the warm-index drain loop (warm-index-queue v1). It

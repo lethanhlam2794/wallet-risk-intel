@@ -27,6 +27,7 @@ import (
 	"checkwallet/internal/network"
 	"checkwallet/internal/platform/metrics"
 	"checkwallet/internal/provider"
+	"checkwallet/internal/provider/stablefreeze"
 	"checkwallet/internal/provider/walletattribution"
 )
 
@@ -109,6 +110,19 @@ func NewService(pool *pgxpool.Pool, resolver *network.Resolver,
 	s.pipelines = map[string]Pipeline{
 		"ofac_sdn":                   newOFACPipeline(nets, func() time.Time { return s.now() }),
 		walletattribution.SourceCode: newLabelsPipeline(nets, func() time.Time { return s.now() }, log),
+		stablefreeze.SourceCode:      newFreezePipeline(nets, func() time.Time { return s.now() }),
+	}
+	// Boot assertion: every declared staging name must resolve in BOTH
+	// housekeeping maps — a missing entry leaks dead-run staging forever.
+	for code, p := range s.pipelines {
+		for _, name := range p.StagingNames() {
+			if _, ok := stagingPurge[name]; !ok {
+				panic(fmt.Sprintf("pipeline %s: staging %q missing from stagingPurge", code, name))
+			}
+			if _, ok := stagingDelete[name]; !ok {
+				panic(fmt.Sprintf("pipeline %s: staging %q missing from stagingDelete", code, name))
+			}
+		}
 	}
 	return s
 }

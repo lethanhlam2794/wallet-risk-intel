@@ -63,6 +63,9 @@ var stagingPurge = map[string]func(context.Context, *db.Queries, []pgtype.UUID) 
 	"wallet_labels": func(ctx context.Context, q *db.Queries, k []pgtype.UUID) error {
 		return q.StgPurgeWalletLabelsExceptRuns(ctx, k)
 	},
+	"freeze_events": func(ctx context.Context, q *db.Queries, k []pgtype.UUID) error {
+		return q.StgPurgeFreezeEventsExceptRuns(ctx, k)
+	},
 }
 
 // stagingDelete maps a logical staging name to its "delete this run's
@@ -78,5 +81,8 @@ var stagingDelete = map[string]func(context.Context, *db.Queries, pgtype.UUID) e
 	"sanctions_references": func(ctx context.Context, q *db.Queries, u pgtype.UUID) error { return q.StgDeleteRunReferences(ctx, u) },
 	"wallet_labels": func(ctx context.Context, q *db.Queries, u pgtype.UUID) error {
 		return q.StgDeleteRunWalletLabels(ctx, u)
+	},
+	"freeze_events": func(ctx context.Context, q *db.Queries, u pgtype.UUID) error {
+		return q.StgDeleteRunFreezeEvents(ctx, u)
 	},
 }
