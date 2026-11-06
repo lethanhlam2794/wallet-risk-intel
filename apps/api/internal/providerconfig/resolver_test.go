@@ -76,10 +76,10 @@ func resolve(t *testing.T, cfg *config.Config, store Store) *Resolver {
 	return r
 }
 
-func TestDescriptorMap_CoversAllTwelveTxProviders(t *testing.T) {
-	want := []string{"alchemy", "ankr", "bitquery", "blockscout", "blockscout_pro",
-		"chainbase", "chainscan", "covalent", "moralis", "nodereal", "oklink",
-		"tatum", "tokenview"}
+func TestDescriptorMap_CoversAllTxProviders(t *testing.T) {
+	want := []string{"alchemy", "alchemy_bsc", "alchemy_eth", "ankr", "bitquery",
+		"blockscout", "blockscout_pro", "chainbase", "chainscan", "covalent",
+		"moralis", "nodereal", "oklink", "tatum", "tokenview"}
 	assert.ElementsMatch(t, want, Codes())
 	assert.Equal(t, "ETHERSCAN_API_KEY", descriptorFor("chainscan").KeyEnv,
 		"chainscan resolves its key from ETHERSCAN_API_KEY")

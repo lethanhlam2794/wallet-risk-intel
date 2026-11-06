@@ -44,7 +44,7 @@ func TestService_ListMarksUnconfigured(t *testing.T) {
 	svc, _, _ := newSvc(t, nil)
 	views, err := svc.List(context.Background())
 	require.NoError(t, err)
-	assert.Len(t, views, 13)
+	assert.Len(t, views, 15)
 	for _, v := range views {
 		assert.False(t, v.Configured, "%s unconfigured", v.SourceCode)
 		assert.Equal(t, "active", v.Status)

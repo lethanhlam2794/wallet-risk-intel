@@ -46,7 +46,7 @@ func warmLaneBudget(cfg *config.Config, code string) int {
 		return cfg.IndexingBudgetETH
 	case nodereal.SourceCode:
 		return cfg.IndexingBudgetBSC
-	case alchemy.SourceCode:
+	case alchemy.SourceCode, alchemy.SourceCodeEth, alchemy.SourceCodeBsc:
 		return cfg.IndexingBudgetAlchemy
 	case blockscout.SourceCode:
 		return cfg.IndexingBudgetBlockscout
@@ -83,8 +83,9 @@ func buildWarmAdapter(code string,
 		return chainscan.New(res.BaseURL, res.APIKey, res.EnabledChains)
 	case nodereal.SourceCode:
 		return nodereal.New(res.BaseURL, res.APIKey)
-	case alchemy.SourceCode:
-		return alchemy.New(res.BaseURL, res.APIKey, res.EnabledChains)
+	case alchemy.SourceCode, alchemy.SourceCodeEth, alchemy.SourceCodeBsc:
+		return alchemy.New(res.BaseURL, res.APIKey, res.EnabledChains,
+			alchemy.WithSourceCode(code))
 	case blockscout.SourceCode:
 		return blockscout.New(res.BaseURL, res.EnabledChains)
 	case blockscoutpro.SourceCode:

@@ -29,8 +29,17 @@ import (
 	"checkwallet/internal/provider/resilience"
 )
 
-// SourceCode is the data_sources registry key.
+// SourceCode is the data_sources registry key (legacy single-row form,
+// deprecated in favor of the per-chain split below).
 const SourceCode = "alchemy"
+
+// Per-chain registry keys: Alchemy issues a distinct endpoint host per
+// network, so each chain gets its own provider_configs row, key slot and
+// base_url. Both may legitimately share one api_key.
+const (
+	SourceCodeEth = "alchemy_eth"
+	SourceCodeBsc = "alchemy_bsc"
+)
 
 const (
 	streamFrom = "from"
@@ -60,6 +69,7 @@ var chains = map[string]bool{"ethereum": true, "bsc": true}
 
 // Adapter implements provider.TxProvider over Alchemy.
 type Adapter struct {
+	sourceCode   string // registry key for Name(): budget, data_sources, resets
 	baseURL      string // optional override applied to every chain (dev/test)
 	apiKey       string
 	chains       map[string]bool
@@ -100,6 +110,13 @@ func WithDurationFunc(f func(time.Duration)) Option {
 	return func(a *Adapter) { a.onDuration = f }
 }
 
+// WithSourceCode binds the instance to a per-chain registry key
+// (alchemy_eth / alchemy_bsc) — Name() reports it so budgets, data_sources
+// checks, and provider-switch resets scope to the right row.
+func WithSourceCode(code string) Option {
+	return func(a *Adapter) { a.sourceCode = code }
+}
+
 // New validates the base URL and builds the resilience client. baseURL=""
 // selects the documented per-network endpoints; a non-empty baseURL
 // overrides every chain (dev/test only — still allowlist-checked).
@@ -107,6 +124,7 @@ func WithDurationFunc(f func(time.Duration)) Option {
 // billed ~120 CU/call so the free-tier CUPS budget is binding by design.
 func New(baseURL, apiKey string, enabledChains []string, opts ...Option) (*Adapter, error) {
 	a := &Adapter{
+		sourceCode:   SourceCode,
 		baseURL:      strings.TrimRight(baseURL, "/"),
 		apiKey:       apiKey,
 		chains:       map[string]bool{},
@@ -183,7 +201,7 @@ func (a *Adapter) validateBaseURLs() error {
 }
 
 // Name is the provider registry key.
-func (a *Adapter) Name() string { return SourceCode }
+func (a *Adapter) Name() string { return a.sourceCode }
 
 // Enabled reports whether the adapter may serve the network: an API key
 // is required and the chain must be enabled in config.
@@ -414,5 +432,11 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network,
 }
 
 // init publishes the default SSRF allowlist so non-adapter callers
-// (config resolution, admin writes) apply the same host check.
-func init() { provider.RegisterAllowedHosts(SourceCode, defaultAllowedHosts) }
+// (config resolution, admin writes) apply the same host check. The split
+// codes get only their own chain's host — a bsc row can never be pointed
+// at the ethereum endpoint (or anywhere else).
+func init() {
+	provider.RegisterAllowedHosts(SourceCode, defaultAllowedHosts)
+	provider.RegisterAllowedHosts(SourceCodeEth, []string{"eth-mainnet.g.alchemy.com"})
+	provider.RegisterAllowedHosts(SourceCodeBsc, []string{"bnb-mainnet.g.alchemy.com"})
+}

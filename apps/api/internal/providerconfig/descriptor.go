@@ -32,6 +32,24 @@ var descriptors = map[string]Descriptor{
 		base:   func(c *config.Config) string { return c.AlchemyBaseURL },
 		chains: func(c *config.Config) string { return c.AlchemyEnabledChains },
 	},
+	// Per-chain split: each row is pinned to its own Alchemy endpoint
+	// (compiled default — the documented per-chain host), shares the
+	// ALCHEMY_API_KEY env fallback, and serves exactly one chain. DB rows
+	// may still override base_url/key independently per chain.
+	"alchemy_eth": {
+		SourceCode: "alchemy_eth",
+		KeyEnv:     "ALCHEMY_API_KEY",
+		apiKey:     func(c *config.Config) string { return c.AlchemyAPIKey },
+		base:       func(*config.Config) string { return "https://eth-mainnet.g.alchemy.com/v2" },
+		chains:     func(*config.Config) string { return "ethereum" },
+	},
+	"alchemy_bsc": {
+		SourceCode: "alchemy_bsc",
+		KeyEnv:     "ALCHEMY_API_KEY",
+		apiKey:     func(c *config.Config) string { return c.AlchemyAPIKey },
+		base:       func(*config.Config) string { return "https://bnb-mainnet.g.alchemy.com/v2" },
+		chains:     func(*config.Config) string { return "bsc" },
+	},
 	"ankr": {
 		SourceCode: "ankr",
 		KeyEnv:     "ANKR_API_KEY", BaseURLEnv: "ANKR_BASE_URL", ChainsEnv: "ANKR_ENABLED_CHAINS",

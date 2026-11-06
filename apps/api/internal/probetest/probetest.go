@@ -62,8 +62,9 @@ func adapterFor(code string, r *providerconfig.Resolved) (provider.TxProvider, e
 		return chainscan.New(r.BaseURL, r.APIKey, r.EnabledChains)
 	case nodereal.SourceCode:
 		return nodereal.New(r.BaseURL, r.APIKey)
-	case alchemy.SourceCode:
-		return alchemy.New(r.BaseURL, r.APIKey, r.EnabledChains)
+	case alchemy.SourceCode, alchemy.SourceCodeEth, alchemy.SourceCodeBsc:
+		return alchemy.New(r.BaseURL, r.APIKey, r.EnabledChains,
+			alchemy.WithSourceCode(code))
 	case blockscout.SourceCode:
 		return blockscout.New(r.BaseURL, r.EnabledChains)
 	case blockscoutpro.SourceCode:

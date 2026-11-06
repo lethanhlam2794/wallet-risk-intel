@@ -315,13 +315,21 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	al, err := alchemy.New(resolved(alchemy.SourceCode).BaseURL,
-		resolved(alchemy.SourceCode).APIKey,
-		resolved(alchemy.SourceCode).EnabledChains,
-		alchemy.WithHooks(hooksFor(alchemy.SourceCode)),
-		alchemy.WithDurationFunc(m.ProviderDurationHook(alchemy.SourceCode)))
-	if err != nil {
-		return nil, nil, nil, err
+	alchemyAdapters := map[string]provider.TxProvider{}
+	for _, code := range []string{alchemy.SourceCodeEth, alchemy.SourceCodeBsc} {
+		a, err := alchemy.New(resolved(code).BaseURL,
+			resolved(code).APIKey,
+			resolved(code).EnabledChains,
+			alchemy.WithSourceCode(code),
+			alchemy.WithHooks(hooksFor(code)),
+			alchemy.WithDurationFunc(m.ProviderDurationHook(code)))
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if resolved(code).APIKey == "" {
+			log.Info(code + " disabled: no api key configured")
+		}
+		alchemyAdapters[code] = a
 	}
 	if resolved(chainscan.SourceCode).APIKey == "" {
 		log.Info("chainscan disabled: no api key configured")
@@ -354,9 +362,6 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 		ankr.WithDurationFunc(m.ProviderDurationHook(ankr.SourceCode)))
 	if err != nil {
 		return nil, nil, nil, err
-	}
-	if resolved(alchemy.SourceCode).APIKey == "" {
-		log.Info("alchemy disabled: no api key configured")
 	}
 	cv, err := covalent.New(resolved(covalent.SourceCode).BaseURL,
 		resolved(covalent.SourceCode).APIKey,
@@ -444,7 +449,8 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	registry := map[string]provider.TxProvider{
 		chainscan.SourceCode:     cs,
 		nodereal.SourceCode:      nr,
-		alchemy.SourceCode:       al,
+		alchemy.SourceCodeEth:    alchemyAdapters[alchemy.SourceCodeEth],
+		alchemy.SourceCodeBsc:    alchemyAdapters[alchemy.SourceCodeBsc],
 		blockscout.SourceCode:    bs,
 		blockscoutpro.SourceCode: bsp,
 		ankr.SourceCode:          an,
@@ -470,7 +476,8 @@ func buildTransactions(ctx context.Context, cfg *config.Config, pool *pgxpool.Po
 	budget := map[string]int{
 		chainscan.SourceCode:     cfg.IndexingBudgetETH,
 		nodereal.SourceCode:      cfg.IndexingBudgetBSC,
-		alchemy.SourceCode:       cfg.IndexingBudgetAlchemy,
+		alchemy.SourceCodeEth:    cfg.IndexingBudgetAlchemy,
+		alchemy.SourceCodeBsc:    cfg.IndexingBudgetAlchemy,
 		blockscout.SourceCode:    cfg.IndexingBudgetBlockscout,
 		blockscoutpro.SourceCode: cfg.IndexingBudgetBlockscoutPro,
 		ankr.SourceCode:          cfg.IndexingBudgetAnkr,
