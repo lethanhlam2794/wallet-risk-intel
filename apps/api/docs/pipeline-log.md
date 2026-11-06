@@ -280,3 +280,92 @@
   - Session IDs logged: Stage1 `rounded-sight`, Stage2 `humdrum-neighbor`, Stage3 `bright-otter`
 - **Self-Audit Commitment**:
   - Every number in the guidebook was re-executed live this session (Stage 5), not copied from prior reports.
+
+## Feature: non-evm-expansion (`plans/20261106-1555-non-evm-expansion/`)
+
+### [STAGE_1_VERIFICATION] - Stage 1: Grounded Pre-Planning & Adversarial Debate
+- **Completion Timestamp**: 2026-11-06 16:15:00 +0700
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Scanned existing pending plans in ./plans/ (13 plan dirs; stablecoin-freeze-intel pending but disjoint scope — FROZEN-label pipeline vs network registry groundwork)
+  - [x] Orchestrator conducted pre-scouting: `blockchain_networks` schema (is_active verified in 000001 L10), `network.Resolver`/`Network` model, `wallet.ResolveAndNormalize` dispatch point + all `NormalizeEVM` callers, `TxProvider` contract, OFAC `resolveListing`, OpenAPI enum sites L1337/L1628, `migrations/000008` tx schema, test conventions (seeded 5000-iter property tests), go.mod (no base58 dep), CAIP-2 refs verified via registry docs, dev stack live (postgres:5433, sqlc v1.30.0)
+  - [x] Initialized canonical plan structure: plan.md + phase-01-address-format.md + phase-02-inactive-networks.md + phase-03-openapi-contract.md + phase-04-audit-docs.md
+  - [x] Dispatched Devin Critic worker; achieved consensus (PLAN_CONSENSUS_REACHED)
+- **Machine Evidence**:
+  - Plan path: `file:///home/lethanhlam/Desktop/Profile/check-wallet/plans/20261106-1555-non-evm-expansion/plan.md`
+  - Scaffolding files: `phase-01-address-format.md`, `phase-02-inactive-networks.md`, `phase-03-openapi-contract.md`, `phase-04-audit-docs.md` (all 4 verified on disk by Critic)
+  - Consensus proof: Devin Critic session `chestnut-crop` — round 1 DONE_WITH_CONCERNS (6 required amendments, all verified & applied), round 2 **PLAN_CONSENSUS_REACHED**; failed first launch `defiant-summer` logged (auto mode rejected exec calls → relaunched `smart`)
+  - Debate findings applied: D4b `bn.is_active` predicates on 5 labels joins (real blast radius — staged inactive-code rows would have published garbage wallets + broken down-migration FK); `testdb_integration_test.go:23` seed-count update enumerated; `'evm'` census corrected (wallets.sql is `$4` param, real blocker = `service.go:25` signature); OpenAPI `Address` pattern contradiction documented; `AddressFormat` naming reconciled
+  - Prompts: `reports/prompt-critic-round-1.md`, `reports/prompt-critic-round-2.md`; logs: `reports/critic-round-{1,2}-output.log`
+- **Self-Audit Commitment**:
+  - Plan is fully grounded in existing code realities; every Critic counter-claim was re-verified against source before plan amendment (zero speculative acceptance, zero speculative hallucination).
+
+### [STAGE_2_VERIFICATION] - Stage 2: Devin Cook Implementation (non-evm-expansion)
+- **Completion Timestamp**: 2026-11-06 17:05:00 +0700
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Executed TDD Red-Green-Refactor across all 4 phases (property-test Red first, mainnet vectors, staged-solana orphan pin Red→Green)
+  - [x] Executed unit and integration suites in real terminal
+  - [x] Ran full build compilation command
+- **Machine Evidence**:
+  - Build: `go build ./...` → Exit 0; `go vet ./...` → clean; `gofmt -l .` → empty (verified by orchestrator, not just Cook-reported)
+  - Tests: `go test -count=1 ./internal/network/ ./internal/wallet/ ./internal/testutil/` → ok (0.007s/0.449s/0.489s); `./tests/` → ok **150.8s** — fresh runs, not cached
+  - Commits: `64b75e9` feat(network) — 18 files (+834/−23); `d137e01` docs(spec) — 2 files
+  - Cook session id: `skitter-night` (permission mode `dangerous`, headless `devin -p`)
+  - Spot-verified: `address_format.go` (derived, fail-closed), `base58.go` (leading-zero safe), `address_tron.go` (real SHA256d checksum), migrations 000026 up/down, all 5 D4b `bn.is_active` sites in queries + sqlc-generated diff
+- **Self-Audit Commitment**:
+  - No test assertions weakened; `testdb_integration_test.go` update is a spec change (seed set now includes inactive solana/tron) documented in commit. Cook preserved pre-existing pipeline-log changes and left `plans/` untracked per repo convention.
+
+### [STAGE_3_VERIFICATION] - Stage 3: Devin Review Independent Code Audit (non-evm-expansion)
+- **Completion Timestamp**: 2026-11-06 17:35:00 +0700
+- **Reviewer Verdict**: APPROVED (0 blockers, 0 majors, 0 minors, 3 optional nits deferred to §15 enablement work)
+- **Audited Dimensions**:
+  - [x] Complete diff audit: `git diff --stat 3e2db19..HEAD` = 20 files = exact union of both commits
+  - [x] Verified absence of dead code, raw SQL violations, orphaned types; all five D4b `is_active` sites confirmed in `queries/*.sql` AND generated `internal/db/*.sql.go`
+  - [x] Audited test integrity: 5000-iter property coverage + real mainnet vectors (USDT/USDC both chains); `testdb` seed assertion strengthened (set-equality + inactive-count), not weakened
+  - [x] Audited error contracts: `Normalize` fail-closed on unknown format; `ErrInvalidAddress`/`ErrInvalidNetwork` mapping unchanged
+  - [x] Doc spot-checks: 15+ file:line claims in `docs/non-evm-audit.md` verified accurate
+  - [x] Adjudication: 7 candidate concerns (staging join, down-guard, leading-'1', case-fold, EVM regression, conflict-skip, §5 invariants) all disproved with evidence
+- **Machine Evidence**:
+  - Devin Review session `efficient-gargoyle` (interrupted once on a `smart`-mode tool rejection; resumed same session to completion — independence preserved)
+  - Diff stat: 20 files, commits `64b75e9` + `d137e01`
+  - Nits (optional): `NormalizeTron` lacks char-length pre-check; per-char `big.NewInt` alloc; probe-body enum lacks pattern note (no pattern exists there — accurate as written)
+- **Self-Audit Commitment**:
+  - Review conducted by an independent Devin session without author confirmation bias.
+
+### [STAGE_4_VERIFICATION] - Stage 4: Remediation & Blind Test Saturation (non-evm-expansion)
+- **Completion Timestamp**: 2026-11-06 17:55:00 +0700
+- **Remediation**: none required — Stage 3 verdict APPROVED with zero required actions; 3 optional nits deferred to §15 enablement work per reviewer note.
+- **Fresh Gate Runs**:
+  - [x] `go test -count=10 -shuffle=on ./internal/network/ ./internal/wallet/` → PASS 10/10 (2.85s)
+  - [x] `go test -count=10 -shuffle=on ./tests/ -run TestNonEVM -v` → PASS 10/10 all 5 tests (23.56s) — resolver rejection, inactive registration, staged-orphan, rollback, down-guard
+  - [x] `go test -count=1 ./...` → all packages ok, `checkwallet/tests` 105.2s; prior tracing flake did not recur
+- **Stage 3 Follow-up Execution**: executed (verdict APPROVED; Stage 3 executed post-consensus before gate entry)
+- **Session/Process Audit**:
+  - Pipeline worker sessions exited: `chestnut-crop` (Critic), `skitter-night` (Cook), `efficient-gargoyle` (Review), `defiant-summer` (aborted auto-mode Critic) — all locks DONE
+  - `pgrep -f "devin -p"` → no orphaned workers; `cedar-telescope` (orchestrator) alive as expected
+- **Blind Saturation Score**: 10/10 — unit + integration, shuffled, fresh (no cache)
+- **Reproducible Command Set**:
+  - `cd apps/api && go test -count=10 -shuffle=on ./internal/network/ ./internal/wallet/ ./tests/ -run 'TestNonEVM|TestNormalize|TestResolver'`
+
+### [STAGE_5_VERIFICATION] - Stage 5: Live Surface Verification (non-evm-expansion)
+- **Completion Timestamp**: 2026-11-06 18:05:00 +0700
+- **Surface Classification**: API + internal — no UI surface exists in this repo (`apps/api` only). Live API verification REQUIRED and performed (not skipped).
+- **Method**: Fresh `HTTP_ADDR=:8099 go run ./cmd/api` boot on dev DB (:5433, schema v26), dev `API_BOOTSTRAP_READER_KEY` auth header, real curl matrix with status + body + latency. Pre-existing `checkwallet-api` on :8010 left untouched (not ours to kill).
+- **Captured Evidence**:
+  - `GET /api/v1/networks` → **200** (4.8ms) — body contains ONLY `bsc` + `ethereum`; inactive solana/tron rows do NOT leak into active listing
+  - `GET /api/v1/wallets/solana/So11111111111111111111111111111111111111112` (valid base58) → **400 INVALID_NETWORK** (3.2ms)
+  - `GET /api/v1/wallets/tron/TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t` (valid base58check) → **400 INVALID_NETWORK** (4.1ms)
+  - `GET /api/v1/wallets/ethereum/0x098B716B8Aaf21512996DC57EB0615e2383E2f96` (control) → **200** (19.4ms) — EVM path unchanged; returns real labels (Ronin/FROZEN)
+- **Result**: PASS — groundwork guarantees hold on the live surface: inactive networks rejected at resolver, no leak into `/networks`, EVM behavior identical.
+- **Cleanup**: test instance on :8099 terminated after capture; port free.
+
+### [STAGE_6_VERIFICATION] - Stage 6: Guidebook & Feature-Map Publication (non-evm-expansion)
+- **Completion Timestamp**: 2026-11-06 18:20:00 +0700
+- **Artifacts Published**:
+  - `docs/guidebook-non-evm-groundwork.md` — step-by-step ops guide; all response bodies are real captures
+  - `docs/feature-maps/non-evm-groundwork.md` — source map, validator contract, decisions D1/D2/D4b, deferred nits, stop conditions, pipeline provenance
+  - `docs/feature-maps/assets/non-evm-*.json|txt` (5 files) — live API bodies + `blockchain_networks` table evidence
+- **Evidence Fidelity**: every HTTP body in the guidebook is a verbatim Stage 5 capture; DB excerpt is a verbatim `psql` select; all file references verified by Devin Review (15+ file:line spot-checks, all accurate)
+- **Worker Session Ledger**: Critic `defiant-summer`(aborted: `auto` rejects exec in noninteractive) → `chestnut-crop`; Cook `skitter-night`; Review `efficient-gargoyle` (resumed after one `smart`-mode rejection); orchestrator `cedar-telescope`
+- **Final State**: HEAD = `64b75e9` + `d137e01` + `docs(plan)` seal commit; working tree clean post-commit; plan frontmatter `status: completed`

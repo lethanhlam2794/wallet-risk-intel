@@ -1,0 +1,62 @@
+I'll finish the doc spot-checks with read/grep tools only.Migration, provider contract, OFAC mapper, and the 'evm' literal census all verify. Let me check the remaining refs: NormalizeEVM callsites, warmindex, wattrFiles, and mapper.go:124.All doc file:line claims verified accurate. Let me do the last static checks — the `StgInsertWalletLabel` param contract used by the D4b test, and the cook report's verification evidence.All verification complete. Every checklist item in the review prompt is confirmed against source. Writing the final report.
+
+---
+
+# Code Review — `3e2db19..HEAD` (commits `64b75e9` + `d137e01`)
+
+## Verdict: **APPROVED**
+
+## Executive Summary
+
+Both commits faithfully implement the approved plan (`plans/20261106-1555-non-evm-expansion/plan.md`), including all six post-debate amendments (D4b predicates, `AddressFormat` naming, OpenAPI pattern-note). The change is genuinely groundwork-only: solana/tron are registered `is_active=FALSE` and remain unreachable at the resolver; every code-keyed `bn.code` join now carries `AND is_active`; validators are correct base58/base58check implementations with honest property coverage and real mainnet vectors; no forbidden scope was touched. Doc claims in `docs/non-evm-audit.md` were spot-checked at 15+ file:line references — all accurate.
+
+## Verification Evidence
+
+- **Diff scope**: `git diff --stat 3e2db19..HEAD` = 20 files = exact union of the two commits; nothing extra, nothing missing.
+- **Runtime gates (orchestrator-reported, per instruction not re-run)**: `gofmt -l .` empty; `go vet ./...` clean; `go build ./...` clean; `go test ./...` → 35 packages ok, 0 failures; dev-DB migration exercised up/down; booted API: `/api/v1/networks` → bsc+ethereum only, `/wallets/solana/…` → `400 INVALID_NETWORK`, `/wallets/tron/…` → `400 INVALID_NETWORK`, ethereum control → `200`. Recorded in `reports/cook-report.md`.
+- **Static cross-checks performed by me**:
+  - `queries/networks.sql`: `ListActiveNetworks` = `WHERE is_active = TRUE` → resolver rejection is structural.
+  - All five D4b sites carry `is_active`: `labels_staging.sql` L23 (orphan EXISTS) + L48 (CountLive IN-subquery); `labels_publish.sql` L15 (Ensure), L60 (Upsert), L101 (Revoke); generated `internal/db/*.sql.go` mirrors source exactly (incl. sqlc-propagated D4b comment).
+  - No other `bn.code`-keyed site exists: the only other `blockchain_networks` join (`transactions.sql:152`) is `n.id = w.network_id` — id-keyed, correctly out of scope.
+  - `StgInsertWalletLabelParams` field names match the D4b test literal; `testResolver`, `count`, `RequireTestPoolDSN`, `TestDSN`, `MigrateTo`, `Migrate` all exist; `propIterations = 5000` defined in existing `address_property_test.go`.
+  - `migrations/migrations.go` uses `//go:embed *.sql` → 000026 auto-registered (P-007 file+registration satisfied).
+  - `assertTestDatabase` enforces `_test` suffix → scratch `check_wallet_nonevm_test` valid; `blockchain_networks` in `staticTables` → survives `TruncateAll`.
+- **Doc spot-checks (all PASS)**:
+  - `000008_transactions.up.sql`: `tx_hash VARCHAR(255)` L12 ✓, `transfer_index VARCHAR(100)` L13 ✓, `block_number BIGINT` L22 ✓, `UNIQUE(network_id,tx_hash,transfer_index)` L33 ✓, `indexed_until_block` L55 ✓.
+  - `provider.go`: `FromBlock/ToBlock` L248-249 ✓, ascending-block ordering contract L269-271 ✓, `HeadBlock` L286 ✓, `TxProvider` L279-288 ✓.
+  - `ofac/mapper.go`: `resolveListing` spans L32-44 ✓ — non-EVM format → `("", CHAIN_SPECIFIC)` L34, unmapped currency → `("", ScopeUnresolved)` L42 (doc's "CHAIN_SPECIFIC / UNRESOLVED" phrasing is accurate); `NormalizeEVM` at L124 ✓.
+  - `'evm'` literal census: `transactions.sql:27`, `ofac_publish.sql:54`, `labels_publish.sql:9`, `stablecoin_freeze.sql:58` — all four confirmed by grep; `wallets.sql` correctly absent (param-driven); `service.go:25` `AddressType: "evm"` ✓.
+  - Direct `NormalizeEVM` callsite list: `identity.go:88,93,104`, `list.go:91`, `walletattribution/mapper.go:30`, `stablefreeze/scanner.go:284`, `pipeline_freeze.go:176`, `warmindex/queue.go:46-47` — all verified.
+  - `wattrFiles`: `cmd/api/main.go:651-653`, `cmd/worker/main.go:285-287` ✓.
+
+## Detailed Findings
+
+**[Blocker]** — none.
+
+**[Major]** — none.
+
+**[Minor]** — none.
+
+**[Nit]**
+
+1. `NormalizeTron` has no input-length pre-check (`NormalizeSolana` bounds 32–44 chars before decoding; TRON relies solely on the decoded==25 gate). An oversized base58 input costs O(n²) `big.Int` work before rejection. Reachable only via URL path params (server request limits bound the input) — cosmetic asymmetry, not a defect.
+2. `decodeBase58` allocates a `big.NewInt` per character. Trivial for ≤44-char inputs; consistent with the minimal stdlib approach.
+3. The probe-body `network` enum marking states `400 INVALID_NETWORK` but does not repeat the EVM-only `pattern` note that `parameters.Network` carries. There is no `pattern` keyword on the probe `address` property (only `description: EVM 20-byte hex`), so there is literally no pattern to name there — the contract text is accurate as written. Observation only.
+
+## Adjudication notes (candidates rejected)
+
+- *"Inactive code could join staging"* — disproved: all five code-keyed sites carry `is_active`; `TestNonEVM_StagedInactiveLabelStaysOrphan` pins orphan + zero-wallets + `PublishEnsureLabelWallets`=0.
+- *"Down migration could revert a future enablement"* — disproved: `AND is_active = FALSE` guard + `TestNonEVM_DownGuardNeverDeletesActive` proves per-row survival.
+- *"Base58 leading-'1' mishandling"* — disproved: `zeros` counter prepends one zero byte per leading `'1'`; `"111…1"` (System Program) decodes to 32 zero bytes → accepted, which is the correct real-world behavior.
+- *"Case-fold repair"* — disproved: normalized form is verbatim input; corruption/case-flip tests assert output ≡ input or rejection; TRON lowercased input fails checksum (tested).
+- *"EVM regression via dispatch"* — disproved: `eip155` → `AddressFormatEVM` → identical `NormalizeEVM`; existing tests untouched except the enumerated seed assertion (strengthened: set-equality + inactive-count, not weakened).
+- *"Schema/enablement drift silently skipped"* — `ON CONFLICT DO NOTHING` is untargeted, but the integration test asserts exact row contents — drift is caught downstream; acceptable per plan D4 rationale.
+- *Domain invariants (AGENTS.md §5)* — none violated: inactive ≠ enabled; non-match ≠ safe; no invented reasons; no cross-chain conflation; provider failure semantics untouched.
+
+## Required Actions to Approve
+
+None. Nits are optional polish, safe to defer to the actual §15 enablement work.
+
+Status: DONE
+Summary: APPROVED — both commits match the approved plan exactly, including all post-debate amendments; base58/base58check validators are correct with honest 5000-iter property coverage and real mainnet vectors; all five D4b `is_active` predicates verified in source and generated code; doc file:line claims all accurate; only three trivial nits.
+Concerns/Blockers: None blocking — optional nits: `NormalizeTron` lacks the char-length pre-check `NormalizeSolana` has; per-char `big.NewInt` allocation in `decodeBase58`.

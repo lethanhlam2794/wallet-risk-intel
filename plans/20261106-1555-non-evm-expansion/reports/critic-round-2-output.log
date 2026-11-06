@@ -1,0 +1,26 @@
+Re-verifying the amended plan and all four phase files against the claimed amendments.Plan.md reflects all 6 amendments. Now verifying the phase files carry the changes through.Phase-01 and phase-02 amendments verified — D4b carries all five `is_active` sites with correct line refs, sqlc regen step, and the staged-solana Red→Green test. Checking phase-03 and phase-04 now.# Devin Critic — Round 2 Consensus Review
+
+All six amendments verified against the amended files:
+
+| Amendment | Verified |
+|---|---|
+| D4b `is_active` predicates | plan.md D4b + risk row + scouting row; phase-02 enumerates all five sites (`labels_staging.sql` EXISTS + IN-subquery, `labels_publish.sql` L15/L60/L100), `sqlc generate` step, staged-`solana` orphan test in correct Red→Green order (migration first, then predicate fix) |
+| `testdb_integration_test.go` | Updated to code-SET assertion `{bsc, ethereum, solana, tron}` — preserves "seeds survive truncation" intent, spec-change justification noted |
+| `'evm'` census | plan.md L40 + phase-04 L46-52 corrected: 4 SQL files + `service.go:25`; `wallets.sql` explicitly marked non-literal; real blocker (`GetOrCreate` signature gap) named |
+| `Address` `pattern` | phase-03 L25-29 makes the marking text name the EVM-only pattern explicitly; pattern itself untouched; audit doc lists it as pre-enablement blocker |
+| Naming | `AddressFormat` / `AddressFormatForNamespace` / `Network.AddressFormat()` in `internal/network/address_format.go` — prompt vocabulary throughout |
+| Risk matrix | Three new rows present (orphan drift, seed assertion, contract contradiction) |
+
+**Completeness re-check on the D4b fix**: my earlier full-codebase grep over `blockchain_networks` confirms the five enumerated sites are the complete set of unfiltered code-keyed joins — every other reference is an `id`-FK join (`transactions.sql:152`), a code-scoped filter (`000024` `WHERE bn.code='ethereum'`), or the active-only `networks.sql`. The predicates are semantics-preserving for every code matchable today (ethereum/bsc are active); the only behavior they alter is the hypothetical "deactivate a network, then publish labels" path — which post-D4b fails orphan-validation instead of publishing into a deactivated network. That is the *more correct* outcome. After D4b, the "unreachable by construction" claim becomes literally true at both layers — previously it was only true at the app layer.
+
+**Structural completeness**: 4-phase roadmap, all 4 phase files present. No new defects introduced by the amendments.
+
+## Residual notes (non-blocking)
+
+1. The `ON CONFLICT DO NOTHING` parenthetical in plan D4/phase-02 slightly misdescribes semantics: a no-target `DO NOTHING` *silently skips* collisions on either unique — it does not "surface drift as an error". If drift-surfacing is actually desired, use `ON CONFLICT (code) DO NOTHING` (errors on the `(namespace, chain_reference)` unique); otherwise fix the comment. For fixed seed values the silent-skip is acceptable — the integration test asserts the `code` rows exist, so drift is caught downstream anyway. Cosmetic.
+2. Phase-02's Architecture paragraph still asserts "unreachable by construction" without noting the claim only holds post-D4b. Cosmetic — the Requirements section above it makes the dependency clear.
+
+Verdict: **PLAN_CONSENSUS_REACHED** — all required amendments applied faithfully and verified against source; residuals are comment-level, not behavioral.
+
+Status: DONE
+Summary: The amended plan correctly incorporates all six required changes; the D4b `is_active` predicates cover the complete set of unfiltered code-keyed joins and are semantics-preserving. Consensus granted; two cosmetic residuals noted.

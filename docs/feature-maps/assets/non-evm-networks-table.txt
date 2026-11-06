@@ -1,0 +1,8 @@
+   code   |       name       | namespace |         chain_reference          | is_active 
+----------+------------------+-----------+----------------------------------+-----------
+ bsc      | BNB Smart Chain  | eip155    | 56                               | t
+ ethereum | Ethereum Mainnet | eip155    | 1                                | t
+ solana   | Solana Mainnet   | solana    | 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp | f
+ tron     | TRON Mainnet     | tron      | 0x2b6653dc                       | f
+(4 rows)
+
