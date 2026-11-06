@@ -1,0 +1,55 @@
+VERDICT: APPROVED
+
+All 15 contract points verified against code with no BLOCKER or confirmed MAJOR findings. The implementation is faithful to the debated plan — delta semantics are correctly enforced end-to-end, tests are honest (real assertions, dedicated `_test` DB, no weakening), and every live-verification bug fix from the cook report is backed by a regression test. Five MINORs and four NITs follow; none block merge, but 1–3 deserve a follow-up ticket.
+
+---
+
+## Findings
+
+**1. [MINOR] JSON-RPC `batch()` assumes response order == request order** — `apps/api/internal/provider/stablefreeze/rpc.go:118-124, 180-205`. `rpcResp` has no `ID` field, and `out[i] = env.Result` aligns batch responses positionally. JSON-RPC 2.0 explicitly permits out-of-order batch responses. Sole consumer is `BlockTimestamps` (`rpc.go:247-283`): a reordering endpoint would silently bind `block_ts` to the wrong block, corrupting `observed_at` and `evidence.block_ts` on published labels. Inert on Ankr (ordered; the 22-run live backfill verified sample ts against etherscan), bounded to timestamp fields, but a real latent provenance defect. Fix: add `ID` to `rpcResp` and index results by id.
+
+**2. [MINOR] Endpoint containing API key can reach logs on URL-parse failure** — `rpc.go:96-98` (`"stablefreeze: invalid endpoint %q", c.endpoint`). The Ankr endpoint embeds the key in path (`{base}/eth/<key>`, `build.go:42-43`); if `provider_configs.base_url` is malformed enough for `url.Parse` to fail, the error — logged by both binaries via `log.Warn("stablefreeze scanner unavailable", "error", err)` (`cmd/api/main.go`, `cmd/worker/main.go`) — carries the credential in plaintext. Narrow trigger (the scheme/host-not-allowlisted branches at `rpc.go:100-108` correctly avoid printing secrets) and one-line fix: log `u.Host` only or redact the path. AGENTS.md §12 makes this a MUST-level rule worth fixing now.
+
+**3. [MINOR] `-until-caught-up` + `-file` = unbounded no-op run loop** — `cmd/worker/main.go` (the `for pass := 0; ; pass++` block). In file mode, `fetchers` is empty and each pass re-ingests the same artifact. Pass 2+ hits the `execute()` checksum-identical no-op path (`service.go:303-309`) → COMPLETED without publish → cursors can't advance past the file's `toBlock` → `freezeCaughtUp` stays false forever, minting `ingestion_runs` rows indefinitely. Guard the flag to `file == ""` (or cap passes). Related edge: `freezeCaughtUp` iterates **all** `freeze_scan_state` rows — a future seeded-but-unwatched contract would also loop forever.
+
+**4. [MINOR] Publish joins resolve network via `contract_address` alone** — `queries/stablecoin_freeze.sql:60` (`PublishFreezeEnsureWallets`), `:85` (`PublishFreezeUpsertLabels`), `:168-169` (`PublishFreezeOrphanUnfreeze`). The composite PK `(network_id, contract_address)` exists precisely because EVM deployers collide across chains, yet `stg_freeze_events` carries no `network_id` and the joins pin only the contract string. Inert today (ethereum-only seed, BSC out of scope), but seeding a second network for the same contract would fan wallet-ensure/label joins across both rows nondeterministically — the exact cross-chain mislabel the PK was designed to prevent. Add `network_id` to staging or join-pin it when the registry ever goes multi-chain.
+
+**5. [MINOR] Worker `run()` now requires providerconfig resolution for every file-less ingest** — `cmd/worker/main.go` (the new `pcKeys`/`pcRes` block inside `if file == ""`). Previously `-mode ingest -source ofac_sdn` needed no providerconfig; now a keystore/`ResolveAll` failure aborts unrelated sources too. Resolved without further reads: `ProviderConfigKEK` unset is documented plaintext fallback (`config.go` comment) and `cmd/api` already calls `NewKeystore` unconditionally at boot — so the empty-KEK path cannot hard-error; the residual is only `ResolveAll` row-level failures widening blast radius, consistent with the API's existing boot-fatal posture. Acceptable, but note it in the guidebook.
+
+**6. [NIT] `block_ts` unit inconsistency inside one evidence JSONB** — staged top-level `evidence.block_ts` is unix seconds (`pipeline_freeze.go:187`), while merged `unfreeze_event.block_ts` and `destroy_events.*.block_ts` serialize the timestamptz column as an ISO string (`queries/stablecoin_freeze.sql:115, 134-136`). Same key name, two representations — consumers parsing evidence must special-case.
+
+**7. [NIT] Phase-02 file list deviation** — plan listed `rpc_test.go`; coverage is folded into `scanner_test.go`/`build_test.go` instead. Equivalent coverage (SSRF, batch path via happy-path stub, error mapping); file-name drift only.
+
+**8. [NIT] Cook-report prose** — `reports/cook-report.md` claims migration 000024 adds `cursor_value` to `ingestion_runs`; the column pre-exists (migration 000001). No code impact — report accuracy only.
+
+**9. [NIT] `GetIngestionRun` in the loop uses `context.Background()`** (`cmd/worker/main.go`) rather than the signal ctx — consistent with `finish()`'s detached-write convention; harmless but undocumented.
+
+---
+
+## What was verified
+
+| # | Contract | Evidence |
+|---|---|---|
+| C1 | destroy NEVER revokes; orphan destroy upserts FROZEN | `queries/stablecoin_freeze.sql:124-146` (`event_type='unfreeze'` only), `:96-122` (keyed `destroy_events` append), `:64-94` (destroy in upsert set); tests `TestFreeze_DestroyNeverRevokes`, `OrphanDestroyCreatesLabel`, `SameWindowOrdering` |
+| C2 | `LatestLabelSnapshotPublished` spans all label sources | `queries/labels_read.sql:20-27`; consumers confirmed `label/service.go:210`, `screening/service.go:360`; test `CacheVersionCoversFreeze` |
+| C3 | fingerprint twin pins `"stablecoin_freeze|"` | `fingerprint.go:14-18` mirrors `walletattribution/mapper.go:20-24` field-for-field; tests pin both namespaces |
+| C4 | degenerate `empty:true`+`toBlock=from-1` → COMPLETED, no regress | `scanner.go:182-189`, `pipeline_freeze.go:233-237`, `GREATEST` at `queries:15-19`; `last_head_block` still refreshes so `freezeCaughtUp` converges |
+| C5 | `block_ts` via batched `eth_getBlockByNumber` over distinct sorted blocks | `scanner.go:203-219`, `rpc.go:247-283` (chunk 64) — see finding 1 |
+| C6 | `File.Checksum`+`CombinedChecksum`; `FinalURL` empty | `scanner.go:226-230, 389-394`; `service.go:292-297` `Checksum[:12]` branch unreachable; test asserts `FinalURL` empty |
+| C7 | `TrimSuffix("/multichain")+"/eth/"+key` | `build.go:42`; `build_test.go:28-40` pins both base shapes |
+| C8 | PK `(network_id, contract_address)`; seeds 4634748/6082465 | migration `:11-19, 48-55`; `freeze_scan_state_test.go` asserts both seeds + ethereum id |
+| C9 | `cmd/api` fetchers wired | `cmd/api/main.go` diff — `BuildScanner` after `pcRes` (resolved ~:117), fail-closed warn |
+| C10 | `-until-caught-up` loops `RunSync` to frontier | `cmd/worker/main.go` loop + `freezeCaughtUp` (`last_scanned ≥ last_head−conf`) — see finding 3 |
+| C11 | `NewService` boot assertion over BOTH staging maps | `service.go:115-126` panic-on-missing = boot-fatal |
+| C12 | label fields per spec | `queries:76-78` — `verified`/`high`/entity NULL/`FROZEN` upstream_category/etherscan URL/`observed_at=block_ts`; evidence = contract+event+tx+block+ts+topic (`pipeline_freeze.go:183-190`); unfreeze merges `unfreeze_event` (`queries:131-136`) |
+| C13 | `freeze-<head>-<unix>-<runid8>`; `cursor_value` summary | `pipeline_freeze.go:358-359` (`runID.Bytes[:4]` → 8 hex), `:368-370` `contract:toBlock` join |
+| C14 | no `PublishRevokeAbsent*` in freeze path | grep clean (comment-only mention) |
+| C15 | `internal/transaction`/`EnsureIndexed` untouched | `git status`/diff show zero changes outside the listed freeze files |
+
+**Standard axes**: down migration = ordered deletes (runs→snapshots→labels→drop own tables→source), never drops shared `wallet_labels` ✓; all SQL parameterized via sqlc, generated file consistent ✓; `ctx` threaded end-to-end incl. explicit `ctx.Err()` in scan loop; 30s timeout + bounded retry + breaker + rate limit + SSRF allowlist (https-only, `rpc.ankr.com`) ✓; `Removed:true` logs rejected (reorg guard) ✓; publish entirely on `qtx` inside the service-managed tx, rollback-before-finish ordering preserved ✓; no `[:12]`-style slicing on attacker-controlled strings; fail-closed everywhere required (missing cursors, missing provider, malformed ts); no secrets logged in the new paths except finding 2's narrow vector; tests honest — additive only, `_test` DB via `testutil`, cursor state restored in cleanup, no skips/weakens. No `go test`/`go build` run — per mandate, orchestrator runs gates.
+
+---
+
+Status: DONE_WITH_CONCERNS
+Summary: Full-fidelity implementation — all 15 debated contract points verified in code with correct delta/revoke semantics, honest tests, and clean wiring; approve with 5 MINORs (batch id-matching, API-key-in-error path, -until-caught-up+file infinite loop, contract-only network join, widened worker boot dep) worth a follow-up ticket.
+Concerns/Blockers: None blocking. Findings 1–3 should be fixed before the next feature train leaves the station; finding 4 only becomes live when a second network is seeded.

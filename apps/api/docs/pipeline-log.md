@@ -186,3 +186,97 @@
 - **Self-Audit Commitment**:
   - Guidebook is reproducible: any tester can run the runbook (migrate → run → SIGTERM) and the SQL verification queries against the live schema independently.
 
+
+### [STAGE_1_VERIFICATION] - Stage 1: Grounded Pre-Planning & Adversarial Debate (stablecoin-freeze-intel)
+- **Completion Timestamp**: 2026-11-06 11:20:00 +0700
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Scanned existing pending plans in ./plans/ (all prior completed; no overlap)
+  - [x] Codex conducted pre-scouting (ingestion pipeline contracts, labels publish semantics, fingerprint formula, providerconfig resolution, deploy blocks verified live via eth_getCode)
+  - [x] Initialized canonical plan structure with 4 phase files
+  - [x] Dispatched Devin Critic worker (session `rounded-sight`); round-1 REJECTED (2 blockers: destroy-as-revoke wrong + cache invalidation hole; 4 majors); all amended → round-2 **PLAN_CONSENSUS_REACHED** with 5 residual nits absorbed
+- **Machine Evidence**:
+  - Plan path: `file:///home/lethanhlam/Desktop/Profile/check-wallet/plans/20261106-1105-stablecoin-freeze-intel/plan.md`
+  - Scaffolding files: `phase-01-schema-queries.md` … `phase-04-wiring-config.md`
+  - Consensus proof: critic session `rounded-sight`, round-2 verdict `VERDICT: PLAN_CONSENSUS_REACHED`; report saved at `reports/critic-round-1.md` (critic ran read-only `auto`; report captured via resume-reply)
+- **Self-Audit Commitment**:
+  - Plan is fully grounded in existing code realities with zero speculative hallucination; every load-bearing claim independently verified by Critic (8/8 TRUE).
+
+### [STAGE_2_VERIFICATION] - Stage 2: Devin Cook Implementation (stablecoin-freeze-intel)
+- **Completion Timestamp**: 2026-11-06 12:35:00 +0700
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Dispatched Devin Cook worker (session `humdrum-neighbor`, `--permission-mode dangerous`, TDD); all 4 phases implemented
+  - [x] Live verification against real Ankr RPC caught & fixed 4 bugs the unit suite missed: 41-char USDC address typo; `eth_getLogs` positional-array params; `DestroyedBlackFunds(address,uint256)` signature (was `(address)` — 1,305 real events missed); two-word ABI payload extraction (address at word 0, not blob tail) — each with regression test
+  - [x] Live backfill: 22 COMPLETED `ingestion_runs` → 4,084 FROZEN labels (3,198 USDT / 886 USDC), 3,544 active, 540 revoked by real unfreeze events, 1,208 carrying appended `destroy_events` evidence; cursors pinned at head−12 (26353538)
+  - [x] Atomicity proven live: mid-backfill upstream 429 → FAILED run, zero cursor advancement, clean resume; wallet blacklisted at block 26353511 between invocations caught by delta run
+  - [x] Cook report: `plans/20261106-1105-stablecoin-freeze-intel/reports/cook-report.md` — verdict DONE_WITH_CONCERNS (concern = unrelated tracing flakes)
+- **Machine Evidence**:
+  - Orchestrator re-verified all gates sequentially post-exit: `gofmt -l .` empty, `go build ./...` OK, `go vet ./...` OK, `go test -count=1 ./...` **ALL PASS** (internal/tracing 28.4s, tests 137.5s, stablefreeze 2.3s)
+  - Earlier tracing test failures (TestExposures_WarmEnqueueGamblingExchange / SentinelSkipped) confirmed = cross-binary pollution — orchestrator's concurrent tracing run raced Cook's suite on the shared `_test` DB; sequential rerun green. Documented pollution vector, not a code defect.
+- **Self-Audit Commitment**:
+  - Gates run by orchestrator on fresh terminal evidence after Cook exited; no completion claim from Cook was trusted without independent re-verification.
+
+### [STAGE_3_VERIFICATION] - Stage 3: Devin Review Independent Audit (stablecoin-freeze-intel)
+- **Completion Timestamp**: 2026-11-06 13:10:00 +0700
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Dispatched Devin Review worker (session `bright-otter`, read-only `auto` mode); session hit a permission wall mid-audit → resumed with no-tools constraint; verdict emitted as reply: **`VERDICT: APPROVED`** (Status: DONE_WITH_CONCERNS)
+  - [x] All 15 contract points (C1–C15) verified in code: destroy≠revoke, cache-version broadening, fingerprint namespace twin, degenerate-window GREATEST, batched block_ts, checksum contract, Ankr derivation, PK/seeds, cmd/api wiring, -until-caught-up, boot assertion, label fields, version format, no PublishRevokeAbsent, zero EnsureIndexed diff
+  - [x] 5 MINORs + 4 NITs returned; none blocking per reviewer
+- **Auto-remediation applied (findings 1–3, real defects)**:
+  - [x] F1 batch() positional misbind → `rpcResp.ID` added; results rebound by JSON-RPC id with range/duplicate/missing guards; stub now echoes id; **new regression test `TestBlockTimestamps_OutOfOrderBatch`** (reversed batch → correct ts binding)
+  - [x] F2 API-key-in-error on URL-parse failure → endpoint never echoed (`unparseable endpoint url`); host-only errors retained elsewhere
+  - [x] F3 `-until-caught-up` + `-file` infinite no-op loop → early fatal guard; `freezeCaughtUp` now counts only registry-watched contracts (seeded-but-unwatched rows can't wedge the loop)
+  - [ ] F4 (staging join lacks network_id) DEFERRED — inert while registry is ethereum-only; documented for multi-chain follow-up
+  - [ ] F5 (worker boot dep widened to providerconfig for file-less ingest) ACCEPTED — consistent with cmd/api boot-fatal posture; noted for guidebook
+- **Machine Evidence**:
+  - Review transcript: `reports/review-session.log` + `reports/review-resume.log` (verdict line confirmed)
+  - Post-remediation gates: `gofmt -l .` empty, `go build`/`go vet` clean, `go test ./internal/provider/stablefreeze/` ok 2.2s, `go test ./tests -run Freeze` ok 12.1s, `./internal/testutil/` ok
+- **Self-Audit Commitment**:
+  - Reviewer was a separate session with no plan/implementation authorship; remediation edits were minimal, targeted, and re-tested before proceeding.
+
+### [STAGE_4_VERIFICATION] - Stage 4: Remediation + Blind Test Saturation (stablecoin-freeze-intel)
+- **Completion Timestamp**: 2026-11-06 13:45:00 +0700
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Review findings 1–3 remediated with regression coverage (see STAGE_3 entry)
+  - [x] Shuffled saturation: `go test -count=10 -shuffle=on ./internal/provider/stablefreeze/` → **10/10 PASS** (22.3s)
+  - [x] Shuffled saturation: `go test -count=10 -shuffle=on ./tests -run Freeze` → **10/10 PASS** (165.7s)
+  - [x] Race: `go test -race -count=1 ./internal/provider/stablefreeze/` → PASS (3.8s); `go test -race -count=1 ./tests -run Freeze` → PASS (65.9s)
+  - [x] Sequential full suite post-remediation: `go test -count=1 ./...` → **ALL PACKAGES PASS** (incl. tracing 31.9s, tests 85.0s, stablefreeze 2.2s)
+- **Machine Evidence**:
+  - New regression test `TestBlockTimestamps_OutOfOrderBatch` proves id-based batch rebinding (reversed batch → correct per-block timestamps)
+  - Zero flakes observed across all saturation passes (sequential execution — no concurrent binaries on shared `_test` DB)
+- **Self-Audit Commitment**:
+  - Saturation ran sequentially against dedicated `_test` DB; no completion claim without fresh terminal output above.
+
+### [STAGE_5_VERIFICATION] - Stage 5: Live Surface Verification (stablecoin-freeze-intel)
+- **Completion Timestamp**: 2026-11-06 14:05:00 +0700
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Real worker invocation (built binary `/tmp/freeze-worker`, not `go run`): `-mode ingest -source stablecoin_freeze` → `run_id=db109013-c0d9-4ddd-886f-89ed23d31406 status=COMPLETED version=freeze-26353712-1793942847-db109013` — honest empty delta (0 labels: no events in the incremental window)
+  - [x] New guard live-verified: `-until-caught-up -file /tmp/x` → exit 1 `worker: -until-caught-up requires chain-scan mode (no -file)` before any DB work
+  - [x] Cursor state: both contracts at 26353700, head 26353712, gap = 12 = confirmations floor exactly
+  - [x] `data_sources` row: `stablecoin_freeze | Stablecoin Freeze (USDT/USDC on-chain) | chain_scan | active`
+  - [x] Label totals: 4,084 FROZEN (usdt 3,198: 2,855 active/343 revoked/1,208 destroy-evidence; usdc 886: 689 active/197 revoked/0 destroy — USDC has no destroy event, correct)
+  - [x] Evidence JSONB verified on real rows: `verified`/`high`, etherscan tx `source_url`, `event`+`topic`+`tx_hash`+`block_number`+`block_ts`; revoked labels carry merged `unfreeze_event`; destroy-only labels carry keyed `destroy_events` map WITHOUT revocation (C1/C12 semantics live)
+  - [x] Real-world detection: `0x5227f6…b2f8c` (Binance Hot Wallet Exploiter, ~1.175B USDT + 823M USDC) captured with BOTH issuer freezes — usdt `AddedBlackList` blk 26300954 @ 2026-10-29 21:01:35Z, usdc `Blacklisted` blk 26300971 @ 21:04:59Z — matching independently confirmed chain facts
+  - [x] `stg_freeze_events` = 0 leftover rows (staging purge works); run history 23 COMPLETED + 3 FAILED (failures visible, never hidden)
+- **Machine Evidence**: psql outputs captured live from `check_wallet` dev DB (queries reproduced verbatim in the Stage-6 guidebook)
+- **Self-Audit Commitment**:
+  - All numbers above are fresh terminal output from this stage; no figures copied from the cook report without re-execution.
+
+### [STAGE_6_VERIFICATION] - Stage 6: Illustrated Guidebook & Feature Map (stablecoin-freeze-intel)
+- **Completion Timestamp**: 2026-11-06 14:25:00 +0700
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Published `apps/api/docs/feature-maps/stablecoin-freeze-intel.md` — architecture diagram, 12-row file map, config table, executable runbook, verbatim live SQL outputs (cursors, per-contract label splits, run history, Binance-exploiter detection, evidence JSONB shape, `\d+` schema dumps), 6-point semantics contract, test map, limitations & deferred findings (F4/F5)
+  - [x] Backend/CLI feature → DB/terminal evidence in place of screenshots (no UI surface exists; stated explicitly, nothing fabricated)
+  - [x] All worker sessions confirmed exited: critic `rounded-sight`, cook `humdrum-neighbor`, review `bright-otter` — `pgrep -f "devin -p"` returns no live sessions
+  - [x] Git hygiene: only expected feature files (13 modified + 10 new paths + plan dir); no temp probes, no credentials in diffs or logs
+- **Machine Evidence**:
+  - Guidebook: `file:///home/lethanhlam/Desktop/Profile/check-wallet/apps/api/docs/feature-maps/stablecoin-freeze-intel.md`
+  - Session IDs logged: Stage1 `rounded-sight`, Stage2 `humdrum-neighbor`, Stage3 `bright-otter`
+- **Self-Audit Commitment**:
+  - Every number in the guidebook was re-executed live this session (Stage 5), not copied from prior reports.
