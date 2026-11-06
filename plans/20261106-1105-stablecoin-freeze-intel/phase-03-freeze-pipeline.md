@@ -1,7 +1,7 @@
 ---
 phase: 03
 title: internal/ingestion/pipeline_freeze.go — stage → validate → delta publish
-status: pending
+status: completed
 priority: high
 dependencies: [01, 02]
 ---

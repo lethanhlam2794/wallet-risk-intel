@@ -1,7 +1,7 @@
 ---
 phase: 01
 title: Schema & queries — freeze_scan_state, stg_freeze_events, source row
-status: pending
+status: completed
 priority: high
 dependencies: []
 ---

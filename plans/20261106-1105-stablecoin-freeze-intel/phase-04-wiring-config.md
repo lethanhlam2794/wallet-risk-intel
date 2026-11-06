@@ -1,7 +1,7 @@
 ---
 phase: 04
 title: Worker wiring, config, live evidence
-status: pending
+status: completed
 priority: medium
 dependencies: [02, 03]
 ---

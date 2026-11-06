@@ -1,7 +1,7 @@
 ---
 phase: 02
 title: internal/provider/stablefreeze — RPC client + scan→file SnapshotSource
-status: pending
+status: completed
 priority: high
 dependencies: [01]
 ---

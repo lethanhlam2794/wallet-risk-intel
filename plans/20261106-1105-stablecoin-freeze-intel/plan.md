@@ -1,7 +1,7 @@
 ---
 plan: stablecoin-freeze-intel
 title: Stablecoin freeze intelligence — on-chain issuer blacklist events → FROZEN labels
-status: pending
+status: completed
 created: 2026-11-06
 ---
 

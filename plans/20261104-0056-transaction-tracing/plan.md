@@ -1,6 +1,6 @@
 # Plan — Phase 6: Transaction Tracing
 
-status: planning
+status: completed
 spec: `docs/tailieu.md` §4.7, §7.13, §9.9–9.10, §11, §19 (phase 6)
 predecessor: `plans/20261103-2318-risk-scoring/` (APPROVED, complete)
 critic: 9 rounds → ~125 findings applied → **PLAN_CONSENSUS_REACHED** (reports/)
