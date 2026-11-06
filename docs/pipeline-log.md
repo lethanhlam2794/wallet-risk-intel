@@ -456,3 +456,108 @@ substitution, S6 docs published. Working tree intentionally uncommitted.
 - **Guidebook**: `docs/feature-maps/db-provider-config.md` — operational guidebook: what ships, source map, pinned semantics, API contract, step-by-step ops (boot → list → PUT → audit → kill-switch live proof → flip-back), executable DB verification queries with captured outputs, env contract, test coverage map, known limits. Backend-only → no screenshots; live JSON/SQL captures linked throughout.
 - **Machine Evidence**: all stage5 captures verified on disk; dev DB restored to env parity (`DELETE 2`, `remaining_rows=0`); API process stopped; no headless devin workers remain (session records only).
 - **Self-Audit Commitment**: pipeline complete — plan → cook → review APPROVED → saturation 10/10 → live API proof → documented + sealed.
+
+---
+
+# Pipeline Execution Log — codex-vibe --auto
+
+Plan: `plans/20261106-1946-tron-enablement-prep/` — TRON Enablement Prep
+(provider eval, indexer semantics, address_type generalization, dormant adapter).
+
+### [STAGE_1_VERIFICATION] - Stage 1: Grounded Pre-Planning & Adversarial Debate
+- **Completion Timestamp**: 2026-11-06 20:05:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Scanned existing pending plans in ./plans/ (non-evm-expansion completed; stablecoin-freeze-intel pending but disjoint scope)
+  - [x] Codex conducted pre-scouting via ck:scout and ck:predict (TxProvider contract, indexer watermark, GetOrCreate call sites incl. missed server.go:270, 'evm' literals, live keyless TronGrid probes)
+  - [x] Initialized canonical plan structure with phase-01..06 files
+  - [x] Dispatched Devin Critic worker; achieved consensus (PLAN_CONSENSUS_REACHED)
+- **Machine Evidence**:
+  - Plan path: `file:///home/lethanhlam/Desktop/Profile/check-wallet/plans/20261106-1946-tron-enablement-prep/plan.md`
+  - Scaffolding files: `phase-01-audit-drift-check.md`, `phase-02-provider-eval.md`, `phase-03-indexer-semantics.md`, `phase-04-address-type-generalization.md`, `phase-05-tron-adapter.md`, `phase-06-gates-docs.md`
+  - Consensus proof: Devin Critic session `swanky-icon`, round-1 CHANGES_REQUIRED (10 amendments RA-1..RA-10 applied), round-2 `PLAN_CONSENSUS_REACHED` — `reports/critique-round-1.md`, `reports/critique-round-2.md`
+  - Live probe evidence: TronGrid `walletsolidity/getnowblock` + both `/v1/accounts/` streams verified keyless 2026-11-06 (trc20 stream lacks block numbers — tri-problem recorded in phase-03)
+- **Self-Audit Commitment**:
+  - Plan grounded in verified code realities; Critic's TRC-20 tri-problem and INV-1/INV-2 invariants incorporated — zero speculative hallucination.
+
+### [STAGE_2_VERIFICATION] - Stage 2: Devin Cook Implementation
+- **Completion Timestamp**: 2026-11-06 20:35:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Devin Cook executed TDD across all 6 phases (audit drift → provider eval → semantics doc → address_type → dormant adapter → gates/docs)
+  - [x] Unit and integration suites executed in real terminal (orchestrator-verified, not cached)
+  - [x] Full build compilation executed
+- **Machine Evidence**:
+  - `gofmt -l .` → clean (empty) · `go vet ./...` → Exit 0 · `go build ./...` → Exit 0
+  - `go test ./...` → all 36 packages ok; `internal/provider/trongrid` 23 tests PASS (fresh `-count=1`, 20.5s); `internal/wallet` GetOrCreate format tests PASS on real `check_wallet_wallet_test` DB
+  - Dormant invariant verified: `grep -rln provider/trongrid` outside package → nothing imports it; `var _ provider.TxProvider` assertion at `adapter.go:606`; migrations diff = 0 files
+  - Devin Cook session: headless `devin -p --permission-mode dangerous`, transcript `reports/cook-output.txt` (EXIT=0, Status: DONE)
+  - New files: `internal/provider/trongrid/{adapter,mapper,adapter_test}.go`, `internal/wallet/service_test.go`, `docs/tron-indexer-semantics.md`, `docs/tron-provider-decision.md`, `reports/audit-drift-check.md`, `reports/final-report.md`
+- **Self-Audit Commitment**:
+  - No test assertions weakened; provider selection evidence-backed (TronGrid keyless-probed); TRON stays `is_active=FALSE`; adapter emits zero traffic unwired and unconfigured.
+
+### [STAGE_3_VERIFICATION] - Stage 3: Devin Review Independent Code Audit
+- **Completion Timestamp**: 2026-11-06 21:05:00
+- **Reviewer Verdict**: APPROVED (round 2; round 1 was CHANGES_REQUESTED — 1 Major + 2 Minor + 1 Nit)
+- **Audited Dimensions**:
+  - [x] Complete git diff audit across all modified files
+  - [x] Verified absence of dead code, raw SQL, and orphaned types
+  - [x] Audited test integrity and assertion strictness
+  - [x] Audited HTTP status codes and error handling boundaries
+- **Machine Evidence**:
+  - Round-1 review session `animated-pendulum` (dangerous mode, read-only mandate; tree-hash `5c678f73…`/`d1788258…` identical before/after round-2 session — zero writes). Reports: `reports/review-round-1.md`, transcript `reports/review-output.txt`
+  - Round-2 re-review: fresh independent session (`animated-pendulum` locked by IDE ACP process; new session dispatched per protocol), verdict `## Verdict: APPROVED` at `reports/review-round-2-output.txt:5`
+  - Round-1 findings → remediations: [Major] `limit>200` → `upstreamLimitMax=200` clamp + `TestLookup_LimitClamped`; [Minor] `ret[]`/`contract[]` shortfall → `ErrMalformed` + `TestLookup_RetContractMismatch`; [Minor] fixtures `success:false`/`txinfo Error`/multi-contract → 3 new tests; [Nit] doc line numbers + pkg count + stdlib claim → corrected
+  - `git diff --stat`: adapter +mapper +2 test files trongrid; wallet service+test; 4 GetOrCreate callers; 4 query comments; 4 docs
+- **Self-Audit Commitment**:
+  - Review was conducted by independent Devin sessions without author confirmation bias; round-2 verified every remediation with fresh terminal evidence.
+
+### [STAGE_4_VERIFICATION] - Stage 4: Blind Test Saturation & Session Cleanup
+- **Completion Timestamp**: 2026-11-06 21:25:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Remediated all findings from Devin Review round 1 (1 Major + 2 Minor + 1 Nit + 1 residual doc nit found in round 2)
+  - [x] Executed randomized anonymous tests achieving 10/10 (BLIND_SEED iterations, 7 property tests + named suite)
+  - [x] Project monorepo compiled with 0 errors
+  - [x] Confirmed no pipeline devin processes remain (pgrep -f "devin -p")
+- **Machine Evidence**:
+  - Loop results: `SATURATION_SCORE=10/10` — seeds 1354,2691,4028,5365,6702,8039,9376,10713,12050,13387 all PASS over `internal/provider/trongrid` + `internal/wallet` (iter-5 fixture-expectation bug found & fixed by the blind loop itself: expectation must scan ALL TransferContract indices)
+  - Blind suite: `adapter_blind_test.go` 7 property tests (random fixtures via math/rand/v2 + BLIND_SEED env); `TestBlind_AddressTypeOnlyKnownFormats` on real `check_wallet_wallet_test` DB
+  - Final build: `gofmt -l .` empty · `go vet ./...` 0 · `go build ./...` 0 · `go test -count=1 ./...` all 36 packages ok (trongrid 74s/35 tests; tests 59s incl. `/networks` inactive assertion; earlier `TestExposures_PrefixTruncationDeep` single-run flake re-ran green — package untouched by diff)
+  - Session cleanup confirmed; worker session ids: critic `swanky-icon`, cook (headless), review `animated-pendulum` + round-2 fresh session
+- **Self-Audit Commitment**:
+  - No orphaned headless devin sessions remain; backend and business logic are production-ready. TRON remains `is_active=FALSE`; adapter dormant.
+
+### [STAGE_5_VERIFICATION] - Stage 5: Live Surface Verification (API curl)
+- **Completion Timestamp**: 2026-11-06 21:10:00
+- **Surface**: API (`GET /api/v1/wallets/:network/:address` exposes `address_type` — the live `GetOrCreate` call site). No UI exists in this repo.
+- **Status**: PASSED
+- **Completed Tasks (API surface)**:
+  - [x] Executed real `curl` calls for the touched endpoint (happy ×2 + inactive-network 400 + invalid-address 400 + auth 401 + `/networks` contract check)
+  - [x] Asserted status codes, response shapes (`address_type:"evm"` byte-identical), and latency (<0.26s) against contract
+  - [x] Persisted raw commands + full responses to `reports/api-verify-tron-enablement-prep.md`
+- **Machine Evidence**:
+  - Live service: `go run ./cmd/api` on `:8010`, dev bootstrap reader key, dev stack (postgres :5433 / redis :6380)
+  - `GET /api/v1/networks` → 200, `tron`/`solana` absent (inactive rows never surface)
+  - `GET /wallets/ethereum|bsc/0x…fee1` → 200 `address_type:"evm"` via new `GetOrCreate` signature
+  - `GET /wallets/tron/TR7N…` → 400 `INVALID_NETWORK` — resolver fail-closed before `GetOrCreate` (TRON stays unreachable)
+  - Curl evidence file: `plans/20261106-1946-tron-enablement-prep/reports/api-verify-tron-enablement-prep.md` (6 requests asserted)
+  - DB post-verify: `wallets` rows stamped `evm` observed then `DELETE 2`, `remaining=0`; `data_sources` trongrid count = 0; API process stopped, :8010 free
+- **Self-Audit Commitment**:
+  - API responses are real terminal captures from the live service, not fabricated samples; dev DB restored to pre-verification state.
+
+### [STAGE_6_VERIFICATION] - Stage 6: Illustrated Guidebook & Feature Map Sign-Off
+- **Completion Timestamp**: 2026-11-06 21:30:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Published step-by-step guidebook + feature map in the backend app docs dir (no UI exists — screenshots N/A by surface classification, documented in guidebook §7)
+  - [x] API feature: the one touched endpoint documented with executable `curl` + real captured responses (6-request matrix)
+  - [x] Published backend database specifications and live DB verification queries with observed outputs
+  - [x] Every documented interaction verified on post-action state (wallet rows stamped `evm` observed in DB then cleaned)
+  - [x] Documented technical Feature Map including test-ID table (Go test anchors) and dormancy/§15-blocker contract
+- **Machine Evidence**:
+  - Guidebook path: `file:///home/lethanhlam/Desktop/Profile/check-wallet/apps/api/docs/feature-maps/tron-enablement-prep.md`
+  - API evidence: `plans/20261106-1946-tron-enablement-prep/reports/api-verify-tron-enablement-prep.md` referenced in guidebook §4
+  - DB query checks executed live: `wallets` stamp rows, `blockchain_networks` `is_active` map (tron=f), `data_sources` trongrid count = 0 — all in guidebook §5
+- **Self-Audit Commitment**:
+  - Guidebook is reproducible: any reviewer can re-run the checklist (§6) and verify DB state independently; TRON remains code-complete but INACTIVE end-to-end.

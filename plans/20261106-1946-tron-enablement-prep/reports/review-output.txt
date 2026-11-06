@@ -1,0 +1,39 @@
+I'll start by invoking the matching skill and reading the mandatory compliance inputs.Reading the skill instructions and remaining compliance inputs.Now let me read the rest of the ledger, the review rulebook reference, and the plan files.Compliance gate passed — both `AGENTS.md` and `learning.md` readable. Now reading the plan docs and getting the diff.Now let me get the full diff of tracked changes and list the new untracked files.Let me see the middle portion of the diff that was omitted (wallet/service.go, transaction/service_test.go, queries, docs).I have the full picture of tracked changes. Now let me set up the review plan and read the new adapter code plus the contract it implements.Now let me read the provider contract, the resilience client, and the test file to audit against them.Reading the rest of the test file, the wallet test, and both TRON docs.Now let me verify the contract claims against the actual codebase — resilience client, network/AddressFormat, indexer service references, and grep for all `GetOrCreate` callers and trongrid imports.All `GetOrCreate` callers updated, zero trongrid imports outside its package, no migration/go.mod diffs. Now verifying the resilience client contract, `AddressFormat`, and the indexer claims cited in the docs.Contract verified. Now checking the indexer claims in `transaction/service.go` and `identity.go` against the doc citations.Indexer claims verified against `service.go`. One candidate defect spotted: indexer `PageSize` defaults to **1000**, and the adapter passes it verbatim as `limit` for the trx stream — TronGrid rejects `limit>200` with HTTP 400. Let me verify the wiring/config and the remaining file:line citations.Checking how chainscan handles `PageSize` and what `IndexingPageSize` resolves to in config.Confirmed a real defect: nodereal clamps `size>1000→1000`, but trongrid passes `PageSize` (default 1000) verbatim to TronGrid's `limit` which rejects >200 with HTTP 400. Now verifying the remaining doc citations and the test fixtures' `Namespace` fields.One doc path (`internal/stablefreeze/scanner.go`) doesn't resolve — let me find the real file and re-run the remaining checks.All citations verified. Now checking `testNet(t, pool)` in transaction tests, other `WalletStore` implementers, and the phase files for promised acceptance items.All citations verified. Now running the verification gates — gofmt, vet, build, and the test suites.DB is reachable and `assertTestDatabase` enforces `_test` suffix ([P-020] compliant). Running the targeted tests first, then the full suite.All trongrid and wallet tests pass. Verifying the test count, then running the affected packages and full suite.23/23 trongrid tests confirmed passing; affected packages green. Running the full suite now.Full suite green. Let me run the `tests` package fresh (it carries the `/networks` inactive-network assertion) plus race on the changed packages, and check the phase-05 acceptance file.Phase-05 requirements all check out except the PageSize issue I found. Let me verify the JSON `Error`/`error` case handling empirically, check the audit report, and collect the background test results.JSON case-folding confirmed safe. The audit report's claims all verify. Collecting the race-test output and doing final spot-checks.All gates pass. One last check — the `'evm'` literal line numbers in `transactions.sql` may have drifted after the comment insertion, and the `golang.org/x/time` dependency claim.Let me verify one more accounting detail — whether chainscan reports `UpstreamCalls` on failed steps (same gap or adapter-specific), then compile findings.One last check — the semantics doc claims probe outputs are "transcribed in `plans/.../reports/`" — verifying that evidence actually exists there.Let me quickly verify the screening call-site arg semantics (`raw` vs `req.Address`) — same order as before, but confirming for completeness.All checks complete. Compiling findings and writing the review report.# Review Round 1 — TRON Enablement Prep
+
+Report written to `plans/20261106-1946-tron-enablement-prep/reports/review-round-1.md`.
+
+## Verdict: CHANGES_REQUESTED
+
+One [Major] defect; everything else verified clean.
+
+## Executive Summary
+
+The change is well-constructed and honest: INV-1/INV-2 are enforced in code (not just comments), the 23-test suite is real (exact-call-count assertions, replay determinism, zero-traffic proof — all httptest, zero real-network calls), `address_type` generalization is fail-closed with byte-identical EVM stamping, ~30 audited file:line citations in the docs all verify, zero migration/go.mod/generated-code drift, TRON stays `is_active=FALSE`, and the adapter is genuinely unwired. However, one contract violation hides behind the test page-size: TronGrid rejects `limit≥201` (the project's own probe evidence), and the real indexer sends `PageSize=1000` — the dormant adapter cannot complete a single step as shipped.
+
+## Verification Evidence (fresh, this session)
+
+- `gofmt -l .` empty; `go vet`/`go build` exit 0
+- `go test -count=1 ./internal/provider/trongrid/` → **23/23 PASS** (20.5s)
+- `./internal/wallet/` → PASS on real `check_wallet_wallet_test` DB; screening/transaction/enrichment → PASS
+- `./tests/` → PASS 67.1s (`non_evm_networks_test` proves `/networks` = bsc+eth)
+- `-race` trongrid+wallet → PASS; `go test ./...` → 36 pkgs ok, zero FAIL
+- `migrations/`, `go.mod`, `go.sum`, `internal/db/` → zero diff; zero trongrid imports outside the package; all `GetOrCreate` callers updated (4 prod + 10 test + iface)
+
+## Detailed Findings
+
+- **[Major]** `adapter.go:283` — trx `limit` passed verbatim as `opts.PageSize` (default 1000) → TronGrid HTTP 400 → `ErrClient4xx` on every step under shipped config. trc20 clamps to 50, nodereal clamps to 1000 — trx has no clamp; tests never exercise `PageSize>200`.
+- **[Minor]** `mapper.go:80` — `ret` array shorter than `contract[]` silently grades `IsError=false` (optimism on malformed evidence); doc §e wording ambiguous.
+- **[Minor]** `success:false` envelope and txinfo `Error` paths untested; multi-`TransferContract` tx claim untested.
+- **[Nit]** `'evm'` literal line numbers in the docs drifted +3 after the comment inserts (e.g. `transactions.sql:27`→`:30`); "37 packages"→36; "only stdlib"→"`x/time` pre-existing, go.mod untouched".
+
+## Required Actions to Approve
+
+1. **[Major]** Clamp trx `limit` to ≤200 + test asserting sent `limit≤200` when `PageSize>200`.
+2. **[Minor]** Decide/document the non-parallel `ret` `IsError` path (recommend `ErrMalformed` on length mismatch).
+3. **[Minor]** Add fixtures: `success:false`, txinfo `Error`, multi-contract tx.
+4. **[Nit]** Refresh `'evm'` line numbers and the two log/report figures.
+
+Status: DONE_WITH_CONCERNS
+Summary: Review complete — INV-1/INV-2, fail-closed stamping, dormancy, and test honesty all verified with fresh gate evidence; one Major defect (unclamped trx `limit` → guaranteed HTTP 400 under the default `PageSize=1000`) requires a one-line clamp + test before approval.
+Concerns/Blockers: CHANGES_REQUESTED on the Major finding; 3 minor test/doc-hardening items remain open for fix-or-accept.
+EXIT=0

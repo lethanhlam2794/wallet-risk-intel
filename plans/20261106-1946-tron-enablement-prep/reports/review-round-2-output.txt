@@ -1,0 +1,51 @@
+I'll start by reading the round-1 report and the relevant source files to verify the claimed remediations.Now let me read the remediated source files.Both fixes are in place. `upstreamLimitMax = 200` (adapter.go:53) clamps `size` at lines 261-263 before it's passed to `accountPage` for both streams (trx at :292, trc20 via `min(size, trc20PageClamp)` at :323). The ret-length check at mapper.go:83-87 is inside the `TransferContract` loop after the scope-exclusion `continue`s. Now let me read the test file.Reading the rest of the test file to see the new tests.All 5 new tests are present with specific assertions. Now running the required verification gates.Format, vet, and build all clean. Now the test suites.28/28 tests pass — matches the claimed 23 + 5 new. Now the wallet/transaction suites and the doc/drift checks.Wallet/transaction pass; the `'evm'` literal lines confirm at `transactions.sql:30`, `ofac_publish.sql:57`, `labels_publish.sql:12`, `stablecoin_freeze.sql:61`. Now checking the docs cite those numbers correctly.One stale citation remains: `docs/non-evm-audit.md:80-82` still lists the pre-insert line numbers (`:27`, `:54`, `:9`, `:58`) — that file was explicitly named in round-1 required action #4. Let me check the remaining doc claims before adjudicating.The audit doc text at lines 80-84 describes the current state but cites pre-insert line numbers — stale. Now checking diff scope: git status, migration/go.mod drift, and trongrid import confinement.Diff scope is clean: no migration/go.mod/go.sum/internal/db drift, zero `trongrid` references outside the package. Let me verify the flake claim by running `internal/tracing` in isolation, plus a race pass on trongrid.Both pass — `internal/tracing` TestExposures green in isolation (confirms pre-existing load flake in an untouched package), race-clean on trongrid. Let me check the phase-04 context for the stale citations to complete the adjudication.One more check — confirming `accountPage` is the only `limit` consumer in the package.A new file `adapter_blind_test.go` appeared that wasn't in my earlier `ls`. Let me re-check the directory and inspect it.The file appeared mid-review (timestamp 20:48 — after my first `ls`). Let me read it and re-run the suite to include it.The orchestrator added a blind-saturation test file mid-session (6 additional property tests). It's inside `trongrid/` so still in scope, but my earlier run predates it — re-running the suite to include it.All 35 tests pass (28 + 7 blind-saturation tests, including independent re-verification of the limit clamp and ret-parallelism). Since files changed mid-session, re-running gofmt to cover the new file.All verification complete. Here is the final adjudication report.
+
+---
+
+## Verdict: APPROVED
+
+Round 2 — TRON Enablement Prep re-review. All round-1 findings verified against fresh terminal output. One residual cosmetic nit documented below (non-blocking; the round-1 review itself classified items 2–4 as address-or-accept).
+
+### Verification Evidence (fresh execution, this session)
+
+| Gate | Result |
+|---|---|
+| `gofmt -l .` (apps/api) | empty ✓ (re-run after late `adapter_blind_test.go` appeared) |
+| `go vet ./...` | exit 0, silent ✓ |
+| `go build ./...` | exit 0 ✓ |
+| `go test -count=1 -v ./internal/provider/trongrid/` | **35/35 PASS** (74.1s) — 28 named + 7 blind-saturation tests |
+| `go test -race -count=1 ./internal/provider/trongrid/` | PASS, 75.2s ✓ |
+| `go test -count=1 ./internal/wallet/ ./internal/transaction/` | PASS (0.7s / 9.7s) ✓ |
+| `go test -count=1 -run TestExposures ./internal/tracing/` | PASS in isolation (32.5s) — flake is pre-existing load sensitivity in a package this diff does not touch; **not relevant** |
+| `git diff` on `migrations/`, `go.mod`, `go.sum`, `internal/db/` | all empty ✓ |
+| `trongrid` imports outside the package | zero ✓ |
+| New files outside `internal/provider/trongrid/` | none ✓ (`adapter_blind_test.go` arrived mid-review, in-scope, verified) |
+
+### Per-Finding Adjudication
+
+**1. [Major] trx `limit` unclamped — VERIFIED FIXED**
+- `upstreamLimitMax = 200` at `adapter.go:53` (comment cites the probed `limit≥201 → HTTP 400` evidence); `size` clamped at `:261-263` after `PageSize` defaulting.
+- `limit` has exactly one emitter — `accountPage` (`:409`) — reached by both streams with the clamped value: trx verbatim (`:292`), trc20 via `min(size, trc20PageClamp)` (`:323`). Grep confirms no other consumer.
+- `TestLookup_LimitClamped` (`adapter_test.go:675-701`) sends `PageSize: 1000`, parses the actual wire `limit` query param on every `/transactions` request (both endpoints), asserts each ≤ 200. Real wire assertion, not a fixture proxy. PASS.
+- Bonus re-verification: `TestBlind_LimitNeverExceedsCap` sweeps `PageSize ∈ {-7,0,1,42,199,200,201,1000,4096}` asserting every wire `limit ∈ [1,200]`. PASS.
+
+**2. [Minor] `ret[]` shorter than `contract[]` — VERIFIED FIXED**
+- `mapper.go:83-87`: `i >= len(r.Ret)` → `ErrMalformed`, positioned **inside** the `TransferContract` loop after the type-exclusion `continue` (`:59`) and the non-positive-amount `continue` (`:67`). Scope-excluded rows (e.g. `TriggerSmartContract` anchors) never reach the check — not newly broken. Honest malformed; no fabricated `IsError=false` can be emitted.
+- `TestLookup_RetContractMismatch` asserts `ErrMalformed` specifically (2 contracts / 1 ret). PASS; `TestBlind_RetParallelism` re-verifies under randomized shapes. PASS.
+
+**3. [Minor] untested fixtures — VERIFIED FIXED**
+- `TestLookup_SuccessFalseEnvelope`: `success:false` → `ErrDegraded` (kind-specific, not "some error"). PASS.
+- `TestLookup_TxInfoErrorPath`: txinfo `Error` → nil page + `ErrDegraded`. PASS.
+- `TestLookup_MultiContractTx`: 2 `TransferContract` elements, parallel `ret` SUCCESS/OUT_OF_ENERGY → 2 transfers, amounts 100/200, `IsError` false/true (proves parallel `ret[1]` indexing). PASS.
+
+**4. [Nit] doc drift — PARTIALLY VERIFIED, one residual**
+- Fixed and verified against `grep -n "'evm'" queries/*.sql` (actual: `:30/:57/:12/:61`): `docs/tron-indexer-semantics.md:254`, `reports/audit-drift-check.md:17`, `phase-01-audit-drift-check.md:33`, `phase-03-indexer-semantics.md:190`. `pipeline-log.md:492` now says "all 36 packages ok"; `final-report.md:88` now correctly states "go.mod/go.sum untouched; stdlib + pre-existing `golang.org/x/time`".
+- **Residual**: `docs/non-evm-audit.md:80-82` still cites pre-insert `transactions.sql:27`, `ofac_publish.sql:54`, `labels_publish.sql:9`, `stablecoin_freeze.sql:58` in present-tense phrasing — the file was explicitly named in round-1 required action #4. Cosmetic (an audit doc whose value is file:line precision), zero code impact.
+- Not defects: `phase-04-address-type-generalization.md:74-80` cites pre-insert numbers but is a historical instruction doc (true at authorship; `phase-01:33` records the renumbering); `pipeline-log.md`'s "23 tests" entry is a dated log of a past run.
+
+### Remaining Action (non-blocking)
+
+- Update the three stale line citations at `docs/non-evm-audit.md:80-82` to `:30/:57/:12/:61` — one edit, may ride the next doc pass or enablement PR.
+
+The must-fix Major is resolved correctly with real wire-level test proof; both Minors carry kind-specific assertions; all invariants (INV-1/INV-2, dormant gating, fail-closed format stamping) remain intact. The dormant adapter now satisfies the `TxProvider` contract under the shipped `PageSize=1000` default.
+REVIEW_EXIT=0
