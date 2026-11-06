@@ -18,9 +18,18 @@ func TestRequireTestPool_SeededSchema(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var networks int
-	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM blockchain_networks").Scan(&networks))
-	assert.Equal(t, 2, networks, "ethereum + bsc seeds must survive truncation")
+	var networks []string
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT array_agg(code ORDER BY code) FROM blockchain_networks").Scan(&networks))
+	assert.Equal(t, []string{"bsc", "ethereum", "solana", "tron"}, networks,
+		"all migration-seeded networks must survive truncation")
+
+	// solana/tron are registered INACTIVE (migration 000026 groundwork) —
+	// the resolver keeps rejecting them until a §15-reviewed enablement.
+	var inactive int
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT count(*) FROM blockchain_networks WHERE code IN ('solana','tron') AND is_active = FALSE").Scan(&inactive))
+	assert.Equal(t, 2, inactive, "solana/tron seeds must stay inactive")
 
 	var sources []string
 	require.NoError(t, pool.QueryRow(ctx,

@@ -14,10 +14,13 @@ WHERE s.run_id = $1
 GROUP BY s.network_code;
 
 -- name: StgLabelOrphanNetworks :one
+-- bn.is_active: a staged code matching only an INACTIVE registry row stays
+-- an orphan — inactive networks must not join or publish (D4b).
 SELECT count(*) FROM stg_wallet_labels s
 WHERE s.run_id = $1
   AND NOT EXISTS (
-      SELECT 1 FROM blockchain_networks bn WHERE bn.code = s.network_code
+      SELECT 1 FROM blockchain_networks bn
+      WHERE bn.code = s.network_code AND bn.is_active
   );
 
 -- name: StgLabelNewCategories :many
@@ -42,7 +45,7 @@ WHERE wl.source_id = $1
   AND wl.revoked_at IS NULL
   AND w.network_id IN (
       SELECT bn2.id FROM blockchain_networks bn2
-      WHERE bn2.code IN (
+      WHERE bn2.is_active AND bn2.code IN (
           SELECT DISTINCT s.network_code FROM stg_wallet_labels s
           WHERE s.run_id = $2))
 GROUP BY bn.code;

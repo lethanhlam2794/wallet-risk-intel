@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-// Network is a supported blockchain.
+// Network is a supported blockchain. Its address encoding family is
+// derived from Namespace via AddressFormat() — never stored separately.
 type Network struct {
 	ID             int64
 	Namespace      string

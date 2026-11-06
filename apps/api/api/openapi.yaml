@@ -129,7 +129,9 @@ paths:
       summary: List supported blockchain networks
       responses:
         "200":
-          description: Active networks.
+          description: |
+            Active networks only — solana/tron are registered in the
+            catalog but inactive and therefore absent until enabled.
           content:
             application/json:
               schema:
@@ -1334,7 +1336,13 @@ paths:
               required: [network, address]
               additionalProperties: false
               properties:
-                network: { type: string, enum: [ethereum, bsc] }
+                network:
+                  type: string
+                  enum: [ethereum, bsc, solana, tron]
+                  description: |
+                    Network code. `solana`/`tron` are registered but
+                    **INACTIVE** — the probe returns `400 INVALID_NETWORK`
+                    until enabled.
                 address: { type: string, description: EVM 20-byte hex }
             example:
               network: ethereum
@@ -1624,8 +1632,17 @@ components:
       name: network
       in: path
       required: true
-      description: Network code.
-      schema: { type: string, enum: [ethereum, bsc] }
+      description: |
+        Network code. `solana` and `tron` are registered in the catalog
+        but **INACTIVE** — any request naming them returns
+        `400 INVALID_NETWORK` until a future enablement (e.g.
+        `GET /api/v1/wallets/solana/<address>` →
+        `{"error":{"code":"INVALID_NETWORK"}}`). Note the sibling
+        `address` path parameter keeps an EVM-only `pattern`
+        (`^(0x)?[0-9a-fA-F]{40}$`), so non-EVM address encodings are also
+        unexercisable until that pattern is generalized at enablement
+        time.
+      schema: { type: string, enum: [ethereum, bsc, solana, tron] }
     Address:
       name: address
       in: path
@@ -2586,8 +2603,14 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
-          example:
-            error: { code: INVALID_ADDRESS, message: "invalid address", request_id: "req_..." }
+          examples:
+            invalid_address:
+              value:
+                error: { code: INVALID_ADDRESS, message: "invalid address", request_id: "req_..." }
+            invalid_network:
+              summary: Unknown or inactive network code (e.g. solana/tron before enablement)
+              value:
+                error: { code: INVALID_NETWORK, message: "unsupported network", request_id: "req_..." }
     Unauthorized:
       description: Missing or invalid API key.
       content:

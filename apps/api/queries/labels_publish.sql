@@ -12,7 +12,7 @@ FROM (
            CASE WHEN s.address ILIKE '0x%' THEN lower(s.address)
                 ELSE '0x' || lower(s.address) END AS norm
     FROM stg_wallet_labels s
-    JOIN blockchain_networks bn ON bn.code = s.network_code
+    JOIN blockchain_networks bn ON bn.code = s.network_code AND bn.is_active
     WHERE s.run_id = $1
 ) t
 ORDER BY net_id, norm, addr
@@ -57,7 +57,7 @@ SELECT w.id, rc.id, $1, e.id, s.fingerprint, s.label,
        s.source_url, s.upstream_category, s.evidence,
        NULLIF(s.evidence->>'observed_at', '')::timestamptz
 FROM stg_wallet_labels s
-JOIN blockchain_networks bn ON bn.code = s.network_code
+JOIN blockchain_networks bn ON bn.code = s.network_code AND bn.is_active
 JOIN wallets w
   ON w.network_id = bn.id
  AND w.normalized_address = CASE WHEN s.address ILIKE '0x%'
@@ -98,7 +98,7 @@ WHERE wl.source_id = $1
       SELECT w.id FROM wallets w
       WHERE w.network_id IN (
           SELECT bn.id FROM blockchain_networks bn
-          WHERE bn.code IN (
+          WHERE bn.is_active AND bn.code IN (
               SELECT DISTINCT s2.network_code FROM stg_wallet_labels s2
               WHERE s2.run_id = $2)));
 

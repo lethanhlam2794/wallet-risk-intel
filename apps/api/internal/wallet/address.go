@@ -48,16 +48,32 @@ func IsEVMAddress(input string) bool {
 	return evmAddressRe.MatchString(input)
 }
 
+// Normalize validates raw under the chain-specific rules implied by
+// net.AddressFormat() and returns the canonical indexing form. Networks
+// without a known address format fail closed with ErrInvalidAddress.
+func Normalize(net network.Network, raw string) (string, error) {
+	switch net.AddressFormat() {
+	case network.AddressFormatEVM:
+		return NormalizeEVM(raw)
+	case network.AddressFormatSolana:
+		return NormalizeSolana(raw)
+	case network.AddressFormatTron:
+		return NormalizeTron(raw)
+	default:
+		return "", ErrInvalidAddress
+	}
+}
+
 // ResolveAndNormalize is the shared input-validation helper for every
 // {network}/{address} endpoint: resolve the network code, then normalize
-// the address under EVM rules. Both failures map to HTTP 400 with distinct
-// stable codes.
+// the address under that network's address-format rules. Both failures
+// map to HTTP 400 with distinct stable codes.
 func ResolveAndNormalize(resolver *network.Resolver, networkCode, rawAddress string) (network.Network, string, error) {
 	net, ok := resolver.Resolve(networkCode)
 	if !ok {
 		return network.Network{}, "", ErrInvalidNetwork
 	}
-	normalized, err := NormalizeEVM(rawAddress)
+	normalized, err := Normalize(net, rawAddress)
 	if err != nil {
 		return network.Network{}, "", err
 	}
