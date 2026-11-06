@@ -1,0 +1,46 @@
+Re-reading the amended plan files to verify each claimed change.All three phase files re-verified against the amendment claims. One last evidence check — the debate-record files referenced in plan.md's new summary.# Devin Critic — Round 2 Adjudication: Warm Seed Worker Plan
+
+## Amendment Verification (all re-checked against on-disk files)
+
+| # | Claim | Verified |
+|---|-------|----------|
+| A1 | Phase-3 sketch rewritten: `cfg, err := config.Load()`, checked `Migrate`/`Connect`, `defer pool.Close()`/`stop()` — all present | ✓ phase-03:34-63 |
+| A2 | `seed_test.go` mandated to reuse `queue_test.go`/`drain_test.go` helpers; redeclaration flagged as compile-blocker | ✓ phase-02:120-126 |
+| A3 | Fixture checklist pins `fingerprint` UNIQUE, `identifier_type`, `listed_address`, `uq_sanctions_wallet_identifier` distinctness, `wallet_attribution` source; `sanctions_snapshots` explicitly excluded | ✓ phase-02:132-151 |
+| A4 | Error taxonomy redesigned around canonical pre-check | ✓ phase-02:68-82 — **adjudicated below** |
+| A5 | 30 s `bctx` covers SELECT + batch enqueue iteration; ctx death → abort | ✓ phase-02:29-31, 44-49 |
+| A6 | `MaskAddr` on all per-row logs | ✓ phase-02:31 |
+| A7 | `batchSize < 1` → `Run()` error | ✓ phase-02:37-39, phase-01:86-88 |
+| A8 | Counter semantics documented; all six keys per source line | ✓ phase-02:96-111 |
+| A9 | `sqlc.narg`/`sqlc.arg` convention, `make tools` v1.30.0 pin, scoped `internal/db` diff | ✓ phase-01:38-76, 98-103, 126-127 |
+| A10 | Unbounded-run rationale documented; smoke exports both env vars | ✓ phase-03:68-70, 84-89 |
+
+Blind-spot dispositions confirmed: `skipped_non_evm` requires the `{active-EVM net, non-EVM addr}` pairing (phase-02:147-149); idempotency asserted on `status IN ('pending','claimed')` uniqueness, not total count (phase-02:165-167); NULL-net gap commented as intentional (phase-02:102-104); a multi-source composite-PK cursor test was added (phase-02:173-174). Debate record files exist under `reports/`.
+
+## Adjudication of the A4 redesign
+
+The counter-proposal is **accepted and superior to my suggestion**. Reasoning:
+
+- Post-check, `Enqueue`'s only remaining failure surface is `EnqueueWarmItem` itself. CHECK violation is unreachable (pre-check is the identical canonical gate); a `network_id` FK race (network row deleted mid-scan) is genuinely an infra/integrity anomaly where abort is correct; the partial-index `ON CONFLICT` leaves no 23505 path for concurrent same-key inserts. So "any post-check `Enqueue` failure is infra by construction" is **definitional, not heuristic** — no error-string or SQLSTATE inspection needed. Clean.
+- It still honors the binding invariant: `NormalizeEVM` is invoked only on `IsEVMAddress`-passed input — non-EVM data never reaches it.
+- It preserves the prompt's contract exactly: non-canonical row → `errors++`, continue; DB-level failure → abort, non-zero exit.
+
+## Residual Non-Blocking Observations (record for the cook; do not gate)
+
+1. **plan.md:67-68 is now stale wording** — "`NormalizeEVM` is reached only inside `Queue.Enqueue`" predates the D2 pre-check (the seeder calls it too, gated by `IsEVMAddress`). Invariant intact; sentence should say "only on syntactically-EVM input".
+2. **plan.md:90 wording drift** — "`<1` → config/boot error" vs. the actual rejection site `Seeder.Run`. Same outcome (non-zero exit); cosmetic.
+3. **Phase-2 pseudocode trap (line 48):** `cancel(); if ctx.Err()/bctx died → return err` — checking `bctx.Err()` *after* `cancel()` always reports `Canceled`. Correct impl: propagate ctx-errors from query/enqueue inside the loop, and/or check `bctx.Err()` before `cancel()` (parent `ctx.Err()` is always safe to check after). D2's semantics already imply the right thing — a literalist implementation would fail the first-batch test anyway, so it's self-correcting; one clarifying line would close it.
+4. **`NewSeeder` nil-log guard unstated** — mirror `NewQueue`/`NewDrainer` (`log == nil` → `slog.DiscardHandler`) or a nil-logger test will panic on first log call.
+
+These are doc-level nits an implementer resolves trivially; none change the architecture, the contract, or the verification plan.
+
+## Final Verdict
+
+**PLAN_CONSENSUS_REACHED.**
+
+All 8 required and 2 recommended amendments are verifiably incorporated; the A4 redesign is a genuine improvement over the critic's original proposal (definitional infra/domain boundary, zero inspection). No remaining blockers. The plan is faithful to the binding prompt's file scope, forbidden actions, counter contract, and the AGENTS.md anti-cross-listing invariant. Sign-off granted — proceed to Stage 2.
+
+---
+Status: DONE
+Summary: All round-1 amendments verified on disk, including a superior A4 redesign (canonical pre-check makes post-check Enqueue failures infra-by-construction). PLAN_CONSENSUS_REACHED; residual items are four cosmetic doc nits recorded for the cook.
+Concerns/Blockers: None blocking. Minor: plan.md lines 67-68/90 wording is stale vs. the amended D2/Run() design; phase-2 pseudocode `cancel()`-then-check ordering is a self-correcting trap worth one clarifying line.

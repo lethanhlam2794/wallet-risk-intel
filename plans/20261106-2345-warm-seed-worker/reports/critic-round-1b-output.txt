@@ -1,0 +1,108 @@
+# Devin Critic — Adversarial Review: Warm Seed Worker Plan
+
+## Executive Assessment
+
+**Structural audit: PASSED.** Roadmap declares 3 phases; all 3 phase files exist on disk (`phase-01-seed-queries-config.md`, `phase-02-seeder-core.md`, `phase-03-worker-wiring.md`).
+
+**Grounded Context audit: PASSED — unusually high fidelity.** Every claim I independently verified against source is accurate:
+
+- `Queue.Enqueue` signature, nil/disabled no-op, and the `NormalizeEVM(addr) != addr` canonical gate — [queue.go:39-63](file:///home/lethanhlam/Desktop/Profile/check-wallet/apps/api/internal/warmindex/queue.go)
+- Claim order `priority DESC, id`, dedupe via partial unique index on `(network_id,address) WHERE status IN ('pending','claimed')`, `GREATEST` non-demoting upsert — [warm_index.sql](file:///home/lethanhlam/Desktop/Profile/check-wallet/apps/api/queries/warm_index.sql), [000023_warm_index_queue.up.sql](file:///home/lethanhlam/Desktop/Profile/check-wallet/apps/api/migrations/000023_warm_index_queue.up.sql)
+- `warm_queue.address` CHECK `^0x[0-9a-f]{40}$` — verified verbatim.
+- `sanctions_wallets.network_id` nullable; `normalized_address`/`listed_address` are `TEXT` with **no CHECK** — non-EVM/uppercase fixtures are insertable, and the plan's claim that TRON Base58 can live there is real.
+- `wallet_index_state` PK `(network_id, wallet_id, source_id)` (post-000019), status enum `{not_indexed,indexing,fresh,partial,failed,disabled}`, `history_truncated` — verified.
+- `runWarmDrain` flag-gate at `cmd/worker/main.go:217-220` — verified.
+- `testutil` truncates domain tables, keeps `blockchain_networks`/`data_sources`/`risk_categories` — verified; TRON/Solana seeds are `is_active=FALSE` (migration 000026).
+- `IsEVMAddress` accepts mixed case (regex `[0-9a-fA-F]` and prefix-tolerant) — so the "uppercase EVM passes `IsEVMAddress`, rejected by `Enqueue`" test premise is **valid**, and `Enqueue` error text is already `MaskAddr`-masked.
+
+**Forbidden-actions audit: PASSED.** Scope stays inside `warm_seed.sql` + generated code, `seed.go`, `seed_test.go`, `config.go` (one knob), `main.go` (one case). No migration, no drain/warm.go/tracing edit, no trongrid, no API change, no new deps. The NULL-`network_id`→skip behavior is also *required* by AGENTS §5 ("never turn an ETH listing into a BSC listing") — fanning out an unmapped EVM address to all EVM nets would violate that invariant; the plan correctly refuses.
+
+**Verdict shape:** all three phases are CHALLENGED — not for architectural unsoundness (the architecture is right), but for ~10 concrete defects/gaps ranging from a compile-blocking test-file hazard to underspecified error semantics. Consensus is withheld pending the amendments below.
+
+## Phase-by-Phase Critique
+
+### Phase 1 — Seed queries + batch-size config: **CHALLENGED**
+
+**What holds:**
+- Row-value keyset `(a,b,c) > (…)` is **proven in this codebase**: `queries/transactions.sql:65-66` already ships `(t.block_timestamp, t.id) < (sqlc.narg('cursor_ts'), sqlc.narg('cursor_id')::bigint)` under sqlc v1.30.0 (pinned via `SQLC_VERSION ?= v1.30.0` in the Makefile, headers in `internal/db/*` match). The plan's disjunctive fallback is unnecessary belt-and-suspenders — good.
+- LEFT JOIN for S1 is correctly motivated: `network_id` is the only nullable join key (S2's `w.network_id` and S3's `wis.network_id` are `NOT NULL`, so their LEFT JOINs are effectively INNER — harmless consistency).
+- `envInt` exists and errors on malformed input, matching every other knob — "malformed → boot error" is true.
+
+**Challenges:**
+- **Convention deviation:** plan uses positional `$1..$4`; repo convention for cursor/limit params is `sqlc.narg`/`sqlc.arg` with casts (24 uses across `transactions.sql`, `api_clients.sql`, `provider_configs.sql`). Inside a row constructor, positional params generate nameless `dollar_1..3` fields; `sqlc.narg('cursor_net')::bigint` yields named, typed params. Adopt the convention.
+- **`LIMIT` typing:** `LIMIT $2` generates `Limit int32`; `WarmSeedBatchSize` is `int`. Either cast at the call site or use `LIMIT sqlc.arg('lim')::bigint` (repo precedent) — unspecified in the plan.
+- **`sqlc generate` blast radius:** it regenerates *all* files in `internal/db`. Any developer-side sqlc version ≠ v1.30.0 rewrites headers/output across 17 files — diff noise at best. Plan must instruct: `make tools` (pinned) or verify `git status internal/db/` shows only `warm_seed.sql.go` + expected churn.
+
+### Phase 2 — Seeder core + tests: **CHALLENGED**
+
+**What holds:**
+- Classification order (net gate → coverage gate (S3) → `IsEVMAddress` → `Enqueue`) is airtight: `NormalizeEVM` is reachable only inside `Enqueue`; TRON rows are double-blocked (inactive net + non-EVM shape). The required-case matrix is complete vs. the prompt.
+- `sanctions_wallets`/`wallets.normalized_address` having **no CHECK** means every fixture the plan needs (TRON Base58, uppercase EVM, no-prefix hex) is insertable.
+- `NewQueue(q, false, nil)` gives a clean disabled-path test without env mutation; `TruncateAll`/`RequireTestPoolDSN`/`check_wallet_warmindex_test` conventions all verified.
+- Fixture precedent exists in `internal/tracing/warm_test.go:148-156` (`identifier_type='ETH'`, `match_scope='CHAIN_SPECIFIC'` free-text values are fine).
+
+**Challenges:**
+- **(Compile-blocker) Helper redeclaration:** `seed_test.go` lives in package `warmindex`, which already declares package-level `testDSN`, `netByCode`, `warmRow`, `warmRowCount`, `ledgerCalls`, `insertWarmItem`, `addrW1–W4`, `stubTx`, `testCfg`, `checkerFunc`, `newLane*`, `newDrainer` (`queue_test.go`, `drain_test.go`). A cook writing fresh helpers with any of these names → duplicate declaration, build fails. Plan must state: reuse existing helpers; new helpers get non-colliding names.
+- **Fixture NOT-NULL/UNIQUE omissions:** plan's fixture note lists only `sanctions_entities(source_id, external_entity_id, primary_name)` — accurate — but silently omits: `wallet_labels.fingerprint` (`TEXT NOT NULL UNIQUE` — two labels without distinct fingerprints → 23505), `sanctions_wallets.identifier_type` + `listed_address` (both `NOT NULL`), and the `uq_sanctions_wallet_identifier` tuple uniqueness when seeding multiple wallets per entity.
+- **`skipped_non_evm` reachability:** net-gate-first ordering means a TRON-Base58 row on `tron`/`NULL` net lands in `skipped_inactive_net`. The only fixture that exercises `skipped_non_evm` is `{network_id: ethereum, normalized_address: 'T…'}` — plan's case list should state this pairing explicitly or the counter will be tested against the wrong bucket.
+- **Enqueue error taxonomy unspecified:** prompt demands "bad row → errors++ / DB failure → abort". Inside `Enqueue`, a non-canonical address is a domain error, but a dead connection is infra — and `Enqueue` wraps its domain error with `%s`, **not `%w`** (queue.go:48), so `errors.Is` cannot discriminate. If conn-death is treated as per-row error, a mid-scan outage becomes a bounded-but-dishonest `errors++` storm (up to one batch). Required: specify the discriminator — e.g., `bctx.Err() != nil || ctx.Err() != nil → return err`, and treat only known domain errors (non-canonical, CHECK/FK SQLSTATE) as `errors++`; ambiguous ones abort.
+- **Counter honesty:** `enqueued` counts successful upsert *attempts* — deduped calls report enqueued with no new row (Enqueue returns `error` only; its signature can't change without touching the forbidden tracing contract). Acceptable, but must be documented in the code comment + report.
+- **Counter naming stretches (prompt-mandated, keep, but document):** `skipped_inactive_net` also counts `network_id IS NULL` (unmapped ≠ inactive); `skipped_fresh` also counts `indexing` (live claim) and `disabled`. Note: `'disabled'/'indexing' + history_truncated` rows are seeded at p5 per the prompt's literal OR-logic — a harmless wasted queue row, drain-side pc=0 release; flag as known fidelity note.
+- **`MaskAddr` convention:** codebase rule — "wallet addresses are never logged in full" (warmindex.go:58). Per-row failure logs must mask; plan doesn't mention it.
+- **Batch-ctx scope ambiguous:** "each batch query runs under a bounded 30s child ctx" — does the child ctx cover only the SELECT or SELECT+500 enqueues? Specify (recommend: whole batch iteration, with ctx-death → abort, not errors++).
+- **`batchSize<1` validation site unpinned:** sketch shows `NewSeeder(queries, queue, batchSize, log)` single-return — so `<1` must surface as `Run()` error (→ non-zero exit), or the constructor must return `(*Seeder, error)`. Pick one and write it down.
+- **Minor:** `sanctions_snapshots` fixture in `warm_test.go` precedent is **not** needed here (no FK; it fed the tracing service's snapshot read) — say so to avoid cargo-cult fixture weight.
+
+### Phase 3 — Worker wiring + gates: **CHALLENGED**
+
+**What holds:**
+- Wiring shape is correct: no resolver/keystore/lanes needed (classification reads `is_active`/`namespace` from the JOIN — the resolver's `ListActiveNetworks` would hide the very rows we must count); flag-check placement mirrors `runWarmDrain` before infra build; `signal.NotifyContext` fits; unknown-mode default still errors.
+
+**Challenges:**
+- **Sketch has 4 compile-level inaccuracies** a verbatim copy would break on:
+  1. `cfg := config.Load()` → `cfg, err := config.Load()` (returns `(*Config, error)`)
+  2. `database.Migrate(cfg.DatabaseURL)` — error unchecked (convention: `if err := …; err != nil`)
+  3. `pool := database.Connect(…)` — returns `(pool, err)`
+  4. Missing `defer pool.Close()` / `defer stop()`
+  Low severity (build catches all), but the plan presents this as authoritative wiring — fix it.
+- **Smoke-test env hygiene:** `godotenv.Load()` can mask — smoke must export `WARM_INDEX_ENABLED=1` *and* `DATABASE_URL` explicitly; the plan only warns about `DATABASE_URL`.
+- **No overall bound:** per-batch 30s bounds queries but not the run — a 10M-row table is hours under cron. Add a MAY-level note (e.g., wrap `seeder.Run` in a generous parent timeout or document intentional unboundedness). Not a blocker.
+
+## Identified Blind Spots & Edge Cases
+
+1. `seed_test.go` redeclaration hazard (compile-blocker) — biggest concrete risk.
+2. `wallet_labels.fingerprint` UNIQUE + `sanctions_wallets.identifier_type`/`listed_address` NOT NULL — fixtures will 23502/23505 without them.
+3. Infra-vs-domain Enqueue error discrimination — unwrappable domain error means the `errors++` vs abort boundary needs an explicit ctx/SQLSTATE-based rule.
+4. `skipped_non_evm` requires `{active-EVM net, non-EVM address}` pairing — plan's fixture note doesn't make this explicit.
+5. `enqueued` = upsert attempts (incl. dedupes) — document semantics; second-run counters will show `enqueued=N` again with zero *new* rows.
+6. NULL-`network_id` EVM OFAC rows are skipped — intentional coverage gap required by the anti-cross-listing invariant; worth an explicit comment so nobody "fixes" it later.
+7. `sqlc generate` full-directory regeneration + version pin requirement.
+8. Per-batch ctx scope + ctx-death accounting (rows killed by deadline are infra failures, not `errors++`).
+9. Concurrent-drain interplay is safe (dedupe covers `claimed`), and `done`/`dead` rows legitimately re-enqueue — both verified good, but the "re-run zero duplicates" test must assert on `status IN ('pending','claimed')` uniqueness, not total row count.
+10. Emit all six counter keys per source log line (uniform shape for log parsing), even when a counter is structurally zero.
+
+## Required Plan Amendments
+
+| # | Amendment | Severity |
+|---|-----------|----------|
+| A1 | Phase-3 wiring sketch: fix `config.Load()` error handling, `Migrate`/`Connect` error checks, add `defer pool.Close()`/`stop()` | Required |
+| A2 | Phase-2: state that `seed_test.go` reuses package-level helpers from `queue_test.go`/`drain_test.go`; no redeclaration of `testDSN`/`netByCode`/`warmRow*`/`insertWarmItem`/`addrW*`/`stubTx`/`testCfg`/`checkerFunc` | Required (compile-blocker) |
+| A3 | Phase-2 fixture checklist: add `fingerprint` (unique), `identifier_type`, `listed_address`, `uq_sanctions_wallet_identifier` tuple distinctness; use `wallet_attribution` source id | Required |
+| A4 | Specify Enqueue error discrimination: ctx-death/non-domain → abort run; domain errors only → `errors++` | Required |
+| A5 | Pin 30s batch-ctx scope (recommend covering query+enqueue iteration) and post-deadline accounting | Required |
+| A6 | `MaskAddr` on all per-row failure logs | Required (repo convention) |
+| A7 | Pin `batchSize<1` rejection site (prefer `Run()` error → non-zero exit, or two-value `NewSeeder`) | Required |
+| A8 | Document counter semantics in-code: `enqueued`=accepted upsert attempts; `skipped_inactive_net` includes NULL net; `skipped_fresh` includes `indexing`/`disabled` | Required |
+| A9 | Use `sqlc.narg('cursor_*')::bigint` + `LIMIT sqlc.arg('lim')::bigint` per repo convention; run `make tools` (sqlc v1.30.0) and verify `internal/db` diff is scoped | Strongly recommended |
+| A10 | Add optional overall-run bound or documented unbounded-rationale; add `WARM_INDEX_ENABLED=1` to smoke env list | Recommended |
+
+## Final Verdict
+
+**Consensus withheld pending amendments.** No REJECTED phase and no architectural veto — the design is correct, faithful to the binding prompt, and every grounding claim survived source verification. The plan fails sign-off only on precision: one compile-blocking test-file hazard, four sketch-level inaccuracies, an underspecified error taxonomy at the exact seam the prompt cares about (per-row fail-open vs. infra abort), and several fixture/counter details that a cook would otherwise have to guess.
+
+Not `PLAN_CONSENSUS_REACHED`. Once A1–A8 are incorporated (A9–A10 strongly advised), this plan is sign-off ready with no further debate needed.
+
+---
+Status: DONE_WITH_CONCERNS
+Summary: Plan is well-grounded and architecturally sound — all context claims verified against code — but requires 8 amendments before sign-off: a compile-blocking `seed_test.go` helper-redeclaration hazard, incomplete fixture NOT-NULL/UNIQUE specs, unspecified infra-vs-domain error discrimination inside `Enqueue`, and 4 compile-level bugs in the phase-3 wiring sketch. No phase is REJECTED; consensus achievable after amendment.
+Concerns/Blockers: A2 (helper redeclaration) and A4 (Enqueue error taxonomy) are the only ones with real failure modes; the rest are precision/documentation gaps.

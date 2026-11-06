@@ -1,0 +1,44 @@
+I'll start by invoking the `cook` skill since this is a plan-execution task, and reading the mandatory compliance inputs in parallel.Now let me read the three phase files and explore the codebase structure.Scout complete. All contracts verified: `Queue.Enqueue` signature, `EnqueueWarmItem` upsert, `NormalizeEVM`/`IsEVMAddress`, `AddressFormatForNamespace`, test harness, sqlc v1.30.0 installed, Postgres on 5433. Risk level: **R2** (normal business logic, worker batch).
+
+**Phase 1** — writing `queries/warm_seed.sql` with the three keyset-paginated SELECTs per the plan.sqlc generated `warm_seed.sql.go` but also touched 4 unrelated generated files — the plan requires the diff to be scoped to `warm_seed.sql.go` only. Let me inspect the drift.Diff is now scoped correctly. Let me inspect the generated types.Phase 1 verified: `go build ./...` clean, `internal/db/` diff scoped to `warm_seed.sql.go` only, `WarmSeedBatchSize` parses via `envInt` (malformed → boot error). Now marking phase-1 progress and writing `seed_test.go` first (TDD Red).Red confirmed — `Seeder` undefined. Now implementing `seed.go` (Green) per the plan's D1/D2 contracts.Simplifying — `freshOK` is redundant since only source 3 reads `stale`.All three failures are test-side bugs, not implementation bugs:
+
+1. `sourceCounters` matched the masked-address **Warn** record (which also carries `source`) before the summary line — need to match on the record message.
+2. `TestSeeder_SeedLabels`: my expected `scanned=6` was wrong — EXCHANGE+GAMBLING+revoked-RANSOMWARE are SQL-excluded, so 4 rows scan.
+3. `TestSeeder_CompositeKeysetPagination`: w1's two stale source rows dedupe to one queue row → 5 total, not 6.
+
+Fixing the test file.Typo — map literal needs a colon.All warmindex tests pass (9 new + all pre-existing drain/queue tests — zero drift). Phase 2 refactor check + verification gates.Phase 2 verified. Updating phase-2 frontmatter and moving to Phase 3 — worker wiring.`.env` has no `WARM_INDEX` keys; explicit exports win anyway. Seeding smoke fixtures.Idempotent replay verified (3 attempts, still 3 rows). Disabled-mode and unknown-mode checks:All smoke criteria pass. Running the full suite for zero-drift verification.All constraints verified. `pipeline-log.md` was already modified before my work (pre-existing); my diff touches only the declared file scope. Updating phase-3 and writing the cook report.Final housekeeping — update plan.md status and verify everything one last time.All phases complete and verified. Final report (also saved to `plans/20261106-2345-warm-seed-worker/reports/cook-report.md`):
+
+## Outcome
+
+`-mode warmseed` is wired and working: a one-shot seeder that scans three DB-resident sources (`sanctions_wallets` p20, risky `wallet_labels` p10, stale `wallet_index_state` p5) and enqueues eligible rows through the existing `Queue.Enqueue` upsert — priorities pinned below the 50-point signal floor, guarded by an invariant test.
+
+## Files changed
+
+- NEW `apps/api/queries/warm_seed.sql` + NEW `apps/api/internal/db/warm_seed.sql.go` (sqlc v1.30.0; `internal/db` diff scoped to this file — comment-only churn in 4 unrelated generated files was reverted)
+- NEW `apps/api/internal/warmindex/seed.go` — `Seeder`/`NewSeeder`/`Run`, shared `scanBatches` keyset loop (30s per-batch ctx), `enqueueGated` gate chain
+- NEW `apps/api/internal/warmindex/seed_test.go` — 9 tests, reuses package helpers (no redeclarations)
+- EDIT `apps/api/internal/config/config.go` — `WarmSeedBatchSize` (`WARM_SEED_BATCH_SIZE`, default 500)
+- EDIT `apps/api/cmd/worker/main.go` — `case "warmseed"` + `runWarmSeed()` + help text
+- Phase/plan frontmatter → `completed`; `docs/pipeline-log.md` modification predates this session (untouched)
+
+## Counters
+
+Per-source line `warm seed source complete` (`source` ∈ `ofac_list`/`risky_label`/`refresh_stale`) + totals line `warm seed complete`, always emitting all six keys: `scanned`, `enqueued`, `skipped_non_evm`, `skipped_inactive_net`, `skipped_fresh`, `errors`. `enqueued` = accepted upsert attempts.
+
+## Enqueue-path call graph
+
+`runWarmSeed` → flag gate → `NewQueue` → `NewSeeder` → `Run` → `seed{Sanctions,Labels,IndexState}` → `scanBatches`(`Queries.ListWarmSeed*Batch` keyset) → `enqueueGated` (net → `IsEVMAddress` → canonical pre-check) → `Queue.Enqueue` → `Queries.EnqueueWarmItem` upsert.
+
+## Verification
+
+- `go test ./internal/warmindex/` ok (9 new + zero drift); `go test ./...` all packages ok incl. `tests` 60.1s
+- `go build ./...`, `go vet ./...` exit 0; `gofmt -l .` empty; `git diff --check` clean
+- CLI smoke on `check_wallet_warmindex_test`: run 1 → 3 queue rows at p20/p10/p5 with `seed:*` reasons, exit 0; run 2 → zero new active rows; `WARM_INDEX_ENABLED=0` → exit 0 no-op; `-mode bogus` → exit 1
+
+## Forbidden-scope compliance
+
+No migrations, no `drain.go`/`warm_index.sql`/`tracing/warm.go` edits, priorities 50/100 untouched, no `trongrid` import, no endpoints/openapi/env/dependency changes, no commits.
+
+Status: DONE
+Summary: Implemented the warmseed one-shot worker end-to-end per plan — 3 keyset-paginated seed queries, `Seeder` with six-counter honest taxonomy, config knob, worker wiring — fully TDD'd (9 new integration tests) and smoke-verified against the real test DB with zero suite drift.
+Concerns/Blockers: none — `enqueued` counts upsert attempts (not new rows) by design; per-row enqueue is one round-trip each, acceptable for the MVP cron one-shot.

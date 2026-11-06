@@ -1,0 +1,45 @@
+I'll start by invoking the code review skill and reading the mandatory compliance inputs.warning: rejected a tool call that requires confirmation. Running in non-interactive mode. Use --permission-mode dangerous to auto-approve all tools.
+
+Now let me read the plan, binding prompt, and all new files in parallel.Core implementation read. Now the binding prompt, phases, and the test file.Now I need the surrounding context: queue/drain priorities, helpers, wallet/network functions, migrations, and phase-01/03.Now the schema/fixture dependencies and test helpers.warning: rejected a tool call that requires confirmation. Running in non-interactive mode. Use --permission-mode dangerous to auto-approve all tools.
+
+# Code Review — `ck-code-review --pending` (warm-seed-worker)
+
+**Verdict: APPROVED**
+
+## Executive Summary
+
+The pending changes implement the approved plan faithfully. Every binding contract I could verify from source evidence holds: gate order (net → `IsEVMAddress` → canonical pre-check → `Enqueue`), D1/D2 semantics, six-counter contract, `MaskAddr` on per-row logs, priorities 20/10/5 strictly below the `PriorityRiskyLabel=50` floor, `batchSize<1` rejection at `Run()`, composite keyset cursor matching `ORDER BY`, and `bctx.Err()` checked **before** `cancel()`. Forbidden scope is clean per `git status`: no diffs on `drain.go`, `queue.go`, `warm_index.sql`, `tracing/warm.go`, `models.go`, migrations, `openapi.yaml`, `go.mod`, or `.env`; `internal/db` diff is scoped to the generated `warm_seed.sql.go`. Test file reuses package helpers (A2 satisfied — no redeclarations). No blockers or majors found; two minor/nit findings below.
+
+## Verification Evidence
+
+Commands actually run by this reviewer:
+- `git status --short` + `git diff --stat` — confirmed scope: 3 tracked edits (`main.go`, `config.go`, `pipeline-log.md`), 4 new source files, plus plan/prompt docs.
+- `git diff` on the 3 tracked files — inspected in full.
+- `ls` on `internal/db`, `internal/warmindex`, `queries`, `migrations`, `plans/…/reports` — confirmed no stray generated/untracked files (no `querier.go`, no new migrations).
+
+Statically traced (file reads):
+- `Enqueue` signature `(ctx, netID int64, addr string, priority int, reason string, screeningID *uuid.UUID)` — call site passes `nil`, produces invalid `pgtype.UUID` correctly. `Enqueue` re-runs `NormalizeEVM` internally (`queue.go:47`), so the D2 reasoning holds: post-pre-check `Enqueue` failures are genuinely infra-only.
+- `IsEVMAddress` uses case-insensitive `^0x[0-9a-fA-F]{40}$` — uppercase EVM passes the gate, `NormalizeEVM` lowercases → `n != addr` → `errors++`. The `0x…0A01` fixture is consistent.
+- `AddressFormatForNamespace`: `eip155→EVM`, `tron→tron`, unknown→`""` fail-closed. NULL `network_id` / inactive / non-EVM rows all funnel to `skipped_inactive_net` — anti-cross-listing preserved; TRON double-blocked (`is_active=FALSE` + namespace).
+- `warm_queue` schema (`000023`): `CHECK (address ~ '^0x[0-9a-f]{40}$')` + partial unique index on `(network_id,address) WHERE status IN ('pending','claimed')` — upsert dedup and the canonical-write invariant verified.
+- Priority constants `PrioritySanctionsMatch=100`, `PriorityRiskyLabel=50` in `warmindex.go:32-35`; test asserts `Less` + exact 20/10/5.
+- Test matrix: all phase-02 required cases present (eligible OFAC p20, risky label p10, stale/truncated p5, revoked excluded, non-EVM skip, NULL/inactive-net skip, EXCHANGE/GAMBLING SQL-filtered, fresh/not_indexed/indexing/disabled → `skipped_fresh`, idempotent replay on ACTIVE uniqueness, failing-row-continues, disabled-queue zero writes, composite keyset at `batchSize=1`), plus `batchSize<1` and ctx-cancel cases.
+- `runWarmSeed`: flag checked before migrate/connect (zero-work disabled path, mirrors `runWarmDrain`), signal ctx, no Redis/lanes/resolver — matches one-shot contract.
+
+**Not re-run by reviewer** (exec auto-rejected this session): `go build ./...`, `go test ./internal/warmindex/`, `go vet`, `gofmt -l`. Cook-reported evidence (build exit 0; 9 new + existing tests green in 13.3s; `go test ./...` incl. `tests` 64.1s) is plausible given the static analysis but remains worker-claimed, not reviewer-verified. Fixture prerequisites (seeded `data_sources` codes `chainscan`/`blockscout`, `sanctions_wallets` uq-tuple nullability, absence of an EVM `CHECK` on `wallets.normalized_address`, TRON/BSC seed rows) were not re-verified against migrations — tests passing depends on them.
+
+## Detailed Findings
+
+**[Minor]** `seed_test.go` — no test that a post-check `Enqueue` infra failure aborts `Run`. D2's abort half is exercised only through fetch/ctx death (`TestSeeder_CtxCancelAborts`); the `Enqueue → error → abort` branch shares the same `visit`-return mechanism so correctness is not in doubt, but the contract branch is un-pinned. A case with a dead pool or dropped `warm_queue` permission would close it.
+
+**[Nit]** `seed.go:123` — `"warm seed source complete"` is logged even when the source aborted mid-scan (`err != nil` still emits the line before `Run` returns). Counters remain honest and the error propagates correctly, but the message is misleading on the failure path; consider `"source aborted"` or gating on `err == nil`.
+
+**[Nit]** `seedRow.stale` is populated only by source 3 and documented as such — harmless single-purpose field in the shared shape; acceptable, noted for completeness.
+
+## Required Actions to Approve
+
+None blocking. Approved as-is. Recommended follow-ups (non-gating): (1) add an `Enqueue`-failure abort test; (2) adjust the per-source log message on abort; (3) when execution is permitted, re-run `go test ./internal/warmindex/` + `go build ./...` to convert worker-claimed evidence into reviewer-verified evidence.
+
+Status: DONE_WITH_CONCERNS
+Summary: All binding plan contracts (gate order, D1/D2, keyset, counters, priorities, forbidden scope) verified from source; approved with one minor test-coverage gap and one cosmetic log nit.
+Concerns/Blockers: Runtime verification (build/test) could not be re-run — exec was auto-rejected; verdict rests on static evidence plus cook-reported green runs. Minor: post-check `Enqueue` abort branch untested; per-source "complete" log also fires on abort.
