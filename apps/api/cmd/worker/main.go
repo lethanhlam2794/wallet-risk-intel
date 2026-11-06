@@ -3,12 +3,16 @@
 //	go run ./cmd/worker -source ofac_sdn              # download + ingest
 //	go run ./cmd/worker -source ofac_sdn -file f.xml  # ingest a local file
 //
-//	or, in warmdrain mode, polls the warm index queue:
+//	or, in warmdrain mode, polls the warm index queue; in warmseed mode,
+//	runs a single proactive seed scan and exits:
 //
 //	go run ./cmd/worker -mode warmdrain               # WARM_INDEX_ENABLED=1
+//	go run ./cmd/worker -mode warmseed                # WARM_INDEX_ENABLED=1
 //
 // Ingest exits non-zero unless the run reaches COMPLETED; warmdrain runs
-// until SIGINT/SIGTERM and always exits 0 on clean shutdown.
+// until SIGINT/SIGTERM and always exits 0 on clean shutdown; warmseed is
+// a cron-scheduled one-shot — exit 0 on a finished scan, non-zero on a
+// DB-level failure.
 package main
 
 import (
@@ -42,7 +46,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "ingest", "worker mode: ingest|warmdrain")
+	mode := flag.String("mode", "ingest", "worker mode: ingest|warmdrain|warmseed")
 	source := flag.String("source", "ofac_sdn", "data source code to ingest")
 	file := flag.String("file", "", "local snapshot file (skips download)")
 	untilCaughtUp := flag.Bool("until-caught-up", false,
@@ -55,6 +59,8 @@ func main() {
 		err = run(*source, *file, *untilCaughtUp)
 	case "warmdrain":
 		err = runWarmDrain()
+	case "warmseed":
+		err = runWarmSeed()
 	default:
 		err = fmt.Errorf("unknown -mode %q", *mode)
 	}
@@ -266,6 +272,42 @@ func runWarmDrain() error {
 		}, log)
 	drainer.Run(ctx)
 	return nil
+}
+
+// runWarmSeed is the one-shot proactive seeder (warm-seed-worker). It
+// mirrors runWarmDrain's disabled-flag + signal-ctx shape but skips
+// everything the seeder doesn't need — no Redis, no provider
+// keystore/resolver, no lanes. The network resolver is deliberately NOT
+// used: classification reads is_active/namespace straight from the JOIN
+// so inactive/non-EVM rows stay visible to the counters.
+func runWarmSeed() error {
+	_ = godotenv.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	log := logger.New(cfg.LogLevel)
+	if !cfg.WarmIndexEnabled {
+		log.Info("warm index disabled (WARM_INDEX_ENABLED); exiting")
+		return nil
+	}
+	ctx, stop := signal.NotifyContext(context.Background(),
+		syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := database.Migrate(cfg.DatabaseURL); err != nil {
+		return err
+	}
+	pool, err := database.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	queries := db.New(pool)
+	queue := warmindex.NewQueue(queries, cfg.WarmIndexEnabled, log)
+	seeder := warmindex.NewSeeder(queries, queue, cfg.WarmSeedBatchSize, log)
+	return seeder.Run(ctx)
 }
 
 func loadResolver(ctx context.Context, q *db.Queries) (*network.Resolver, error) {

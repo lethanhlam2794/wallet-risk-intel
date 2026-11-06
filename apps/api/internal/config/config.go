@@ -154,6 +154,7 @@ type Config struct {
 	WarmIndexPollInterval time.Duration
 	WarmIndexItemBudget   int
 	WarmIndexMaxPages     int
+	WarmSeedBatchSize     int // keyset batch size for the one-shot warmseed scan
 
 	// Stablecoin freeze chain-scan (stablecoin_freeze source). The scan
 	// floor is head-Confirmations; each eth_getLogs call spans at most
@@ -373,6 +374,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if cfg.WarmIndexMaxPages, err = envInt("WARM_INDEX_MAX_PAGES", 10); err != nil {
+		return nil, err
+	}
+	if cfg.WarmSeedBatchSize, err = envInt("WARM_SEED_BATCH_SIZE", 500); err != nil {
 		return nil, err
 	}
 	if cfg.FreezeScanBlockRange, err = envInt64("FREEZE_SCAN_BLOCK_RANGE", 50000); err != nil {
