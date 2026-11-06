@@ -22,6 +22,9 @@ ON CONFLICT (network_id, tx_hash, transfer_index) DO UPDATE SET
 
 -- Bulk counterparty resolve (wallets.sql convention: the no-op DO UPDATE
 -- forces RETURNING for pre-existing rows — none are omitted).
+-- 'evm' literal: upstream feeds are EVM-only (buildRows NormalizeEVMs both
+-- endpoints); non-EVM stamping is an enablement task
+-- (docs/tron-indexer-semantics.md §f).
 -- name: BulkResolveWallets :many
 INSERT INTO wallets (network_id, address, normalized_address, address_type)
 SELECT $1::bigint, a, a, 'evm' FROM unnest($2::text[]) AS a

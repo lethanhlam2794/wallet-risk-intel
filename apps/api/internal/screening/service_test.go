@@ -502,7 +502,7 @@ func TestService_PersistFailed_AuditRow(t *testing.T) {
 		&fakeSanctions{lookup: &sanctions.WalletLookup{}, status: DataAvailable},
 		&fakeLabels{status: DataAvailable}, nil)
 
-	w, err := wallet.NewService(q).GetOrCreate(ctx, testNet().ID, testAddr, testAddr)
+	w, err := wallet.NewService(q).GetOrCreate(ctx, testNet(), testAddr, testAddr)
 	require.NoError(t, err)
 
 	require.NoError(t, svc.persistFailed(w.ID, canonical(DefaultOptions())))

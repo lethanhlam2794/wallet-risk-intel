@@ -267,7 +267,7 @@ func walletHandler(resolver *network.Resolver, svc *wallet.Service,
 			}
 			return
 		}
-		w, err := svc.GetOrCreate(c.Request.Context(), net.ID, c.Param("address"), normalized)
+		w, err := svc.GetOrCreate(c.Request.Context(), net, c.Param("address"), normalized)
 		if err != nil {
 			middleware.InternalError(c)
 			return

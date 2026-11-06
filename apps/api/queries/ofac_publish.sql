@@ -49,6 +49,9 @@ WHERE ep.sanctions_entity_id = se.id
         AND s.program_code = sp.code
   );
 
+-- 'evm' literal: staged sanctions rows are pre-validated EVM addresses
+-- (ofac mapper NormalizeEVM upstream); non-EVM stamping is an enablement
+-- task (docs/tron-indexer-semantics.md §f).
 -- name: PublishEnsureWallets :execrows
 INSERT INTO wallets (network_id, address, normalized_address, address_type)
 SELECT DISTINCT sw.network_id, sw.listed_address, sw.normalized_address, 'evm'

@@ -281,7 +281,7 @@ func TestFailover_PerSourceWatermarkResume(t *testing.T) {
 
 	// Seed the secondary's own coverage row: watermark 400.
 	w, err := wallet.NewService(q).GetOrCreate(context.Background(),
-		net.ID, addrRoot, addrRoot)
+		net, addrRoot, addrRoot)
 	require.NoError(t, err)
 	wid := w.ID
 	src, err := q.GetSourceByCode(context.Background(), "nodereal")
@@ -351,7 +351,7 @@ func TestFailover_HeadLagReleasePreservesCoverage(t *testing.T) {
 		map[string]int{"chainscan": 8})
 
 	w, err := wallet.NewService(q).GetOrCreate(context.Background(),
-		net.ID, addrRoot, addrRoot)
+		net, addrRoot, addrRoot)
 	require.NoError(t, err)
 	src, err := q.GetSourceByCode(context.Background(), "chainscan")
 	require.NoError(t, err)
@@ -392,7 +392,7 @@ func TestService_ReleaseClaimRestoresPreclaimRow(t *testing.T) {
 	svc, q, net := newSvcChain(t, pool, []*stubTx{newStub("chainscan")},
 		map[string]int{"chainscan": 8})
 	w, err := wallet.NewService(q).GetOrCreate(context.Background(),
-		net.ID, addrRoot, addrRoot)
+		net, addrRoot, addrRoot)
 	require.NoError(t, err)
 	src, err := q.GetSourceByCode(context.Background(), "chainscan")
 	require.NoError(t, err)
@@ -419,7 +419,7 @@ func TestService_ReleaseClaimRestoresPreclaimRow(t *testing.T) {
 
 	// Claim-created row (!st.exists) → honest empty not_indexed row.
 	w2, err := wallet.NewService(q).GetOrCreate(context.Background(),
-		net.ID, addrA, addrA)
+		net, addrA, addrA)
 	require.NoError(t, err)
 	require.NoError(t, svc.q.MarkWalletIndexing(context.Background(),
 		db.MarkWalletIndexingParams{

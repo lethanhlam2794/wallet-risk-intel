@@ -183,7 +183,7 @@ func TestKillSwitch_DBBackedStatusCache(t *testing.T) {
 	// Mid-flight 'indexing' rows under a flipped-inactive source self-heal:
 	// the skip leaves the persisted row untouched (never served as fresh).
 	w, err := wallet.NewService(q).GetOrCreate(context.Background(),
-		net.ID, addrRoot, addrRoot)
+		net, addrRoot, addrRoot)
 	require.NoError(t, err)
 	src, err := q.GetSourceByCode(context.Background(), "chainscan")
 	require.NoError(t, err)

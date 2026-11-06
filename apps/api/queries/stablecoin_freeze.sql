@@ -49,6 +49,9 @@ DELETE FROM stg_freeze_events WHERE run_id <> ALL($1::uuid[]);
 
 -- ---- publish ----
 
+-- 'evm' literal: freeze-scan contracts are EVM-only upstream (scanner
+-- NormalizeEVM); non-EVM stamping is an enablement task
+-- (docs/tron-indexer-semantics.md §f).
 -- name: PublishFreezeEnsureWallets :execrows
 -- wallet_address is the normalized lowercase form the scanner extracted
 -- from the log — the chain provides exactly one representation, so

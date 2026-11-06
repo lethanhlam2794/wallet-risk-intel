@@ -179,7 +179,7 @@ func (s *Service) sourceID(ctx context.Context, name string) (int64, error) {
 func (s *Service) EnsureIndexed(ctx context.Context, net network.Network,
 	normalized string, opts EnsureOptions) (*IndexOutcome, error) {
 
-	w, err := s.wallets.GetOrCreate(ctx, net.ID, normalized, normalized)
+	w, err := s.wallets.GetOrCreate(ctx, net, normalized, normalized)
 	if err != nil {
 		return nil, err
 	}

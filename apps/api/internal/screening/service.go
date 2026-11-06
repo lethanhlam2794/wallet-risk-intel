@@ -53,7 +53,7 @@ type (
 	}
 	// WalletStore mirrors wallet.Service.GetOrCreate.
 	WalletStore interface {
-		GetOrCreate(ctx context.Context, networkID int64, address,
+		GetOrCreate(ctx context.Context, net network.Network, address,
 			normalized string) (db.Wallet, error)
 	}
 )
@@ -143,7 +143,7 @@ func (s *Service) run(ctx context.Context, net network.Network,
 	if raw == "" {
 		raw = req.Address
 	}
-	w, err := s.d.Wallets.GetOrCreate(ctx, net.ID, raw, req.Address)
+	w, err := s.d.Wallets.GetOrCreate(ctx, net, raw, req.Address)
 	if err != nil {
 		return nil, fmt.Errorf("wallet resolve: %w", err)
 	}

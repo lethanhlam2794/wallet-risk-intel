@@ -251,7 +251,7 @@ func TestEnsureIndexed_FailureAndCooldown(t *testing.T) {
 	assert.Equal(t, StatusFailed, out.IndexStatus)
 	require.NotNil(t, out.ProviderStatus)
 	assert.Equal(t, string(provider.ErrRateLimited), *out.ProviderStatus)
-	w, _ := wallet.NewService(q).GetOrCreate(context.Background(), net.ID, addrRoot, addrRoot)
+	w, _ := wallet.NewService(q).GetOrCreate(context.Background(), net, addrRoot, addrRoot)
 	st := getState(t, pool, net.ID, w.ID)
 	assert.Equal(t, "rate_limited", st.Error.String)
 
@@ -353,7 +353,7 @@ func TestEnsureIndexed_MaxPagesTruncated(t *testing.T) {
 	assert.True(t, out.HistoryTruncated)
 	assert.Equal(t, int64(5), stub.lookCalls.Load(), "max_pages=5 bound")
 
-	w, _ := wallet.NewService(q).GetOrCreate(context.Background(), net.ID, addrRoot, addrRoot)
+	w, _ := wallet.NewService(q).GetOrCreate(context.Background(), net, addrRoot, addrRoot)
 	st := getState(t, pool, net.ID, w.ID)
 	assert.True(t, st.HistoryTruncated)
 	assert.Equal(t, StatusPartial, st.Status)
@@ -466,7 +466,7 @@ func TestEnsureIndexed_RowHandling(t *testing.T) {
 	}
 
 	// is_error rows produce no edges.
-	w, _ := wallet.NewService(q).GetOrCreate(context.Background(), net.ID, addrRoot, addrRoot)
+	w, _ := wallet.NewService(q).GetOrCreate(context.Background(), net, addrRoot, addrRoot)
 	edges, err := q.ListWalletEdges(context.Background(), db.ListWalletEdgesParams{
 		NetworkID: net.ID, FromWalletID: pgtype.Int8{Int64: w.ID, Valid: true}, Limit: 100})
 	require.NoError(t, err)

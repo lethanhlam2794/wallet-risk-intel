@@ -114,7 +114,7 @@ func (s *Service) Enrich(ctx context.Context, net network.Network,
 	// orphaned — reuse wallet.Service (thin get-or-create).
 	var walletID int64
 	if s.wallets != nil {
-		w, err := s.wallets.GetOrCreate(ctx, net.ID, rawAddress, normalized)
+		w, err := s.wallets.GetOrCreate(ctx, net, rawAddress, normalized)
 		if err != nil {
 			return nil, err
 		}
