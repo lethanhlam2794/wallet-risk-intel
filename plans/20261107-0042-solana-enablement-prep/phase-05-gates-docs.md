@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Gates + documentation refresh"
-status: pending
+status: completed
 priority: P2
 dependencies: [4]
 ---
@@ -35,9 +35,9 @@ report.
 
 ## Success Criteria
 
-- [ ] All four gate commands exit 0 with captured evidence.
-- [ ] Audit doc updated; no §15 item silently closed.
-- [ ] `/networks` still returns bsc+eth only (documented assertion).
+- [x] All four gate commands exit 0 with captured evidence.
+- [x] Audit doc updated; no §15 item silently closed.
+- [x] `/networks` still returns bsc+eth only (documented assertion).
 
 ## Risk Assessment
 

@@ -16,6 +16,17 @@ Dormant runtime shape: an unwired network resolves to `len(chain)==0`
 providers → `writeDisabled` marks its index state `"disabled"`
 (`internal/transaction/service.go:296-300`) — never traffic.
 
+Updated 2026-11-07 by the Solana enablement-prep increment: a **dormant,
+unwired** `provider.TxProvider` adapter over the keyless public Solana
+JSON-RPC now exists at `internal/provider/solanarpc/` — provider choice
+adjudicated in `docs/solana-provider-decision.md` (live keyless probe
+evidence preserved in
+`plans/20261107-0042-solana-enablement-prep/reports/probe-solana-rpc.md`)
+and every indexer semantic resolved in `docs/solana-indexer-semantics.md`
+including the SPL owner-feed discovery gap (declared coverage limit).
+The package is imported by no production binary; Solana remains
+`is_active=FALSE` and everything below marked §15 still applies.
+
 ## What groundwork already shipped
 
 | Piece | Location |
@@ -36,31 +47,46 @@ providers → `writeDisabled` marks its index state `"disabled"`
   downstream must be audited before enablement.
 - `transfer_index VARCHAR(100)` (L13) + `UNIQUE(network_id, tx_hash,
   transfer_index)` (L33): identity scheme for SPL inner instructions /
-  TRC-20 log entries is **undefined** — the unique key holds, but the
-  indexer must define what a transfer_index is per chain. TRON is now
-  **defined**: `{n|t}:{contentHash16}.{k}` verbatim reuse, decided and
-  evidenced in `docs/tron-indexer-semantics.md` §a and implemented by the
-  dormant adapter. Solana SPL remains undefined.
-- `block_number BIGINT` (L22): fits Solana slots numerically, but slot ≠
-  block (skipped slots, commitment levels) — semantics must be renamed or
-  reinterpreted; queries that order/compare by it carry EVM assumptions.
+  TRC-20 log entries is **defined** for both chains — the unique key
+  holds, but the indexer must define what a transfer_index is per chain.
+  TRON: `{n|t}:{contentHash16}.{k}` verbatim reuse, decided and evidenced
+  in `docs/tron-indexer-semantics.md` §a and implemented by the dormant
+  adapter. Solana: the same scheme verbatim — decided and evidenced in
+  `docs/solana-indexer-semantics.md` §d (content-hash inputs are
+  chain-agnostic transfer semantics; base58 tx_hash is carried verbatim).
+- `block_number BIGINT` (L22): fits Solana slots numerically — **defined**
+  as storing slot (documented reinterpretation, no DDL), intra-slot order
+  by `transactionIndex`, in `docs/solana-indexer-semantics.md` §a.
+  Slot ≠ block (skipped slots, commitment levels) — the reinterpretation
+  is what the dormant adapter emits; queries that order/compare by it
+  still carry EVM assumptions reviewed at enablement.
 
 ### wallet_index_state — `migrations/000008_transactions.up.sql:42-77`
 - `indexed_until_block BIGINT` (L55) is a contiguous-coverage **block**
-  watermark. Solana commitment-level finality (processed/confirmed/
-  finalized) does not map to confirmations-count semantics; the watermark
-  contract needs a per-format interpretation before a non-EVM indexer runs.
+  watermark — for Solana it stores the contiguous-coverage **slot**
+  watermark under the same top-side formula, decided in
+  `docs/solana-indexer-semantics.md` §a/§f (finalized-only reads;
+  `history_truncated` carries the unobservable-prefix signal when the
+  retained-ledger floor exceeds FromBlock). `Confirmations` becomes
+  slot distance, not depth — documented §g.
 
 ### provider.TxProvider — `internal/provider/provider.go:242-288`
 - The contract is block-window shaped: `TransferLookupOpts.FromBlock/
   ToBlock` (L248-249), `HeadBlock` (L286), and an **ascending-block
   ordering requirement** the coverage watermark depends on (L269-271).
-  Slot-based Solana needs a reviewed slot↔watermark mapping.
+  The Solana slot↔watermark mapping is **defined** — slot in both fields,
+  finalized-only head, contiguous-ascending-prefix emission bridging the
+  desc signature feed (`docs/solana-indexer-semantics.md` §a–§c) — and
+  implemented by the dormant `solanarpc` adapter.
 - `Kinds` (`NATIVE`/`TOKEN`) vs SPL / TRC-20 transfer typing must be mapped
   in the future adapter; comments/adapters assume hex-ish tx_hash. TRON
   mapping is **defined** (TRC-20 `type="Transfer"` → TOKEN, native
   `TransferContract` → NATIVE, Approval excluded — semantics doc §e) and
-  the dormant `trongrid` adapter implements it.
+  the dormant `trongrid` adapter implements it. Solana mapping is
+  **defined** (system `transfer`/`transferWithSeed` → NATIVE lamports;
+  parsed SPL `transfer`/`transferChecked` under Token and Token-2022 →
+  TOKEN with mint as asset — `docs/solana-indexer-semantics.md` §g) and
+  implemented by the dormant `solanarpc` adapter.
 
 ### tracing — `internal/tracing/`
 - BFS keys off `network_id` + `normalized_address`; disjoint address
@@ -150,14 +176,22 @@ providers → `writeDisabled` marks its index state `"disabled"`
 
 ## Pending §15 review (not started, by design)
 - Flipping `is_active` on solana/tron (traffic enablement).
-- ~~Any TxProvider/SnapshotSource adapter code~~ — TRON adapter code now
-  **exists but is dormant/unwired** (`internal/provider/trongrid/`,
-  provider decision + indexer semantics in the two docs above). Still
-  §15: `data_sources` row, providerconfig descriptor, selector wiring,
-  `TX_PROVIDER_TRON` env surface, and the `identity.go`/`list.go`/
+- ~~Any TxProvider/SnapshotSource adapter code~~ — dormant adapters now
+  **exist for both chains but are unwired**
+  (`internal/provider/trongrid/`, `internal/provider/solanarpc/` —
+  provider decisions + indexer semantics in the four docs above). Still
+  §15: `data_sources` rows, providerconfig descriptors, selector wiring,
+  `TX_PROVIDER_*` env surfaces, and the `identity.go`/`list.go`/
   `transactions.sql` normalize+literal switches enumerated in
-  `tron-indexer-semantics.md` §f. Solana adapter: none exists.
-- Transactions/indexer schema semantics for slot-based chains.
+  `tron-indexer-semantics.md` §f and `solana-indexer-semantics.md`
+  (enablement-blockers table — incl. the `identity.go:116` `ToLower`
+  base58-corruption fix and the SPL owner-feed coverage decision, with
+  Helius documented as the approval-gated upgrade path).
+- ~~Transactions/indexer schema semantics for slot-based chains~~ —
+  DEFINED for Solana (slot→`block_number`, `transactionIndex` intra-slot
+  order, finalized-only, ledger-floor truncation —
+  `solana-indexer-semantics.md`); the schema itself is untouched per the
+  stop conditions.
 - ~~`Service.GetOrCreate` signature (address_type as a parameter)~~ —
   RESOLVED (see above).
 - OpenAPI `Address` pattern generalization.
