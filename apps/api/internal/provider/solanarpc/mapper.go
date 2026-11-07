@@ -37,15 +37,14 @@ type tokenBalance struct {
 	AccountIndex int    `json:"accountIndex"`
 	Mint         string `json:"mint"`
 	Owner        string `json:"owner"`
-	ProgramID    string `json:"programId"`
 }
 
 // ix is one instruction in either form: parsed (program+parsed) or raw
-// (programId+accounts+data — Parsed nil, out of scope).
+// (programId+accounts+data — Parsed nil, out of scope; the programId is
+// deliberately undecoded since only parsed ixs are in scope).
 type ix struct {
-	Program   string `json:"program"`
-	ProgramID string `json:"programId"`
-	Parsed    *struct {
+	Program string `json:"program"`
+	Parsed  *struct {
 		Type string          `json:"type"`
 		Info json.RawMessage `json:"info"`
 	} `json:"parsed"`
@@ -97,6 +96,14 @@ func mapTx(tx *getTxResult, s sigRef, wantSol, wantSPL bool, head int64) ([]prov
 	}
 	inners := map[int][]ix{}
 	for _, set := range tx.Meta.InnerInstructions {
+		if _, dup := inners[set.Index]; dup {
+			return nil, provider.Errorf(provider.ErrDegraded,
+				"solanarpc tx %s: duplicate innerInstructions index %d", s.Sig, set.Index)
+		}
+		if set.Index < 0 || set.Index >= len(tx.Transaction.Message.Instructions) {
+			return nil, provider.Errorf(provider.ErrDegraded,
+				"solanarpc tx %s: innerInstructions index %d out of range", s.Sig, set.Index)
+		}
 		inners[set.Index] = set.Instructions
 	}
 	for i, inst := range tx.Transaction.Message.Instructions {

@@ -243,10 +243,11 @@ func TestBlind_ReplayIdentity(t *testing.T) {
 	r := rand.New(rand.NewPCG(blindSeed(2026), 11))
 	var f feed
 	txs := map[string]map[string]any{}
-	for i := 0; i < 1+r.IntN(5); i++ {
-		slot := int64(11 + i)
+	n := 1 + r.IntN(5)
+	for i := 0; i < n; i++ {
+		slot := int64(11 + n - 1 - i) // feed is DESC by (slot,transactionIndex)
 		s := rndSig(r, fmt.Sprintf("d%d", i))
-		f = append(f, sig(s, slot, int64(i)))
+		f = append(f, sig(s, slot, int64(n-1-i)))
 		txs[s] = tx(slot, i64(1000+slot), []string{walletA, acctB, mintUSDC},
 			[]map[string]any{
 				systemTransfer(walletA, acctB, int64(1+r.IntN(99))),

@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -251,10 +252,11 @@ type pageToken struct {
 	Floor    int64    `json:"fl"`
 	FloorSet bool     `json:"fs"`
 	Seed     string   `json:"se,omitempty"`
+	SeedSlot int64    `json:"es,omitempty"` // slot the seed anchors at (order-guard bound)
 	SeedDone bool     `json:"sd"`
 	Frontier string   `json:"fr,omitempty"`
+	FSlot    int64    `json:"f2,omitempty"` // slot of the frontier cursor sig
 	Bottomed bool     `json:"bo,omitempty"`
-	Exhaust  bool     `json:"ex,omitempty"` // feed bottomed out (empty page)
 	Sigs     []sigRef `json:"g,omitempty"`
 	Emit     int      `json:"e"`
 }
@@ -330,15 +332,16 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network,
 
 	// `before` seed: when fetchTo < observed head, anchor collection at
 	// the first signature of the first produced slot > T (before is
-	// exclusive ⇒ covers all of slot T; probe §4). Seed-walk failure
-	// degrades to a head-scan — still bounded by sig-pages.
+	// exclusive ⇒ covers all of slot T; probe §4). Soft failures degrade
+	// to a head-scan — still bounded by sig-pages; adapter-bug/malformed
+	// classes propagate (silently retrying a permanent fault hides it).
 	if !tok.SeedDone && opts.HeadBlock > 0 && opts.ToBlock < opts.HeadBlock {
-		seed, n, err := a.seedBelow(ctx, opts.ToBlock)
+		seed, seedSlot, n, err := a.seedBelow(ctx, opts.ToBlock)
 		calls += n
 		if err != nil {
 			return nil, err
 		}
-		tok.Seed, tok.SeedDone = seed, true
+		tok.Seed, tok.SeedSlot, tok.SeedDone = seed, seedSlot, true
 	}
 
 	wantSol, wantSPL := true, true
@@ -355,11 +358,19 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network,
 	}
 
 	// Collection phase — bounded desc pages until the frontier passes
-	// below the observable bottom or the feed exhausts.
+	// below the observable bottom or the feed exhausts. The feed is
+	// contractually non-increasing by slot; a row arriving above its
+	// predecessor cannot be trusted positionally (a below-bound row
+	// could mask later in-window sigs behind a false bottom) — degrade
+	// loudly rather than emit a silent coverage gap.
 	if !tok.Bottomed {
 		have := map[string]bool{}
 		for _, s := range tok.Sigs {
 			have[s.Sig] = true
+		}
+		prev := tok.FSlot // continuation anchor: last consumed row's slot
+		if prev == 0 {
+			prev = tok.SeedSlot // seeded start: rows ≤ seed slot
 		}
 		for i := 0; i < a.sigPagesPerStep; i++ {
 			rows, err := a.sigPage(ctx, normalized, tok.frontierOrSeed())
@@ -367,14 +378,23 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network,
 				return nil, err
 			}
 			calls++
+			pageDone := false
 			for _, r := range rows {
-				tok.Frontier = r.Signature
-				if r.Slot > tok.T {
+				if prev > 0 && *r.Slot > prev {
+					return nil, provider.Errorf(provider.ErrDegraded,
+						"solanarpc: unordered sig feed (slot %d after %d)", *r.Slot, prev)
+				}
+				prev = *r.Slot
+				if pageDone {
+					continue // scan-only: order is still enforced over the full page
+				}
+				tok.Frontier, tok.FSlot = r.Signature, *r.Slot
+				if *r.Slot > tok.T {
 					continue // above the window — position marker only
 				}
-				if r.Slot < lowerBound {
-					tok.Bottomed = true
-					break
+				if *r.Slot < lowerBound {
+					tok.Bottomed, pageDone = true, true
+					continue
 				}
 				if len(r.Err) > 0 && string(r.Err) != "null" {
 					continue // failed tx — collected sig would emit nothing (§e)
@@ -385,13 +405,13 @@ func (a *Adapter) LookupTransfers(ctx context.Context, net network.Network,
 					if r.TransactionIndex != nil {
 						idx = *r.TransactionIndex
 					}
-					tok.Sigs = append(tok.Sigs, sigRef{Sig: r.Signature, Slot: r.Slot, Idx: idx})
+					tok.Sigs = append(tok.Sigs, sigRef{Sig: r.Signature, Slot: *r.Slot, Idx: idx})
 				}
 			}
 			// A short or empty page means the feed has nothing more
 			// below — collection is complete by exhaustion (§f).
 			if len(rows) < a.sigPageSize {
-				tok.Bottomed, tok.Exhaust = true, true
+				tok.Bottomed = true
 			}
 			if tok.Bottomed {
 				break
@@ -492,11 +512,14 @@ func (a *Adapter) ledgerFloor(ctx context.Context) (int64, error) {
 }
 
 // seedBelow walks produced slots T+1, T+2, … ≤ seedWalk times for the
-// first block carrying signatures; returns its FIRST signature (the
-// exclusive `before` seed that covers all of slot T). "" means no seed —
-// the caller falls back to a head-scan. getBlock errors and skipped
-// slots (null result) both continue the bounded walk.
-func (a *Adapter) seedBelow(ctx context.Context, toBlock int64) (string, int, error) {
+// first block carrying signatures; returns its FIRST signature plus the
+// slot it anchors at (the exclusive `before` seed that covers all of
+// slot T). "" means no seed — the caller falls back to a head-scan.
+// Skipped slots (null result) and soft upstream failures (degraded,
+// rate-limited, unavailable) continue the bounded walk; internal and
+// malformed classes propagate — silently swallowing a permanent fault
+// would hide an adapter bug.
+func (a *Adapter) seedBelow(ctx context.Context, toBlock int64) (string, int64, int, error) {
 	calls := 0
 	for s := toBlock + 1; s <= toBlock+int64(a.seedWalk); s++ {
 		raw, err := a.rpc(ctx, "getBlock", []any{
@@ -511,26 +534,34 @@ func (a *Adapter) seedBelow(ctx context.Context, toBlock int64) (string, int, er
 		})
 		calls++
 		if err != nil {
-			continue // bounded walk — a missed seed degrades to head-scan
+			var le *provider.LookupError
+			if errors.As(err, &le) &&
+				(le.Kind == provider.ErrInternal || le.Kind == provider.ErrMalformed) {
+				return "", 0, calls, err
+			}
+			continue // soft failure — bounded walk degrades to head-scan
 		}
 		var blk *struct {
 			Signatures []string `json:"signatures"`
 		}
 		if err := json.Unmarshal(raw, &blk); err != nil {
-			continue
+			return "", 0, calls, provider.Errorf(provider.ErrMalformed,
+				"solanarpc getBlock %d: %v", s, err)
 		}
 		if blk == nil || len(blk.Signatures) == 0 {
 			continue
 		}
-		return blk.Signatures[0], calls, nil
+		return blk.Signatures[0], s, calls, nil
 	}
-	return "", calls, nil
+	return "", 0, calls, nil
 }
 
-// sigRow is one getSignaturesForAddress result element.
+// sigRow is one getSignaturesForAddress result element. Slot is a
+// pointer so a MISSING slot is distinguishable from the real genesis
+// slot 0 — rejecting 0 would hard-fail a feed that reaches genesis.
 type sigRow struct {
 	Signature        string          `json:"signature"`
-	Slot             int64           `json:"slot"`
+	Slot             *int64          `json:"slot"`
 	Err              json.RawMessage `json:"err"`
 	TransactionIndex *int64          `json:"transactionIndex"`
 }
@@ -558,9 +589,13 @@ func (a *Adapter) sigPage(ctx context.Context, address, before string) ([]sigRow
 		return nil, provider.Errorf(provider.ErrMalformed, "solanarpc sigs: null result")
 	}
 	for i, r := range rows {
-		if r.Signature == "" || r.Slot <= 0 {
+		if r.Signature == "" || r.Slot == nil || *r.Slot < 0 {
+			var slot int64 = -1
+			if r.Slot != nil {
+				slot = *r.Slot
+			}
 			return nil, provider.Errorf(provider.ErrMalformed,
-				"solanarpc sigs[%d]: sig=%q slot=%d", i, r.Signature, r.Slot)
+				"solanarpc sigs[%d]: sig=%q slot=%d", i, r.Signature, slot)
 		}
 	}
 	return rows, nil
@@ -590,6 +625,10 @@ func (a *Adapter) emitSlice(ctx context.Context, sigs []sigRef,
 				return calls, provider.Errorf(provider.ErrDegraded,
 					"solanarpc tx %s: null result for feed sig", s.Sig)
 			}
+			if tx.Slot != s.Slot {
+				return calls, provider.Errorf(provider.ErrDegraded,
+					"solanarpc tx %s: result slot %d != feed slot %d", s.Sig, tx.Slot, s.Slot)
+			}
 			rows, err := mapTx(tx, s, wantSol, wantSPL, head)
 			if err != nil {
 				return calls, err
@@ -616,8 +655,10 @@ type rpcResponse struct {
 // rpc performs one JSON-RPC call (one HTTP request) and returns the raw
 // result — callers decode so a literal `null` result carries its own
 // meaning (skipped block vs malformed). JSON-RPC errors map typed:
-// -32602/-32601 are adapter-bug class (ErrInternal); anything else is
-// upstream-degraded evidence.
+// code 429 is the documented throttle signal (rate_limited — the real
+// cap arrives as an error body on HTTP 200, probe §8); -32602 is our
+// params (internal); -32601 is an upstream capability gap (degraded);
+// anything else is upstream-degraded evidence.
 func (a *Adapter) rpc(ctx context.Context, method string, params []any) (json.RawMessage, error) {
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": method, "params": params,
@@ -629,6 +670,11 @@ func (a *Adapter) rpc(ctx context.Context, method string, params []any) (json.Ra
 	var resp rpcResponse
 	if err := json.Unmarshal(res.Body, &resp); err != nil {
 		return nil, provider.Errorf(provider.ErrMalformed, "solanarpc %s: %v", method, err)
+	}
+	var rid int64
+	if err := json.Unmarshal(resp.ID, &rid); err != nil || rid != 1 {
+		return nil, provider.Errorf(provider.ErrMalformed,
+			"solanarpc %s: mismatched response id %s", method, resp.ID)
 	}
 	if resp.Error != nil {
 		return nil, rpcErr(method, resp.Error)
@@ -698,11 +744,16 @@ func (a *Adapter) txBatch(ctx context.Context, sigs []sigRef) (map[string]*getTx
 	return out, nil
 }
 
-// rpcErr classifies a JSON-RPC error object. Param/method faults are our
-// bug class (ErrInternal); data faults are upstream-degraded evidence.
+// rpcErr classifies a JSON-RPC error object. Code 429 is the throttle
+// signal (rate_limited, not degraded); -32602 invalid-params is our bug
+// class (internal); -32601 method-not-found is an upstream capability
+// gap (degraded); other data faults are upstream-degraded evidence.
 func rpcErr(method string, e *rpcErrorObj) error {
 	kind := provider.ErrDegraded
-	if e.Code == -32601 || e.Code == -32602 {
+	switch e.Code {
+	case 429:
+		kind = provider.ErrRateLimited
+	case -32602:
 		kind = provider.ErrInternal
 	}
 	return provider.Errorf(kind, "solanarpc %s: rpc %d %s", method, e.Code, e.Message)

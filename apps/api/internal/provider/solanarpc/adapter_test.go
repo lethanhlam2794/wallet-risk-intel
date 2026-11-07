@@ -3,9 +3,11 @@ package solanarpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -105,14 +107,31 @@ type feed []map[string]any
 func (f feed) page(before string, limit int) []any {
 	start := 0
 	if before != "" {
+		found := false
 		for i, r := range f {
 			if r["signature"] == before {
 				start = i + 1 // exclusive — rows strictly below
+				found = true
 				break
 			}
 		}
-		// A sig NOT on this feed is a global positional seed (probe §4):
-		// it anchors at the head of what it bounds — start stays 0.
+		if !found {
+			// Foreign sig anchors at the head of what it bounds (probe §4)
+			// — except "SEED@<slot>", which models a getBlock
+			// signatures[0] anchor: every row at/below that slot sits
+			// below the seed in ledger order.
+			if ss, ok := strings.CutPrefix(before, "SEED@"); ok {
+				if seedSlot, err := strconv.ParseInt(ss, 10, 64); err == nil {
+					start = len(f)
+					for i, r := range f {
+						if r["slot"].(int64) <= seedSlot {
+							start = i
+							break
+						}
+					}
+				}
+			}
+		}
 	}
 	end := start + limit
 	if end > len(f) {
@@ -214,7 +233,8 @@ func bal(idx int, mint, owner string) map[string]any {
 func i64(v int64) *int64 { return &v }
 
 // baseUpstream returns a handler serving: getSlot, getFirstAvailableBlock,
-// getBlock (no blocks → nil), getSignaturesForAddress over f, and
+// getBlock (a synthetic "SEED@<slot>" first-signature so the seed path is
+// exercised whenever fetchTo < head), getSignaturesForAddress over f, and
 // getTransaction over txs (sig→fixture; missing → null).
 func baseUpstream(f feed, txs map[string]map[string]any, floor, head int64) func(string, json.RawMessage) (any, map[string]any) {
 	return func(method string, params json.RawMessage) (any, map[string]any) {
@@ -226,7 +246,9 @@ func baseUpstream(f feed, txs map[string]map[string]any, floor, head int64) func
 		case "getFirstAvailableBlock":
 			return floor, nil
 		case "getBlock":
-			return nil, nil // skipped slot
+			var slot int64
+			_ = json.Unmarshal(p[0], &slot)
+			return map[string]any{"signatures": []string{fmt.Sprintf("SEED@%d", slot)}}, nil
 		case "getSignaturesForAddress":
 			var cfg struct {
 				Limit  int    `json:"limit"`
@@ -377,8 +399,8 @@ func TestLookup_MidCollectionZeroEmission(t *testing.T) {
 		sig("sA", 12, 0), sig("sB", 11, 0), sig("sC", 10, 0), sig("sD", 9, 0),
 	}
 	txs := map[string]map[string]any{}
-	for _, s := range []string{"sA", "sB", "sC", "sD"} {
-		txs[s] = tx(0, i64(1000), []string{walletA, acctB},
+	for sigName, slot := range map[string]int64{"sA": 12, "sB": 11, "sC": 10, "sD": 9} {
+		txs[sigName] = tx(slot, i64(1000+slot), []string{walletA, acctB},
 			[]map[string]any{systemTransfer(walletA, acctB, 1)}, nil, nil, nil)
 	}
 	d := newRPC(t, baseUpstream(f, txs, 0, 12))
@@ -404,8 +426,8 @@ func TestLookup_CrossStepGlobalAscending(t *testing.T) {
 	f := feed{sig("s5", 15, 0), sig("s4", 14, 0), sig("s3", 13, 0),
 		sig("s2", 12, 0), sig("s1", 11, 0)}
 	txs := map[string]map[string]any{}
-	for _, s := range []string{"s1", "s2", "s3", "s4", "s5"} {
-		txs[s] = tx(0, i64(1000), []string{walletA, acctB},
+	for sigName, slot := range map[string]int64{"s1": 11, "s2": 12, "s3": 13, "s4": 14, "s5": 15} {
+		txs[sigName] = tx(slot, i64(1000+slot), []string{walletA, acctB},
 			[]map[string]any{systemTransfer(walletA, acctB, 1)}, nil, nil, nil)
 	}
 	d := newRPC(t, baseUpstream(f, txs, 0, 15))
@@ -503,8 +525,8 @@ func TestLookup_FloorAboveFromBlocksFinish(t *testing.T) {
 func TestLookup_CollectCapZeroEmission(t *testing.T) {
 	f := feed{sig("s4", 14, 0), sig("s3", 13, 0), sig("s2", 12, 0), sig("s1", 11, 0)}
 	txs := map[string]map[string]any{}
-	for _, s := range []string{"s1", "s2", "s3", "s4"} {
-		txs[s] = tx(0, i64(1000), []string{walletA, acctB},
+	for sigName, slot := range map[string]int64{"s1": 11, "s2": 12, "s3": 13, "s4": 14} {
+		txs[sigName] = tx(slot, i64(1000+slot), []string{walletA, acctB},
 			[]map[string]any{systemTransfer(walletA, acctB, 1)}, nil, nil, nil)
 	}
 	d := newRPC(t, baseUpstream(f, txs, 0, 14))
@@ -759,6 +781,82 @@ func TestLookup_EmptyFeedAboveFloorUnfinished(t *testing.T) {
 	for _, st := range page.Streams {
 		assert.False(t, st.Finished, "floor > F can never claim complete")
 	}
+}
+
+// Feed-order guard: a row arriving above its predecessor means the page
+// can't be trusted positionally — degrade loudly, never risk a silent
+// coverage gap behind a false bottom (review M4).
+func TestLookup_MisorderedFeedDegraded(t *testing.T) {
+	f := feed{sig("sA", 12, 0), sig("sB", 13, 0), sig("sX", 2, 0)}
+	txs := map[string]map[string]any{
+		"sA": tx(12, i64(1012), []string{walletA, acctB},
+			[]map[string]any{systemTransfer(walletA, acctB, 1)}, nil, nil, nil),
+	}
+	d := newRPC(t, baseUpstream(f, txs, 0, 20))
+	a := d.adapter(t, []string{"solana"})
+	page, err := a.LookupTransfers(context.Background(), solNet, walletA,
+		provider.TransferLookupOpts{FromBlock: 5, ToBlock: 14, HeadBlock: 20})
+	assert.Nil(t, page)
+	var le *provider.LookupError
+	require.ErrorAs(t, err, &le)
+	assert.Equal(t, provider.ErrDegraded, le.Kind)
+}
+
+// getTransaction returning a slot that disagrees with the feed ⇒ index
+// inconsistency ⇒ degraded, never silently accepted (review M-continuation).
+func TestLookup_TxSlotMismatchDegraded(t *testing.T) {
+	f := feed{sig("sM", 10, 0), sig("sX", 2, 0)}
+	txs := map[string]map[string]any{
+		"sM": tx(99 /* mismatch */, i64(1010), []string{walletA, acctB},
+			[]map[string]any{systemTransfer(walletA, acctB, 1)}, nil, nil, nil),
+	}
+	d := newRPC(t, baseUpstream(f, txs, 0, 10))
+	a := d.adapter(t, []string{"solana"})
+	page, err := a.LookupTransfers(context.Background(), solNet, walletA,
+		provider.TransferLookupOpts{FromBlock: 5, ToBlock: 10})
+	assert.Nil(t, page)
+	var le *provider.LookupError
+	require.ErrorAs(t, err, &le)
+	assert.Equal(t, provider.ErrDegraded, le.Kind)
+}
+
+// A permanent fault inside the seed walk propagates typed instead of
+// silently degrading to a head-scan (review M5). Soft failures still
+// fall back — that's the coverage-preserving path.
+func TestLookup_SeedFaultPropagates(t *testing.T) {
+	d := newRPC(t, func(method string, params json.RawMessage) (any, map[string]any) {
+		if method == "getBlock" {
+			return nil, map[string]any{"code": -32602, "message": "Invalid params"}
+		}
+		return baseUpstream(feed{}, nil, 0, 30)(method, params)
+	})
+	a := d.adapter(t, []string{"solana"})
+	page, err := a.LookupTransfers(context.Background(), solNet, walletA,
+		provider.TransferLookupOpts{FromBlock: 5, ToBlock: 10, HeadBlock: 30})
+	assert.Nil(t, page)
+	var le *provider.LookupError
+	require.ErrorAs(t, err, &le)
+	assert.Equal(t, provider.ErrInternal, le.Kind)
+}
+
+// JSON-RPC code:429 (the documented throttle body on HTTP 200, probe §8)
+// maps to ErrRateLimited — not generic degraded.
+func TestLookup_RPC429RateLimited(t *testing.T) {
+	d := newRPC(t, func(method string, _ json.RawMessage) (any, map[string]any) {
+		switch method {
+		case "getFirstAvailableBlock":
+			return int64(0), nil
+		case "getSignaturesForAddress":
+			return nil, map[string]any{"code": 429, "message": "Too many requests"}
+		}
+		return nil, nil
+	})
+	a := d.adapter(t, []string{"solana"})
+	_, err := a.LookupTransfers(context.Background(), solNet, walletA,
+		provider.TransferLookupOpts{FromBlock: 5, ToBlock: 10})
+	var le *provider.LookupError
+	require.ErrorAs(t, err, &le)
+	assert.Equal(t, provider.ErrRateLimited, le.Kind)
 }
 
 // Inverted window ⇒ ErrInternal before any HTTP.
