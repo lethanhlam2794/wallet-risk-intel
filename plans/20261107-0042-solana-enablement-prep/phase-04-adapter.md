@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Dormant Solana TxProvider adapter"
-status: pending
+status: completed
 priority: P2
 dependencies: [3]
 ---
@@ -98,9 +98,9 @@ Fixtures over httptest — no live calls in unit tests:
 
 ## Success Criteria
 
-- [ ] All prompt acceptance criteria for the adapter pass with tests.
-- [ ] Zero production-binary imports (dormancy check via `go list`).
-- [ ] `Enabled` gate, resilience config, allowlist all verified in tests.
+- [x] All prompt acceptance criteria for the adapter pass with tests.
+- [x] Zero production-binary imports (dormancy check via `go list`).
+- [x] `Enabled` gate, resilience config, allowlist all verified in tests.
 
 ## Risk Assessment
 
