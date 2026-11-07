@@ -561,3 +561,18 @@ Plan: `plans/20261106-1946-tron-enablement-prep/` — TRON Enablement Prep
   - DB query checks executed live: `wallets` stamp rows, `blockchain_networks` `is_active` map (tron=f), `data_sources` trongrid count = 0 — all in guidebook §5
 - **Self-Audit Commitment**:
   - Guidebook is reproducible: any reviewer can re-run the checklist (§6) and verify DB state independently; TRON remains code-complete but INACTIVE end-to-end.
+
+### [STAGE_1_VERIFICATION] - Stage 1: Grounded Pre-Planning & Adversarial Debate (solana-enablement-prep)
+- **Completion Timestamp**: 2026-11-07 00:52:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Scanned existing pending plans in ./plans/ (all 15 prior plans completed; mirror = 20261106-1946-tron-enablement-prep)
+  - [x] Orchestrator pre-scouting: verified every prompt claim against code (NormalizeSolana, AddressFormat, migration 000026, GetOrCreate, OFAC SOL path, TxProvider contract, trongrid dormancy, identity.go NormalizeEVM sites, warmindex EVM boundary, indexer watermark mechanics, wattrFiles/resolver active-only)
+  - [x] Initialized canonical plan structure: plan.md + phase-01..phase-05 at plans/20261107-0042-solana-enablement-prep/
+  - [x] Dispatched Devin Critic worker; two rounds; consensus PLAN_CONSENSUS_REACHED
+- **Machine Evidence**:
+  - Plan path: file:///home/lethanhlam/Desktop/Profile/check-wallet/plans/20261107-0042-solana-enablement-prep/plan.md
+  - Scaffolding files: phase-01-audit-drift-check.md, phase-02-provider-eval.md, phase-03-indexer-semantics.md, phase-04-adapter.md, phase-05-gates-docs.md
+  - Consensus proof: Devin Critic session `cyclic-buffer`; critique-round-1.md (CHALLENGED, RA-1..RA-7) -> rebuttal-round-1.md (all conceded+applied) -> critique-round-2.md (PLAN_CONSENSUS_REACHED)
+- **Self-Audit Commitment**:
+  - Plan is fully grounded in existing code realities; the adversarial debate caught and fixed a provable coverage-leak in the original bridge sketch plus the SPL owner-feed discovery gap before any code was written.
