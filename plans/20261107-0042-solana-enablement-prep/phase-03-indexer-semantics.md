@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Indexer semantics doc (a)–(h)"
-status: pending
+status: completed
 priority: P2
 dependencies: [2]
 ---
@@ -125,9 +125,9 @@ OpenAPI pattern, OFAC `SOL`→solana mapping, warmindex gates,
 
 ## Success Criteria
 
-- [ ] All of (a)–(h) resolved or named-non-option deferred.
-- [ ] INV-style binding invariants listed for Phase-4 tests.
-- [ ] Calls-per-ensure arithmetic reconciled vs decision-doc quota.
+- [x] All of (a)–(h) resolved or named-non-option deferred.
+- [x] INV-style binding invariants listed for Phase-4 tests.
+- [x] Calls-per-ensure arithmetic reconciled vs decision-doc quota.
 
 ## Risk Assessment
 
