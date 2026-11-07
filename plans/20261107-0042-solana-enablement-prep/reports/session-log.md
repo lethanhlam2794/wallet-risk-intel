@@ -41,7 +41,8 @@ in `reports/probe-solana-rpc.md`):
   path); version flag mandatory (-32015 without it).
 - JSON-RPC batching works (out-of-order responses keyed by id).
 - `getBlockSignatures` disabled (-32601); `processed` commitment rejected
-  (-32602); `confirmed` probed but never relied on; observed HTTP 429s
+  (-32602); `confirmed` probed but never relied on; observed JSON-RPC
+  `code:429` throttle bodies on HTTP 200
   (documented public quota: 100 req/10s/IP, 40/10s per-method).
 - **SPL owner-feed discovery gap PROVEN**: a plain USDC deposit into a
   Binance ATA is invisible on the owner feed (owner absent from
@@ -88,8 +89,8 @@ Output: phase-03 → completed. Commit `8535521`.
 `internal/provider/solanarpc/` — `adapter.go` (state machine, JSON-RPC
 plumbing, page token, resilience client ~2 req/s keyless pacing, SSRF
 allowlist init), `mapper.go` (jsonParsed extraction, accountKeys decode,
-tokenBalances owner/mint attribution), `adapter_test.go` (23 named-fixture
-tests), `adapter_blind_test.go` (randomized property suite).
+tokenBalances owner/mint attribution), `adapter_test.go` (28 named-fixture
+tests post-review), `adapter_blind_test.go` (randomized property suite).
 
 Green run: `ok … 19.581s` unit suite, then `ok … 51.124s` incl. blind
 trials. `go list -deps ./cmd/api ./cmd/worker | grep -i solana` → empty:
@@ -113,3 +114,28 @@ Output: phase-04 → completed. Commit `dec9300`.
 
 Output: `reports/gate-evidence.md`, `reports/final-report.md`, this log;
 phase-05 → completed.
+
+## Stage 3 — independent review (codex-vibe pipeline)
+
+- Fresh Devin Review session (read-only env): `reports/review-round-1.md`
+  — verdict **APPROVED** with 6 Minor + 11 Nit findings; INV-S1..S5
+  verified to hold under adversarial analysis.
+- Remediated: JSON-RPC `code:429` → `ErrRateLimited` (M1); semantics doc
+  `min→max` formula (M2); decision-doc arithmetic → ≤5 seed / ≤18 first
+  step / 67 per ensure / ~2 req/s (M3); intra-page + cross-page
+  non-increasing-slot guard with whole-page post-boundary scan →
+  `ErrDegraded` on misorder (M4); `seedBelow` propagates
+  internal/malformed, keeps soft-failure head-scan fallback (M5);
+  failed-step call undercount documented (M6).
+- Nits folded in: missing-vs-0 slot distinguished (`*int64`), genesis
+  slot-0 valid; `getTransaction` slot↔feed cross-check → degraded;
+  single-call response-id echo validated; `innerInstructions` dup/OOB
+  index → degraded; dead fields removed (`pageToken.Exhaust`,
+  `ix/tokenBalance.ProgramID`); `PageSize`-ignored, `Kinds`-fetch, and
+  seed-blind-spot doc lines added; `baseUpstream` now models positional
+  `SEED@<slot>` anchors so the blind suite exercises the seeded path.
+- Blind suite caught its own fixture bug: `TestBlind_ReplayIdentity`
+  built an ascending feed — the new order guard correctly flagged it;
+  fixture corrected to desc (guard working as designed).
+- 4 new tests: MisorderedFeed→degraded, TxSlotMismatch→degraded,
+  SeedFault→internal, RPC 429→rate_limited. 32 tests green (43.6s).

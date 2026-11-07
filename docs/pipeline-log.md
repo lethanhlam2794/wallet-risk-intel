@@ -576,3 +576,62 @@ Plan: `plans/20261106-1946-tron-enablement-prep/` — TRON Enablement Prep
   - Consensus proof: Devin Critic session `cyclic-buffer`; critique-round-1.md (CHALLENGED, RA-1..RA-7) -> rebuttal-round-1.md (all conceded+applied) -> critique-round-2.md (PLAN_CONSENSUS_REACHED)
 - **Self-Audit Commitment**:
   - Plan is fully grounded in existing code realities; the adversarial debate caught and fixed a provable coverage-leak in the original bridge sketch plus the SPL owner-feed discovery gap before any code was written.
+
+### [STAGE_3_VERIFICATION] - Stage 3: Devin Review Independent Code Audit (solana-enablement-prep)
+- **Completion Timestamp**: 2026-11-07 10:20:00
+- **Reviewer Verdict**: APPROVED
+- **Audited Dimensions**:
+  - [x] Complete git diff audit across the increment (4 commits, `456c5f9..HEAD`)
+  - [x] Verified absence of dead code, raw SQL, and orphaned types
+  - [x] Audited test integrity and assertion strictness
+  - [x] Audited HTTP status codes and error handling boundaries (error-kind typing 429→rate_limited found & fixed)
+- **Machine Evidence**:
+  - Devin Review session: fresh independent `devin -p` worker (read-only env; could not write report or run go commands — limitation disclosed inside report)
+  - Report: `plans/20261107-0042-solana-enablement-prep/reports/review-round-1.md` — 6 Minor + 11 Nit findings; INV-S1..S5 verified holding under adversarial analysis
+  - Prompt: `plans/20261107-0042-solana-enablement-prep/reports/prompt-review.md`
+- **Self-Audit Commitment**:
+  - Review was conducted by an independent Devin session without author confirmation bias.
+
+### [STAGE_4_VERIFICATION] - Stage 4: Blind Test Saturation & Session Cleanup (solana-enablement-prep)
+- **Completion Timestamp**: 2026-11-07 10:45:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Remediated review findings: 429→`ErrRateLimited` typing (M1), doc `min→max` bound (M2), decision-doc arithmetic → ≤5 seed/≤18 step/67 ensure/~2 RPS (M3), intra+cross-page non-increasing-slot guard with post-boundary scan → `ErrDegraded` (M4), `seedBelow` propagates internal/malformed, keeps soft-failure head-scan (M5), failed-step call undercount documented (M6); nits: missing-vs-0 slot (`*int64`), genesis slot-0 valid, tx↔feed slot cross-check, response-id echo validation, innerInstructions dup/OOB → degraded, dead fields removed, `PageSize`/`Kinds`/blind-seed-gap doc lines
+  - [x] Executed randomized anonymous tests achieving 10/10 (BLIND_SEED iterations over named + property suites)
+  - [x] Project monorepo compiled with 0 errors
+  - [x] Confirmed no pipeline devin processes remain (pgrep -f "devin -p" — only pgrep self-match; interactive sessions are user-facing, not workers)
+- **Machine Evidence**:
+  - Loop results: `SATURATION_SCORE=10/10` — seeds 101,1302,2503,3704,4905,6106,7307,8508,9709,10910 all PASS over `internal/provider/solanarpc` (28 named + 4 blind property tests; blind suite itself caught an ascending-feed fixture bug in `TestBlind_ReplayIdentity` — the new order guard flagged it, fixture corrected)
+  - Final gates: `gofmt -l .` empty · `go vet ./...` 0 · `go build ./...` 0 · `go test -count=1 ./...` all packages ok against live dev stack (postgres :5433 + redis, `make deps-up` + `make migrate-test`)
+  - Dormancy re-verified post-remediation: `go list -deps ./cmd/api ./cmd/worker | grep -i solana` → empty
+  - Session cleanup confirmed; worker session ids: review (headless `devin -p`, exited 0)
+- **Self-Audit Commitment**:
+  - No orphaned headless devin sessions remain; backend and business logic are production-ready. Solana remains `is_active=FALSE`; adapter dormant.
+
+### [STAGE_5_VERIFICATION] - Stage 5: Live Surface Verification (solana-enablement-prep)
+- **Completion Timestamp**: 2026-11-07 10:50:00
+- **Surface**: internal-only
+- **Status**: SKIPPED (recorded reason)
+- **Completed Tasks**:
+  - [x] Classified surface: dormant adapter + docs — no UI route exists, no new/modified endpoint, no live call site (contrast: TRON run touched the live `/wallets` signature → API surface)
+  - [x] Verified dormancy end-to-end instead of curl/browser: `go list -deps` empty for both binaries; `blockchain_networks` solana `is_active=f` live DB query; `data_sources` solana-rpc count = 0; `/networks` can never surface it (`WHERE is_active = TRUE`, unchanged code path)
+- **Machine Evidence**:
+  - Skip rationale: `plans/20261107-0042-solana-enablement-prep/reports/stage5-surface-classification.md`
+  - Live DB: `SELECT code,is_active` → solana `f`; `data_sources` solana-rpc = 0 (postgres :5433)
+- **Self-Audit Commitment**:
+  - No live surface exists for this change; dormancy verified by machine query, not assertion.
+
+### [STAGE_6_VERIFICATION] - Stage 6: Illustrated Guidebook & Feature Map Sign-Off (solana-enablement-prep)
+- **Completion Timestamp**: 2026-11-07 10:55:00
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Published guidebook + feature map in the backend app docs dir (no UI exists — screenshots N/A by surface classification, documented in §4; no e2e-autotest scenario exists for a package with zero live call sites)
+  - [x] Published live DB verification queries with observed outputs (§5)
+  - [x] Documented technical Feature Map: source paths (§2), Go test anchors table (§3 — the data-testid equivalent), reproduction commands (§4), §15 enablement checklist (§6)
+  - [x] Every documented behavior is backed by a named/blind test anchor or live query output — no hand-assembled evidence
+- **Machine Evidence**:
+  - Guidebook path: `file:///home/lethanhlam/Desktop/Profile/check-wallet/apps/api/docs/feature-maps/solana-enablement-prep.md`
+  - DB query checks executed live: `blockchain_networks` is_active map (solana=f), `data_sources` solana-rpc count = 0
+  - Upstream evidence: `reports/probe-solana-rpc.md` verbatim curl transcripts; review report `reports/review-round-1.md`
+- **Self-Audit Commitment**:
+  - Guidebook is reproducible: any reviewer can re-run §4 commands and verify DB state independently; Solana remains code-complete but INACTIVE end-to-end.

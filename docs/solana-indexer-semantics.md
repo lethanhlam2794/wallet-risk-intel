@@ -65,18 +65,23 @@ concern, not a wire/schema one; it is still hard-bounded.
   `maxSigPagesPerStep` pages from `before=frontier`. Zero emission while
   `phase=collecting` (a mid-collection step emits **zero rows** —
   required by the invariant and asserted in Phase 4). Collection ends
-  when `frontier < min(FromBlock, ledgerFloor)` or the feed bottoms out
-  (empty page).
+  when the frontier passes below `max(FromBlock, ledgerFloor)` — the
+  *observable* window bottom (sigs below the floor cannot exist, so
+  `max` is the correct bound; `min` would demand collecting below an
+  unreachable floor) — or the feed bottoms out (short/empty page).
 - **Top seed when `fetchTo < head`:** `before` accepts **foreign sigs
   as global positional seeds** — probed: a sig at slot 342.77M not on the
   queried address's feed anchored collection just below it (probe §4).
   The adapter seeds from `getBlock(S, transactionDetails:"signatures")`
   taking the FIRST signature of the first produced slot `S > ToBlock`
   (covers all of slot `ToBlock`; `before` is exclusive), walking skipped
-  slots ≤ `maxSeedWalk` calls. When `fetchTo == head` no seed is needed —
-  collection starts at the feed top. `getBlockSignatures` is disabled on
-  the public endpoint (`-32601`, probe §8) — `getBlock` signatures-only
-  is the seed source.
+  slots ≤ `maxSeedWalk` calls. Skipped slots and soft failures
+  (degraded/rate-limited/unavailable) continue the walk and degrade to
+  a head-scan; `internal`/`malformed` classes propagate — silently
+  retrying a permanent fault would hide an adapter bug. When
+  `fetchTo == head` no seed is needed — collection starts at the feed
+  top. `getBlockSignatures` is disabled on the public endpoint
+  (`-32601`, probe §8) — `getBlock` signatures-only is the seed source.
 - **Emission phase:** the collected set is sorted ascending
   `(slot, transactionIndex, signature)`; each step emits ≤ `emitCap`
   rows from `emitPos`, fanning out `getTransaction` per signature
@@ -92,7 +97,7 @@ concern, not a wire/schema one; it is still hard-bounded.
 |---|---|---|
 | `sigPageLimit` | 1000 | upstream max page size |
 | `maxSigPagesPerStep` | 10 | desc collection work per step |
-| `emitCap` | 100 | transfers emitted per step ⇒ ≤100 `getTransaction` logical calls |
+| `emitCap` | 100 | sigs fetched per step ⇒ ≤100 `getTransaction` logical calls; emitted transfer *rows* can exceed it (a tx emits ≥0 rows) |
 | `batchSize` | 50 | logical calls per JSON-RPC batch HTTP request |
 | `maxCollectSigs` | 20000 | sigs held in token across steps (~1.7 MB worst) |
 | `maxSeedWalk` | 5 | skipped-slot walk for the `before` seed |
@@ -107,11 +112,18 @@ concern, not a wire/schema one; it is still hard-bounded.
   delayed/backfilled sig inside the emitted prefix is a residual the
   UNIQUE+content-hash identity and the next ensure's tail-refetch absorb
   (finalized commitment makes it rare).
-- **`Kinds` filter:** `{NATIVE}` still emits both streams' collection
-  work? No — the feed is shared, but extraction honors `Kinds`; a
+- **`Kinds` filter:** `Kinds={NATIVE}` still fetches SPL sigs via
+  `getTransaction` — the sig's kind is unknowable pre-fetch (the feed is
+  address-level); extraction honors `Kinds` at mapping time, and a
   kind-filtered stream declares `Finished=true` when not requested
   (chainscan parity — INV-S2 still binds: the stream is declared either
   way).
+- **`PageSize`:** accepted for contract compatibility and ignored —
+  the emission slice is `emitCap`-bounded instead.
+- **Failed-step accounting:** a step that errors returns no page, so
+  its real upstream calls aren't settled into `UpstreamCalls`
+  (`service.go:441-442` settles non-nil pages only) — the budget
+  undercounts on failures; bounded by `MaxPagesHop0` regardless.
 
 ## (c) finality — `finalized` commitment only
 
@@ -200,7 +212,7 @@ parsed ixs `{parsed:{type, info}, program, programId}` — probed §5.
   mainnet-beta) and does NOT bound the sig feed (sigs at slot 342M
   returned fine) — it is a secondary signal only. **Feed exhaustion is
   the operational floor**: an empty page with `frontier ≥
-  min(FromBlock, floor)` means the node bottomed out above the window.
+  max(FromBlock, floor)` means the node bottomed out above the window.
 - **Truncated composition:** floor (or feed bottom) above `FromBlock` ⇒
   `[F, floor)` unobservable ⇒ emit everything honestly collected, keep
   the stream **`Finished=false`**, end the token ⇒ `service.go` takes
@@ -285,8 +297,15 @@ ATAs are unenumerable by construction.
 ## Binding invariants for the adapter (Phase-4 asserted)
 
 - **INV-S1 contiguous-ascending-prefix:** no row emitted before desc
-  collection passes below `min(FromBlock, ledgerFloor)`; the emitted
-  sequence across steps is globally ascending `(slot,txIndex,sig)`.
+  collection passes below `max(FromBlock, ledgerFloor)` (the observable
+  window bottom); the emitted sequence across steps is globally
+  ascending `(slot,txIndex,sig)`. **Feed-order guard:** the feed is
+  contractually non-increasing by slot — a row arriving above its
+  predecessor (intra-page or across pages/anchors) is `ErrDegraded`,
+  since a misordered page could mask in-window sigs behind a false
+  bottom; rows after the bottoming row are still order-checked.
+  **`getTransaction` slot cross-check:** a fetched tx whose `slot`
+  disagrees with the feed row is index inconsistency → `ErrDegraded`.
 - **INV-S2 stream-declaration:** every emitted `Transfer.Stream` value
   appears in that step's `page.Streams` (`streamSeen` derives only from
   it — `service.go:444-449`); an undeclared stream never gates coverage.
@@ -339,8 +358,10 @@ Worst case under `MaxPagesHop0=5` (`service.go:49-57`), pinned bounds
 Worst case = `1 + 1 + 5 + 50 + 10` = **67 HTTP requests/ensure**
 (`UpstreamCalls` — batch=1 request) plus ≤500 logical `getTransaction`
 calls upstream. Documented public limits: 100 req/10s/IP total,
-40/10s per method — a ~4 RPS limiter paces the burst to ~17 s; per-method
-`getSignaturesForAddress` ≤50 paces to ~13 s. `Budget["solana-rpc"]`
-must tolerate ≤16 calls in a single step (`settle` is post-hoc,
-`service.go:339-344`). Reconciled in `docs/solana-provider-decision.md`
-— fits the keyless quota with the adapter-side pacing constants above.
+40/10s per method — the adapter limiter is **~2 req/s** (429 arrives as
+a JSON-RPC `code:429` error body on HTTP 200, typed `ErrRateLimited`),
+so ≤20 calls/10s stays far under both caps; a saturated worst-case
+ensure paces to ~34 s. `Budget["solana-rpc"]` must tolerate ≤18 calls
+in a single step (`settle` is post-hoc, `service.go:339-344`).
+Reconciled in `docs/solana-provider-decision.md` — fits the keyless
+quota with the adapter-side pacing constants above.

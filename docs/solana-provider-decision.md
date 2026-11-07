@@ -45,30 +45,33 @@ Under the Phase-3 design (`docs/solana-indexer-semantics.md`) with
 
 ```
 1  head           getSlot@finalized
-≤2 seed           getBlock(T, signatures-only) — first step only, only
-                  when fetchTo < head (walks ≤ skipped-slot gaps)
+1  floor          getFirstAvailableBlock — first step only
+≤5 seed           getBlock(T+k, signatures-only) — first step only,
+                  only when fetchTo < head (walks ≤5 skipped slots)
 M× (P desc pages  getSignaturesForAddress desc collection,
    + F fan-out)   getTransaction per emitted sig — JSON-RPC batched
                   (1 HTTP request carries ≤50 logical calls)
 ```
 
 Pinned bounds (Phase 3 §b): `maxSigPagesPerStep=10`, `emitCap=100
-transfers/step`, `batchSize=50` ⇒ per step ≤ 10 sig calls + ≤2 batch
-calls + ≤2 seed calls = **≤14 HTTP requests**; ≤100 logical
-`getTransaction` calls inside batches.
+sigs fetched/step`, `batchSize=50`, `maxSeedWalk=5` ⇒ first step ≤
+1 floor + 5 seed + 10 sig + 2 batch = **≤18 HTTP requests**,
+subsequent steps ≤ **12**; ≤100 logical `getTransaction` calls
+inside batches.
 
 - **HTTP-request accounting**: `UpstreamCalls` counts real outbound
   HTTP requests (contract: "the real number of outbound requests",
-  `provider.go:266`) — a batch = 1. Worst case/ensure = `1 + 5×14`
-  = **71 HTTP requests**, inside the documented 100/10s aggregate and
-  40/10s per-method caps under a ~4 RPS limiter (~18 s saturated).
+  `provider.go:266`) — a batch = 1. Worst case/ensure = `1 + 1 + 5 +
+  5×12` = **67 HTTP requests**, inside the documented 100/10s aggregate
+  and 40/10s per-method caps under the adapter's **~2 req/s** limiter
+  (≤20 calls/10s — ~34 s saturated worst-case).
 - **Logical-call accounting**: upstream method pressure = ≤50
-  `getSignaturesForAddress` + ≤250 `getTransaction` per ensure — the
-  limiter paces per-method load to ≤4 RPS regardless of batching, so the
-  upstream quota is honored by construction.
+  `getSignaturesForAddress` + ≤500 `getTransaction` per ensure — the
+  limiter paces per-method load to ≤2 req/s regardless of batching, so
+  the upstream quota is honored by construction.
 - Budget note: `settle` is post-hoc (`service.go:339-344`) — per-step
   constants are the only bound; `Budget["solana-rpc"]` must tolerate
-  ~14 calls in a single step.
+  ~18 calls in a single step.
 - PublicNode mirror (`solana-rpc.publicnode.com`) verified keyless-live
   — same shapes — but `getFirstAvailableBlock`≈465.6M ≈ **~3 days
   retention** (probe §9): usable only inside its retained window; NOT
@@ -102,7 +105,7 @@ is the env-configured set (empty ⇒ disabled) — blockscout parity
 Rationale: (a) dormancy is already triple-gated — package imported by no
 binary, network `is_active=FALSE`, and no `chains` entry; (b) the keyless
 rate surface is shared per-IP and aggressive, but every call is behind
-the resilience client (limiter ≤4 RPS global, bounded retry honoring
+the resilience client (limiter ~2 req/s global, bounded retry honoring
 429/degraded as typed errors — never fabricated results); (c) the public
 endpoint's non-production posture is a §15 review input, not a code gate.
 `network.Network` carries no `IsActive` (`resolver.go:12-18`) —

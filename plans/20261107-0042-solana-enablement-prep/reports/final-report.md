@@ -13,7 +13,7 @@ evidence-backed indexer semantics, and zero runtime enablement.
 | 1 Audit drift check | All 13 claims VERIFIED, zero drift | `reports/audit-drift-check.md` |
 | 2 Provider eval | Keyless public Solana JSON-RPC chosen; all discovery rows adjudicated | `reports/probe-solana-rpc.md`, `docs/solana-provider-decision.md`, `docs/non-evm-provider-discovery.md` |
 | 3 Indexer semantics | (a)–(h) resolved; INV-S1..S5 pinned | `docs/solana-indexer-semantics.md` |
-| 4 Dormant adapter | `internal/provider/solanarpc/` — 28 tests green, zero prod imports | `apps/api/internal/provider/solanarpc/` |
+| 4 Dormant adapter | `internal/provider/solanarpc/` — 32 tests green (28 named + 4 blind), zero prod imports | `apps/api/internal/provider/solanarpc/` |
 | 5 Gates + docs | gofmt/vet/build/test clean; audit updated | `reports/gate-evidence.md`, `docs/non-evm-audit.md` |
 
 ## What was decided (and why)
