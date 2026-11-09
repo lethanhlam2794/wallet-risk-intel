@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: check_wallet
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet -d check_wallet"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  migrate:
+    image: ghcr.io/lethanhlam2794/wallet-risk-intel-api:${IMAGE_TAG:-latest}
+    command: ["migrate"]
+    environment:
+      DATABASE_URL: postgres://wallet:${POSTGRES_PASSWORD}@postgres:5432/check_wallet?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: ghcr.io/lethanhlam2794/wallet-risk-intel-api:${IMAGE_TAG:-latest}
+    command: ["api"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://wallet:${POSTGRES_PASSWORD}@postgres:5432/check_wallet?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      HTTP_ADDR: :8010
+    ports:
+      - "127.0.0.1:8010:8010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/lethanhlam2794/wallet-risk-intel-api:${IMAGE_TAG:-latest}
+    command: ["worker", "-mode", "warmdrain"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://wallet:${POSTGRES_PASSWORD}@postgres:5432/check_wallet?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # warmdrain exits 0 when WARM_INDEX_ENABLED is unset — on-failure keeps it
+    # down in that case but still restarts it on crashes.
+    restart: on-failure
+
+volumes:
+  pgdata:

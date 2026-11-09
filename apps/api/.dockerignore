@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.example
+*.dump
+plans/
+docs/
+tests/
+docker-compose*.yml
+Dockerfile
+.dockerignore
