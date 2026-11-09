@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -40,28 +41,46 @@ func NewDrainer(q *db.Queries, resolver *network.Resolver,
 		checker: checker, cfg: cfg, log: log, now: time.Now}
 }
 
-// Run is the poll loop: one item per cycle at PollInterval. Disabled →
-// log + immediate return (contract §7). Cycle errors are logged and the
-// loop keeps ticking — transient DB blips must not kill the worker.
+// Run starts cfg.Workers concurrent claim loops (one item per worker
+// per cycle at PollInterval). Disabled → log + immediate return
+// (contract §7). Cycle errors are logged and loops keep ticking —
+// transient DB blips must not kill a worker.
 func (d *Drainer) Run(ctx context.Context) {
 	if !d.cfg.Enabled {
 		d.log.Info("warm index disabled; drain loop not started")
 		return
 	}
+	workers := max(d.cfg.Workers, 1)
+	d.log.Info("warm drain loop started", "poll_interval", d.cfg.PollInterval,
+		"lanes", len(d.lanes), "daily_cap", d.cfg.DailyCap,
+		"workers", workers)
+	var wg sync.WaitGroup
+	for i := range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d.worker(ctx, i)
+		}()
+	}
+	wg.Wait()
+}
+
+// worker is one claim loop. workerIdx feeds lane rotation so different
+// workers prefer different providers.
+func (d *Drainer) worker(ctx context.Context, workerIdx int) {
 	interval := d.cfg.PollInterval
 	if interval <= 0 {
 		interval = time.Minute
 	}
-	d.log.Info("warm drain loop started", "poll_interval", interval,
-		"lanes", len(d.lanes), "daily_cap", d.cfg.DailyCap)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if _, err := d.RunOnce(ctx); err != nil {
+		if _, err := d.runOnce(ctx, workerIdx); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			d.log.Error("warm drain cycle failed", "error", err)
+			d.log.Error("warm drain cycle failed", "error", err,
+				"worker", workerIdx)
 		}
 		select {
 		case <-ctx.Done():
@@ -74,18 +93,27 @@ func (d *Drainer) Run(ctx context.Context) {
 // RunOnce runs one drain cycle: lease sweep → claim one item → lane
 // eligibility → EnsureIndexed → outcome settle. workDone reports whether
 // an item was claimed this cycle (any terminal outcome — released, done,
-// failed, or dead).
+// failed, or dead). It is the serial worker-0 path; concurrent drains
+// call runOnce with their own worker index.
 func (d *Drainer) RunOnce(ctx context.Context) (bool, error) {
+	return d.runOnce(ctx, 0)
+}
+
+// runOnce is RunOnce parameterized by worker index: only worker 0 runs
+// the lease sweep, and workerIdx rotates the preferred lane.
+func (d *Drainer) runOnce(ctx context.Context, workerIdx int) (bool, error) {
 	// todayUTC is computed once per cycle (D10) — the cap check and the
 	// spend write can never straddle midnight.
 	today := d.todayUTC()
-	cutoff := pgtype.Timestamptz{
-		Time: d.now().Add(-LeaseDuration), Valid: true}
-	if n, err := d.q.ResetExpiredWarmClaims(ctx, db.ResetExpiredWarmClaimsParams{
-		ClaimedAt: cutoff, Attempts: MaxAttempts}); err != nil {
-		return false, err
-	} else if n > 0 {
-		d.log.Info("warm lease sweep reset crashed claims", "reset", n)
+	if workerIdx == 0 {
+		cutoff := pgtype.Timestamptz{
+			Time: d.now().Add(-LeaseDuration), Valid: true}
+		if n, err := d.q.ResetExpiredWarmClaims(ctx, db.ResetExpiredWarmClaimsParams{
+			ClaimedAt: cutoff, Attempts: MaxAttempts}); err != nil {
+			return false, err
+		} else if n > 0 {
+			d.log.Info("warm lease sweep reset crashed claims", "reset", n)
+		}
 	}
 
 	item, err := d.q.ClaimNextWarmItem(ctx)
@@ -107,7 +135,7 @@ func (d *Drainer) RunOnce(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-	lane, err := d.selectLane(ctx, net, today)
+	lane, err := d.selectLane(ctx, net, today, workerIdx)
 	if err != nil {
 		// Best-effort release — a stranded claim would wait out the
 		// lease and the sweep would burn an unearned attempt (D3: an
@@ -222,13 +250,16 @@ func (d *Drainer) failAttempt(ctx context.Context, item db.WarmQueue,
 	return true, nil
 }
 
-// selectLane picks the first allowlisted provider (lane order) that is
-// enabled for the network, killswitch-active, and under today's cap.
+// selectLane picks the first eligible provider that is enabled for the
+// network, killswitch-active, and under today's cap. Iteration starts at
+// lanes[start%len] so concurrent workers prefer different providers —
+// worker k's order is lanes[k], lanes[k+1], … wrapping — while a single
+// worker keeps the historical allowlist order.
 func (d *Drainer) selectLane(ctx context.Context, net network.Network,
-	today pgtype.Date) (*ProviderLane, error) {
+	today pgtype.Date, start int) (*ProviderLane, error) {
 
-	for i := range d.lanes {
-		lane := &d.lanes[i]
+	for j := range d.lanes {
+		lane := &d.lanes[(start+j)%len(d.lanes)]
 		if !lane.Adapter.Enabled(net) {
 			continue
 		}

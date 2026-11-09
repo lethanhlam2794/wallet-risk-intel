@@ -597,3 +597,83 @@ func TestDrainer_DisabledRunExits(t *testing.T) {
 	d.Run(ctx) // must return immediately, not wait for ctx
 	assert.Less(t, time.Since(start), 2*time.Second)
 }
+
+// Lane rotation (WARM_INDEX_WORKERS): worker i iterates lanes from index
+// i%len — concurrent workers prefer different providers while eligibility
+// rules (enabled/killswitch/cap) stay byte-identical per candidate.
+func TestDrainer_LaneRotationAcrossWorkers(t *testing.T) {
+	pool := testutil.RequireTestPoolDSN(t, testDSN)
+	net := netByCode(t, pool, "ethereum")
+	q := db.New(pool)
+	pri := newStub("blockscout")
+	sec := newStub("blockscout_pro")
+	laneA := newLane(t, pool, q, pri, net)
+	laneB := newLane(t, pool, q, sec, net)
+	d := newDrainer(t, pool, []network.Network{net},
+		[]ProviderLane{laneA, laneB}, nil, testCfg())
+
+	today := pgtype.Date{Time: time.Now().UTC().Truncate(24 * time.Hour),
+		Valid: true}
+	got, err := d.selectLane(context.Background(), net, today, 0)
+	require.NoError(t, err)
+	assert.Equal(t, "blockscout", got.Code)
+
+	got, err = d.selectLane(context.Background(), net, today, 1)
+	require.NoError(t, err)
+	assert.Equal(t, "blockscout_pro", got.Code,
+		"worker 1 must prefer the second provider")
+
+	got, err = d.selectLane(context.Background(), net, today, 2)
+	require.NoError(t, err)
+	assert.Equal(t, "blockscout", got.Code, "start wraps around")
+}
+
+// Multi-worker drain (WARM_INDEX_WORKERS=2): both workers run
+// concurrently inside one process — items are claimed disjointly AND the
+// second provider sees real work (worker rotation reaches it).
+func TestDrainer_WorkersSpreadAcrossProviders(t *testing.T) {
+	pool := testutil.RequireTestPoolDSN(t, testDSN)
+	net := netByCode(t, pool, "ethereum")
+	q := db.New(pool)
+	pri := newStub("blockscout")
+	pri.head = 100
+	sec := newStub("blockscout_pro")
+	sec.head = 100
+	laneA := newLane(t, pool, q, pri, net)
+	laneB := newLane(t, pool, q, sec, net)
+	cfg := testCfg()
+	cfg.Workers = 2
+	cfg.PollInterval = 5 * time.Millisecond
+	d := newDrainer(t, pool, []network.Network{net},
+		[]ProviderLane{laneA, laneB}, nil, cfg)
+
+	addrs := []string{addrW1, addrW2, addrW3, addrW4}
+	for _, a := range addrs {
+		insertWarmItem(t, pool, net.ID, a, PriorityRiskyLabel)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	doneCh := make(chan struct{})
+	go func() { d.Run(ctx); close(doneCh) }()
+
+	require.Eventually(t, func() bool {
+		var n int
+		_ = pool.QueryRow(context.Background(),
+			`SELECT count(*) FROM warm_queue WHERE status='done'`).Scan(&n)
+		return n >= len(addrs)
+	}, 25*time.Second, 50*time.Millisecond)
+	cancel()
+	select {
+	case <-doneCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("drain did not stop after cancel")
+	}
+
+	assert.Positive(t, pri.lookCalls.Load(), "worker 0 lane untouched")
+	assert.Positive(t, sec.lookCalls.Load(),
+		"rotation must put real work on the second provider")
+	for _, a := range addrs {
+		assert.Equal(t, 1, pri.called(a)+sec.called(a),
+			"%s processed more than once across workers", MaskAddr(a))
+	}
+}

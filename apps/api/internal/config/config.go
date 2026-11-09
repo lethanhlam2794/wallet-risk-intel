@@ -154,6 +154,7 @@ type Config struct {
 	WarmIndexPollInterval time.Duration
 	WarmIndexItemBudget   int
 	WarmIndexMaxPages     int
+	WarmIndexWorkers      int // concurrent claim loops inside one drain (WARM_INDEX_WORKERS)
 	WarmSeedBatchSize     int // keyset batch size for the one-shot warmseed scan
 
 	// Stablecoin freeze chain-scan (stablecoin_freeze source). The scan
@@ -374,6 +375,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if cfg.WarmIndexMaxPages, err = envInt("WARM_INDEX_MAX_PAGES", 10); err != nil {
+		return nil, err
+	}
+	if cfg.WarmIndexWorkers, err = envInt("WARM_INDEX_WORKERS", 1); err != nil {
 		return nil, err
 	}
 	if cfg.WarmSeedBatchSize, err = envInt("WARM_SEED_BATCH_SIZE", 500); err != nil {

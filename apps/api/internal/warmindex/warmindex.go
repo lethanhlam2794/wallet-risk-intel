@@ -43,6 +43,12 @@ type Config struct {
 	PollInterval time.Duration // worker poll cadence
 	ItemBudget   int           // per-drain provider-call pool (clamped further by the lane's TXINDEX_BUDGET_*)
 	MaxPages     int           // stream-pair step bound per drain
+	// Workers is the in-process concurrency: N claim loops run
+	// concurrently inside one drain (SKIP LOCKED keeps them disjoint),
+	// and worker i prefers lane[i%len(lanes)] so multiple providers
+	// drain in parallel when the queue is deep. <=1 = the historical
+	// single serial loop.
+	Workers int
 }
 
 // ProviderLane binds one allowlisted provider to its dedicated

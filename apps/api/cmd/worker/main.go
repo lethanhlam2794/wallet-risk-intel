@@ -269,6 +269,7 @@ func runWarmDrain() error {
 			PollInterval: cfg.WarmIndexPollInterval,
 			ItemBudget:   cfg.WarmIndexItemBudget,
 			MaxPages:     cfg.WarmIndexMaxPages,
+			Workers:      cfg.WarmIndexWorkers,
 		}, log)
 	drainer.Run(ctx)
 	return nil
