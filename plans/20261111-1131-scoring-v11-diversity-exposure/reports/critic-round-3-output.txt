@@ -1,0 +1,13 @@
+Verifying the Round-3 edits at the claimed locations.All three fixes verified at the claimed locations:
+
+- **B1 ✓** — `phase-03:139-142`: error legs now fold to `onchain_coverage:"partial"`, with `"error"` explicitly declared NOT a distinct enum value and the right rationale (cannot-determine ≈ partial; `absent` asserts proven no-index). `phase-05:34-35` enum `complete|partial|absent` now covers every emitted value. My preferred fold, cleanly written.
+- **B2 ✓** — `phase-03:54-62`: gate restricted to NON-DISPUTED `serviceClassificationsV1_1` labels, with explicit A7 symmetry ("disputed service labels do NOT suppress").
+- **B3 ✓** — `phase-04:60-66`: flat-21 gated on `MaxHops≥1 ∧ (f.Hops==0 || f.Hops ≤ fs.MaxHops)` — "identification changes the weight, never the bound"; unknown hops adjacency-eligible. Consistent with the generic path's `exposureWeight` semantics and internally coherent (unset hops ≈ 1-hop default).
+- Cosmetic sweep confirmed — `plan.md:164` rewritten to the A6 rule; `phase-03:256-257` now "≤6 bounded round trips".
+
+Re-audit complete: A1–A15 resolved (Round 2), B1–B3 resolved (Round 3). The plan is contract-correct, internally consistent, coverage-honest, and preserves all AGENTS §5 invariants. No required amendments remain.
+
+Status: DONE
+Summary: Plan sign-off — all blocking and required amendments from three critic rounds are verified resolved in the artifacts; v1.1 design is sound, bounded, honest about coverage, and preserves v1 byte-identity.
+
+PLAN_CONSENSUS_REACHED

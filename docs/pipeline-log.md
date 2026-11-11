@@ -635,3 +635,93 @@ Plan: `plans/20261106-1946-tron-enablement-prep/` — TRON Enablement Prep
   - Upstream evidence: `reports/probe-solana-rpc.md` verbatim curl transcripts; review report `reports/review-round-1.md`
 - **Self-Audit Commitment**:
   - Guidebook is reproducible: any reviewer can re-run §4 commands and verify DB state independently; Solana remains code-complete but INACTIVE end-to-end.
+
+### [STAGE_1_VERIFICATION] - Stage 1: Adversarial Plan & Consensus (scoring-v11-diversity-exposure)
+- **Completion Timestamp**: 2026-11-11 12:20:00
+- **Status**: PASSED — PLAN_CONSENSUS_REACHED
+- **Completed Tasks**:
+  - [x] Grounded plan: `plans/20261111-1131-scoring-v11-diversity-exposure/` (plan.md + 5 phase files)
+  - [x] Devin Critic independent audit — session `thread-cheddar` (exited 0), 3 debate rounds
+  - [x] Round 1 CHALLENGED: 15 amendments (2 blocking: A1 outbound-provider-scoring defect via PublicAML `direction:"outbound"` items; A2 candidate-only index coverage hid receiver-check unverifiability)
+  - [x] Round 2: 15/15 verified resolved in artifacts; new defect B1 (`onchain_coverage:"error"` absent from enum) + advisories B2 (disputed service labels) B3 (flat-21 hop bound)
+  - [x] Round 3: B1 folded to `partial`, B2 non-disputed gate, B3 `(Hops==0 || Hops≤MaxHops)` gate — all verified at cited locations → `PLAN_CONSENSUS_REACHED`
+- **Machine Evidence**:
+  - Critic session id `thread-cheddar` recorded in `reports/sessions.log`; transcripts `reports/critic-round-{1,1b,2,3}-output.txt`; rebuttals `reports/rebuttal-round-{2,3}.md`
+  - Final verdict line in `reports/critic-round-3-output.txt`: `PLAN_CONSENSUS_REACHED`, `Status: DONE`
+- **Self-Audit Commitment**:
+  - No application code modified during Stage 1; plan artifacts only. Design preserves all AGENTS §5 invariants per Critic re-check.
+
+### [STAGE_2_VERIFICATION] - Stage 2: Devin Cook Implementation (scoring-v11-diversity-exposure)
+- **Completion Timestamp**: 2026-11-11 13:05:00
+- **Status**: PASSED — Cook `Status: DONE`, all gates independently re-verified green
+- **Completed Tasks**:
+  - [x] Independent Cook session `silk-pecorino` (exited 0) implemented all 5 phases with TDD
+  - [x] Golden v1 corpus captured from UNTOUCHED v1 engine before any change (`internal/scoring/testdata/v1_golden.json`, 16 entries) — byte-parity proven via `EvaluateFor(fs, PolicyV1)`
+  - [x] ~40 new tests: scoring registry/pricing-boundary/overlay/engine/shuffle/golden; screening analyzer fake-store suite + 3 sqlc query integration tests; handler 400/accepted; config fail-closed
+  - [x] 4 new sqlc queries generated; OpenAPI + `.env.example` updated; `reports/final-verification.md` written by Cook
+- **Machine Evidence**:
+  - Orchestrator re-ran all gates on Cook's final tree: `sqlc generate`=0 · `gofmt -l .`=empty · `go build ./...`=0 · `go vet ./...`=0 · `go test ./...`=ALL ok (incl. `_test`-DB integration)
+  - Diff stat: 21 modified files (+759/-45) + 11 new source/test paths; session transcript `reports/cook-output.txt`
+- **Self-Audit Commitment**:
+  - No commits made; changes are pending for Stage 3 independent review. v1 paths frozen per golden corpus.
+
+### [STAGE_3_VERIFICATION] - Stage 3: Devin Review Independent Audit (scoring-v11-diversity-exposure)
+- **Completion Timestamp**: 2026-11-11 14:20:00
+- **Status**: PASSED — `APPROVED` after 3 review rounds
+- **Completed Tasks**:
+  - [x] Independent read-only Review session `chrome-spandex` audited the pending diff (21 modified + 11 new files)
+  - [x] Round 1 CHANGES_REQUESTED: 4 majors (flat-21 Hops==0 gate wrong + unspec'd Hops≤2 bound; service-classified sources unconditionally skipped incl. sanctioned; index-state query error→`absent` instead of `partial`; missing normative acceptance + service-level tests) + 8 minors + 7 nits
+  - [x] Cook remediation round 1 (resumed `silk-pecorino`): all 19 fixed test-first, ~15 new tests
+  - [x] Round 2 CHANGES_REQUESTED: 18/19 verified; residual major — service source scorable via chain-taint alone (§3.1 mass-flagging violation) + 2 nits
+  - [x] Cook remediation round 2: services excluded from `chainTainted` (direct-taint only), chain-tainted cps → `possible_victim_contact` via gated receiver check, per-request policy override test
+  - [x] Round 3: `APPROVED` — zero blocking/major findings; 2 informational nits (unusable-index cp under-reporting edge; loose ≤8 test bound)
+- **Machine Evidence**:
+  - Orchestrator re-ran gates after each remediation: `sqlc generate`=0, `gofmt -l .`=empty, `go build`/`go vet`=0, `go test -count=1` scoring+screening+config green (fresh, uncached)
+  - Transcripts: `reports/review-round-{1,2,3}-output.txt`, `reports/cook-remediation{,-2}-output.txt`; remediation map in `reports/final-verification.md`
+- **Self-Audit Commitment**:
+  - Review sessions were independent (chrome-spandex) and read-only in intent; Review's exec calls were env-rejected so gate evidence is the orchestrator's fresh runs — recorded honestly.
+
+### [STAGE_4_VERIFICATION] - Stage 4: Blind Test Saturation + Session Cleanup (scoring-v11-diversity-exposure)
+- **Completion Timestamp**: 2026-11-11 15:05:00
+- **Status**: PASSED — SATURATION_SCORE=10/10
+- **Completed Tasks**:
+  - [x] Cook built seed-driven blind/property suite: 6 `TestBlind_*` (scoring, 200 cases/seed: bounds, cap, determinism, dedupe-never-stacks, monotonicity, all-OUTBOUND→0, big.Int floor-boundary fuzz, v1 dispatch byte-parity) + 1 `TestBlind_Analyzer_Invariants` (screening, 200 random graphs: coverage honesty, taint predicates, exact MeaningfulCount, tx-hash evidence subset, service-chain exclusion, victim-contact gates)
+  - [x] Suite caught 2 test-infra defects (fake store ignored `WalletIds` filter params; dedupe expectation hadn't modeled `dedupe()` ordering) — fixed in test code only, no production changes
+  - [x] Orchestrator drove 10 independent seeds: 101,1302,2503,3704,4905,6106,7307,8508,9709,10910 — ALL PASS, 0 flakes
+  - [x] Full `go test -count=1 ./...` on final tree: all packages ok
+  - [x] Session cleanup: `pgrep -f "devin"` → no pipeline worker processes remain; sessions thread-cheddar/silk-pecorino/chrome-spandex all exited 0
+- **Machine Evidence**:
+  - `SATURATION_SCORE=10/10 (fail=0)` loop output; blind suite files `internal/{scoring,screening}/blind_test.go`
+  - Session ids in `plans/.../reports/sessions.log`
+- **Self-Audit Commitment**:
+  - No orphaned headless devin sessions; all worker outputs captured under `plans/20261111-1131-scoring-v11-diversity-exposure/reports/`.
+
+### [STAGE_5_VERIFICATION] - Stage 5: Live Surface Verification (scoring-v11-diversity-exposure)
+- **Completion Timestamp**: 2026-11-11 15:35:00
+- **Surface**: API surface — `POST /api/v1/screenings` contract changed (new `options.policy_version`, new v1.1 exposure fields). No UI exists in repo → browser evidence N/A; verified via live curl on :8010 (`SCORING_POLICY=v1.1.0`).
+- **Status**: PASSED
+- **Completed Tasks**:
+  - [x] Seeded dev-DB fixture: candidate + 2 labeled sources (SCAM/reported, HACK/verified), 2 meaningful 1-ETH inbound + 1 dust tx, fresh index states
+  - [x] v1.1.0 request → 201, score 60, 2×EXPOSURE_ONCHAIN_SOURCE×30, onchain_computed evidence w/ real tx hashes, coverage complete, `reported` preserved, dust excluded, PARTIAL honest status — `stage5/v11-response.json`
+  - [x] v1.0.0 override → 201, score 0, zero items, `onchain_coverage` key absent (envelope parity) — `stage5/v10-response.json`
+  - [x] `policy_version:"v9.9.9"` → 400 `BAD_REQUEST` 5ms, nothing persisted — `stage5/v99-response.json`
+  - [x] default → resolves v1.1.0, score 60 — `stage5/default-response.json`
+  - [x] `SCORING_POLICY=v9.9.9` boot → config error, exit 1 (fail-closed startup)
+- **Machine Evidence**:
+  - Raw bodies: `plans/.../reports/stage5/{v11,v10,v99,default}-response.json`; narrative `reports/stage5-surface-verification.md`
+  - Durable rows: `screening_results`/`screening_requests` ×3 persisted (`screening_id bdaa8017-9d73-4427-9ed6-152702d961b4` for the v1.1 run); api log `/tmp/api-v11.log`
+- **Self-Audit Commitment**:
+  - Every claim above backed by a captured raw response body or process stderr; no hand-assembled evidence. Fixture retained as evidence (synthetic addresses).
+
+### [STAGE_6_VERIFICATION] - Stage 6: Guidebook, Feature Map & Sign-Off (scoring-v11-diversity-exposure)
+- **Completion Timestamp**: 2026-11-11 15:55:00
+- **Status**: PASSED — pipeline complete
+- **Completed Tasks**:
+  - [x] Feature map + guidebook published: `apps/api/docs/feature-maps/scoring-v11-diversity-exposure.md` (source paths, 50+ test anchors, reproduction commands, live DB queries, rollout notes incl. §15 basis and deferred nits)
+  - [x] Final gate sweep on shipped tree: `gofmt -l .`=empty, `go build`/`go vet`=0, `go test -count=1 ./internal/... ./tests/` all ok
+  - [x] All pipeline Devin sessions confirmed exited: critic `thread-cheddar`, cook `silk-pecorino` (3 resumes), review `chrome-spandex` (3 rounds) — ids in `reports/sessions.log`
+- **Machine Evidence**:
+  - Guidebook: `apps/api/docs/feature-maps/scoring-v11-diversity-exposure.md`
+  - Full evidence tree: `plans/20261111-1131-scoring-v11-diversity-exposure/reports/` (critic rounds 1–3, review rounds 1–3, cook outputs ×3, rebuttals, stage5 curl bodies, final-verification.md)
+- **Self-Audit Commitment**:
+  - Six-stage pipeline complete; every gate has fresh machine evidence; no completion claims beyond recorded command output. No commits made — change set remains pending for the operator's review/commit per repo workflow.

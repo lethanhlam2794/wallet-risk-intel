@@ -1,0 +1,54 @@
+Re-auditing the amended plan — reading all updated artifacts fresh.plan.md updated. Note: risk-matrix row for reported≠verified (line 164) still carries the old "verified by definition" rationale — inconsistent with A6 as now specified. Reading the phase files.Phase-01/02 amendments confirmed in-file. Now the two phases carrying the core semantics.Phase-03/04 amendments verified in detail. Checking phase-05 for A12 (OpenAPI enums) before consolidating the verdict.All 15 amendments verified against the artifacts — and one new contract inconsistency surfaced. Writing the Round 2 report to the reports dir, then the verdict.warning: rejected a tool call that requires confirmation. Running in non-interactive mode. Use --permission-mode dangerous to auto-approve all tools.
+File write rejected again — delivering the Round 2 verdict inline.
+
+# Devin Critic — Round 2 Re-Audit
+
+**Verdict: CHALLENGED — 15/15 amendments verified resolved in the artifacts; one new contract inconsistency + two advisory tightenings surfaced. Consensus withheld on a one-line fix.**
+
+All five phase files re-read in full; every amendment checked against exact amended text, not the resolution table.
+
+## Amendment verification ledger
+
+| # | Verdict | Evidence |
+|---|---------|----------|
+| A1 direction gate | ✓ resolved | `plan.md:76-84`; `phase-03:83-95` (`foldExposure` normalizes `inbound`/`outbound`→uppercase, else unknown; `OUTBOUND`→`KindPossibleVictimContact`, `SourceAddress` when `NormalizeEVM` succeeds; the PublicAML outbound-shape verification now explicitly cited at `:88-90`); `phase-04:35-40` engine defense-in-depth (`OUTBOUND` can neither group nor score); `phase-04:60-64` both provider paths gated on "direction eligible"; test matrix `:120-123`; frozen-v1 divergence documented |
+| A2 source index coverage | ✓ resolved | `phase-02:59-69` `ListWalletIndexStates` = `network_id=$1 AND wallet_id = ANY($2::bigint[])` over candidate+sources with the exact round-1 rationale; `phase-03:47-53` unusable source state → receiver-check-unverifiable → `partial` + surfaced `sources_receiver_unchecked`; `plan.md:68-70` coverage bound recorded as limitation |
+| A3 statuses/staleness | ✓ resolved | `phase-03:96-109` — `indexing` enumerated in the no-usable-row set and "never completes"; `stale` = `indexed_at` older than `IndexingFreshTTL`; multi-row rule ≥1 `fresh`∧non-stale∧non-truncated = complete-eligible; `Deps.FreshTTL`/`freshTTL` wiring `:155,165-167` |
+| A4 service gate | ✓ resolved | `phase-03:54-60` analyzer bulk-matches candidate's own labels → `FindingSet.CandidateServiceClassified` dedicated channel, no fabricated `KindLabel`, query failure → UNKNOWN→degraded; `phase-04:68-72` engine consumes the flag; test `:210-212` proves `include_labels=false` independence |
+| A5 v1 wire parity | ✓ resolved | `phase-01:41-44` `,omitempty` REQUIRED + the 409 rationale; `phase-03:172-176` all `ExposureItem`/`Coverage` additions `,omitempty`; `phase-04:147-149` envelope-parity test ("v1-selected Result serializes with zero new keys") |
+| A6 verification status | ✓ resolved | `plan.md:91-94`; `phase-03:66-69` sanctions→`verified`, label→own status, tx evidence never inflates; `phase-04:65-67` engine passthrough; test `:201-202` |
+| A7 disputed taint | ✓ resolved | `plan.md:88-91`; `phase-03:36-38` `verification_status != 'disputed'`; test `:201` |
+| A8 MaxHops | ✓ resolved | `phase-04:54-57` `Hops=1`, scored iff `MaxHops≥1`, receiver check not a scored hop; `phase-03:63-64` emits `Hops=1`; flat-21 also `MaxHops≥1`-gated (`:60-61`); test `:124-125` |
+| A9 winner-zero | ✓ resolved | `plan.md:118-124`; `phase-04:47-51` suppression + partial-coverage caveat in `Detail`; test `:126-128` |
+| A10 depth-2 bound | ✓ resolved | `plan.md:143` `exposureMaxDepth2SendersV1_1=512`; `phase-03:45-46` overflow→partial |
+| A11 query budget | ✓ resolved | `phase-03:28-34` merged bulk check over {inbound sources} ∪ {outbound counterparties} ∪ {candidate}; `:132-135` budget corrected to **≤6** and the enumeration adds up (3 scans + 2 bulk + 1 index-state read) |
+| A12 OpenAPI | ✓ resolved | `phase-05:25-26` `ScreeningScoring.policy_version` enum; `:27-33` `ScreeningExposure` fields + `basis` enum + direction vocabulary; `:34-36` `ScreeningCoverage` gains |
+| A13 Scored/category | ✓ resolved | `plan.md:125-128`; `phase-03:120-123` emit-time eligibility; `:69-71` highest-`baseWeightsV1` category, sanctions-only→`SANCTIONED` |
+| A14 price overlay | ✓ resolved | `phase-02:90-95` network keys validated against resolver ACTIVE codes at wiring; EVM-only documented as deliberate constraint |
+| A15 §15 approval | ✓ resolved | `plan.md:129-135` approval basis recorded verbatim |
+| Open question | ✓ resolved | `plan.md:71-75` `absent`+degraded→`PARTIAL` with rationale; `phase-03:110-119` `Deps.Enqueuer` nil-safe warmindex mitigation + rollout consequence |
+
+## New defect — required micro-fix
+
+**B1 — `onchain_coverage:"error"` is emitted but not in the contract enum.**
+`phase-03:138`: "Any analyzer query error → that leg degrades honestly (coverage partial / `onchain_coverage:"error"`)". But `phase-05:35` declares `onchain_coverage` enum `complete|partial|absent` — the `error` value is not contract-declared. Fix either way: (a) extend the enum to `complete|partial|absent|error` + document it, or (b) fold error legs to `partial` — my preference, since `error` means "cannot determine" (closer to partial) while `absent` asserts "no index exists", a different claim. One line either way.
+
+## Advisory tightenings (not sign-off conditions)
+
+- **B2 — disputed handling on the A4 gate.** `phase-03:55` says "candidate carrying `serviceClassificationsV1_1`" via the merged bulk match, which returns all non-revoked rows including `disputed`. Symmetric to A7: a *disputed* EXCHANGE classification should not suppress 30–70 points of real exposure evidence. One line — "non-disputed service labels only".
+- **B3 — flat-21 vs provider item hops.** `phase-04:60-61` gates flat-21 on request `MaxHops≥1` but not the item's own `Hops` — a provider hop-2 identified counterparty scores +21 at `MaxHops=1` where an unidentified hop-2 scores 0 via the generic path. Defensible under contract ambiguity, but one line — either `f.Hops ≤ fs.MaxHops` or a documented "identified counterparty counts regardless of provider hop depth" — prevents implementation-time second-guessing.
+
+## Cosmetic staleness (sweep while touching the files)
+
+- `plan.md:164` — risk-matrix mitigation cell still carries the pre-A6 rationale ("onchain basis is tx-evidence-verified by definition"), contradicting the corrected best-evidence-status rule.
+- `phase-03:252` — risk assessment still says "4 bounded queries total"; superseded by the ≤6 budget.
+
+## Invariant re-check (AGENTS §5)
+
+All seven pass on the written design now: the direction gate closes the outbound-scoring MUST-NOT; best-evidence verification removes reported→verified inflation; `disputed` no longer taints; per-source index states make receiver-check honesty enforceable; `absent`+degraded→`PARTIAL` preserves unknown≠clean with a self-healing mitigation.
+
+**Bottom line:** the orchestrator resolved all 15 amendments faithfully — the design is now contract-correct in every normative section. B1 is a real, citable inconsistency (one emitted value absent from its declared enum); fix it and consensus is granted.
+
+Status: DONE_WITH_CONCERNS
+Summary: All 15 Round-1 amendments verified resolved against exact amended text; re-audit found one new defect — `onchain_coverage:"error"` emitted (phase-03:138) but absent from the OpenAPI enum (phase-05:35) — plus two advisory tightenings (B2 disputed handling on the A4 gate, B3 flat-21 vs provider item hops) and two stale-text nits.
+Concerns/Blockers: Consensus withheld pending B1 — a one-line fix (extend the enum to include `error`, or fold error legs to `partial`). Report file write to `reports/critic-round-2.md` was rejected; full audit delivered inline.

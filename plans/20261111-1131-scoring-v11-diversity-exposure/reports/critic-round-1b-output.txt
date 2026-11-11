@@ -1,0 +1,143 @@
+I have completed the full verification sweep. Writing the critique report now.warning: rejected a tool call that requires confirmation. Running in non-interactive mode. Use --permission-mode dangerous to auto-approve all tools.
+The file write was rejected — delivering the full critique as my reply per the deliverable requirement.
+
+# Devin Critic — Round 1 Review
+## Plan: `scoring-v11-diversity-exposure` (Scoring Policy v1.1 — Diversity-Weighted Exposure)
+
+**Verdict: CHALLENGED — consensus withheld pending required amendments.**
+
+Structural completeness audit: **PASS** — roadmap declares 5 phases; `phase-01`…`phase-05` all physically present. All binding contracts read (task prompt, proposal §3.1–§3.6, all phase files, AGENTS.md, engineering standard, learning ledger). Every codebase claim verified against source; citations are `file:line` throughout.
+
+---
+
+## 1. Executive Assessment
+
+The plan is architecturally sound in its skeleton: policy registry with fail-closed validation, pure-function engine behind `EvaluateFor`, indexed-data-only analyzer inside the existing 30 s deadline, golden corpus for v1 byte-identity, additive-only wire contract. The author did real scouting — `persistFailed`'s hardcoded `PolicyV1` (`service.go:310,340`), the `BulkMatchLabels` reuse, `IS DISTINCT FROM` NULL semantics, and big.Int floor math are all correctly identified and reasoned about.
+
+However, verification against the actual code surfaced **one MUST-NOT-class defect** and **one coverage-honesty blind spot** the plan does not address, plus a cluster of smaller gaps:
+
+1. **F1 (blocking)**: The flat-21 provider-source rule has no direction gate, and the *only* provider emitting `Exposures` today — PublicAML — emits **outbound** items (`Direction:"outbound"`) whose `Counterparty` is a parseable EVM address. As written, v1.1 scores candidate→risky outbound flows at +21 — a direct violation of the prompt's MUST-NOT and proposal §3.2/§4. v1 already mis-scores these at +7, but v1 is frozen; v1.1 amplifies the error to +21.
+2. **F2 (blocking)**: The depth-1 receiver check reads `to_wallet_id ∈ source_ids` — rows that exist **only when the source wallet was itself indexed** (lazy per-wallet indexing; `EnsureIndexed` is invoked only from tracing hop-0/hop-1, the transactions endpoint, and warmindex — never screening). The plan reads the **candidate's** index state only ("1 index-state read total"), so `coverage:"complete"` can be emitted while every receiver check was unevaluatable. Chain-taint is silently dead code for unindexed sources *and* dishonest about it.
+3. **F3**: Coverage semantics under-specify the status vocabulary — `'indexing'` rows unhandled, `'stale'` has no wired horizon (`FreshTTL` lives in `transaction.Config`, not `screening.Deps`).
+4. **F4**: The service-classified-candidate gate couples to `KindLabel` findings, requiring `include_labels=true` *and* usable labels — an EXCHANGE-labeled candidate screened with `include_labels=false` bypasses §3.4 suppression entirely.
+5. **F5**: Several additive fields need `,omitempty` to keep v1 wire output byte-identical; the plan asserts hash-stability without the mechanism that makes it true.
+6. **F6**: `VerificationStatus=verified` stamped on findings backed by `reported`/`disputed` labels — reported→verified inflation; and `disputed` tainting at all contradicts the engine's own `disputed→0` treatment.
+
+None are fatal to the design; all fixable inside the existing phase structure.
+
+---
+
+## 2. Verified-Against-Code Ledger (what the plan got right)
+
+| Plan claim | Verification |
+|---|---|
+| `baseWeightsV1` key set = the 11 taint categories | Exact match — `policy.go:33-45` |
+| `Evaluate` sole entry; helpers shared | `engine.go:9`, `:163-321` — all named helpers exist |
+| v1 hop weights 7/4 honoring `MaxHops` | `exposureWeight` `engine.go:178-190`: `(10×7+5)/10=7`, `(5×7+5)/10=4` |
+| `persistFailed` stamps hardcoded v1 | `service.go:310`, `:340` — real catch; plan's fix correct |
+| `CanonicalRequest.Options` rides the request hash | `handler.go:100-102, 310-314` |
+| `from_wallet_id` nullable; `IS DISTINCT FROM` keeps NULL rows | `000008_transactions.up.sql:16-17` |
+| `asset_identifier` NULL=native, normalized contract=token | `transaction/identity.go:98-110` |
+| `amount_raw::text` shape | `NUMERIC(78,0)` (`000008:20`) → canonical integer string; `canonAmount` strips zeros at write (`identity.go:219-228`) |
+| `BulkMatchLabels` keyed by address set | `queries/transactions.sql:130-141` |
+| `wallet_index_state` multi-row per wallet | Rekeyed `(network_id,wallet_id,source_id)` by `000019`; status CHECK `not_indexed\|indexing\|fresh\|partial\|failed\|disabled` + `history_truncated` |
+| `sanctions_wallets` bulk-match shape | `network_id` nullable (`000001_init.up.sql:90`); `sw.network_id=$1` scopes same-network non-revoked, matching `MatchSanctionsWallets` — CHAIN_SPECIFIC stays chain-specific ✓ |
+| 5000-row scan bound precedent | `cfg.TracingMaxEdges` default 5000 (`config.go:359`) — defensible |
+| Analyzer never calls `EnsureIndexed` | Verified: callers only `tracing/service.go:155,256`, `transaction/list.go:51`, `warmindex/drain.go:163` — correct call for the 30 s deadline; see F2 for the coverage consequence |
+| Only caller of `scoring.Evaluate` is the service | `service.go:218` is the single production call site |
+
+---
+
+## 3. Phase-by-Phase Critique
+
+### Phase 1 — Policy registry, config + request plumbing: **ACCEPTED with one required fix**
+
+Sound: registry-in-one-file, `KnownPolicy` consumed by config/handler/`EvaluateFor`, pointer-typed `OptionsIn.PolicyVersion`, `persistFailed` stamping resolved policy.
+
+- **F5a (required)**: Phase-01 claims "absent → `""` → canonical hash unchanged." Only true with `json:"policy_version,omitempty"`. All existing `Options` fields marshal unconditionally (`model.go:54-60`); a non-omitempty key changes **every** request hash, turning same-key replays across the deploy boundary into `IDEMPOTENCY_CONFLICT` (409). Spell `,omitempty` in the phase.
+- Minor: write explicitly that the 400 validation precedes `requestHash`/claim insert (`handler.go:94-102` region).
+
+### Phase 2 — sqlc queries + price/meaningful evaluator: **CHALLENGED**
+
+Sound: query mirrors `ListWalletEdges` join pattern (`transactions.sql:74-85`) and correctly adds the `'confirmed'` filter `ListWalletEdges` lacks; big.Int product compare is exactly right (boundary math checks: 0.0333… ETH × $3000 = $100 exact); env-overlay validation fail-closed.
+
+- **F2a (required)**: `ListWalletIndexStates` takes a single `wallet_id`; analyzer budgets "1 index-state read" → reads the **candidate only**. Change to `WHERE network_id=$1 AND wallet_id = ANY($2::bigint[])` — one query covers candidate + all sources, still 1 round trip.
+- **F2b (required)**: Depth-2 sender set unbounded — the receiver-check scan admits up to 5000 rows → up to ~5000 distinct senders feed the second bulk check. Add a policy-constant cap on distinct depth-2 senders evaluated; overflow → coverage partial.
+- **F3a**: "stale" named as a partial-coverage trigger but the horizon is nowhere defined or wired. The codebase derives `Stale = indexed_at older than FreshTTL` (`transaction/service.go` `fillFromState` ~`:706`; `cfg.IndexingFreshTTL`, `config.go:246`). Wire that duration into `Deps`/analyzer and define whether stale applies to any row or only would-be-usable rows.
+- Minor: `network ∈ {ethereum,bsc}` hardcodes the active set while non-EVM networks exist (migration `000026`). Validate against resolver active codes or document EVM-only as deliberate (consistent with `BulkResolveWallets` `'evm'` literal, `transactions.sql:30`).
+
+### Phase 3 — Onchain analyzer + wiring: **CHALLENGED**
+
+Sound: errgroup placement viable (wallet resolved at `service.go:146` before the errgroup `:154-197`); per-source grouping by `from_wallet_id` correctly dedupes multi-asset sources; deterministic ORDER BY makes LIMIT truncation reproducible.
+
+- **F2 (required, blocking)**: Receiver-check data exists only when the *source* was indexed. Common case — candidate indexed, source never touched — returns zero rows and reads "not chain-tainted" while `coverage` (candidate-state only) may say `complete`. Amendments: (a) `ANY`-array index-state read over candidate + sources; (b) source lacking usable index state = **receiver-check-unverifiable** — still scores via direct taint, but finding/block coverage → `partial` + a `sources_receiver_unchecked`-style count surfaced; (c) state explicitly that chain-taint detection is bounded by source index coverage — a rollout-relevant limitation, not an implementation detail.
+- **F3b**: Coverage enumeration misses `status='indexing'` (in-flight claim → partial, not complete). Also write the multi-row rule (e.g., partial unless ≥1 `fresh` non-stale non-truncated row; always partial on zero usable rows) — transactions carry no `source_id`, so failover-union semantics must be stated, not assumed.
+- **F4 (required)**: §3.4 gate must not depend on request-scoped `KindLabel` findings. Analyzer already bulk-matches labels — add the candidate's address to that set and carry the result as an explicit signal into the engine input (dedicated marker, not a fabricated `KindLabel` when `include_labels=false` — emitting one would contradict `labels: NOT_REQUESTED` in `data_completeness`).
+- **F7 (required clarification)**: `possible_victim_contact` needs taint classification for **outbound counterparties** — a different address set than inbound sources. The "2 bulk checks" budget only works if they're merged into the first bulk check (sources ∪ outbound counterparties in one `ANY` call). Write the merge explicitly, or admit a third check and fix the "≤4 round trips" criterion.
+- Minor: `ExposureItem.Scored` under v1.1 unspecified — mapper can't know engine-side dedupe outcomes; define emission-time eligibility and document dedupe-loser edge.
+- Minor: which `Category` an onchain finding carries when a source holds multiple taint labels — pick deterministic (strongest `baseWeightsV1` order) and name it.
+
+### Phase 4 — Engine v1.1 dispatch + golden v1 parity: **CHALLENGED**
+
+Sound: `Evaluate`→`evaluateV1` rename + dispatch keeps v1 diff at exactly rename+dispatch; score-nil `Verdict{policy, UNKNOWN}` fallback is right; address-grouped basis-rank dedupe implements "same source across bases counts once"; `TaintKind≠"" ∧ n≥1` guard correctly distrusts `MeaningfulCount`.
+
+- **F1 (required, blocking — MUST-NOT class)**: No direction gate. PublicAML — the only adapter emitting `Exposures` — builds them from `bd.OutboundExposure.Items` with `Direction` defaulting to `"outbound"` (`publicaml/mapper.go:125-140`), `Counterparty: it.Src` a parseable EVM address (`adapter_test.go:91-94`; testdata shows inbound items too). Under `BasisProviderReported ∧ SourceAddress≠""` → +21, an **outbound** item becomes a "source" — the exact candidate→risky flow the contract forbids scoring. Same hole in the generic path (outbound items without parseable address → still 7/4). Required:
+  1. Mapper populates `Finding.Direction` from `e.Direction` with vocabulary normalization (provider emits lowercase `inbound`/`outbound`; plan vocabulary is `INBOUND`/`OUTBOUND`; `ExposureItem.Direction` currently passes provider-verbatim lowercase, `mapper.go:349`).
+  2. Engine v1.1: only `INBOUND` (or empty/unknown per stated rule) eligible for source grouping + flat-21/generic weights; `OUTBOUND` excluded from `SourceAddress` grouping entirely → weight-0 informational (or mapper-mapped `possible_victim_contact` — pick one, write it down). Direction is part of group identity — an outbound item must not dedupe into an inbound source group.
+  3. State the deliberate divergence: v1 keeps scoring outbound at 7 (frozen); v1.1 corrects to 0.
+- **F6 (required)**: `VerificationStatus=verified` conflates transfer-verified with taint-verified. A source tainted only by a `reported` label produces a `verified` finding — reported→verified inflation on the wire. Stamp the finding with best taint-evidence status: sanctions listing → `verified`; label → its own `verification_status` (already returned by `BulkMatchLabels`, `transactions.sql:131`).
+- **F8 (challenge)**: Taint set "any non-revoked row" includes `disputed` — contradicting `verificationFactorsV1`'s `disputed→0` (`policy.go:54`). Counter-proposal: exclude `disputed` (keep `reported`/`unverified`/`verified` as taint-with-status). If the orchestrator insists, the plan must justify why a contested classification drives a 30–70-point block when it drives 0 directly.
+- **F9 (required)**: `MaxHops` semantics for onchain findings undefined. Specify: onchain findings carry `Hops=1`; `MaxHops=0` → all informational; `MaxHops≥1` → scored. Receiver check unaffected — scored edge R→X stays 1-hop; depth-2 is taint evidence, not a scored hop.
+- **F10 (required clarification)**: "Highest basis wins" needs the winner-scores-zero case spelled out: onchain-informational (n=0) still wins the group and suppresses provider +21 — defensible (onchain refutes materiality) but must be explicit, ideally qualified by coverage (a dust-only onchain observation under `coverage:"partial"` is weaker refutation than under `complete`).
+
+### Phase 5 — OpenAPI contract + verification: **CHALLENGED (minor)**
+
+- **F11**: `ScreeningScoring.policy_version` enum is `["v1.0.0"]` (`openapi.yaml:2284`) — phase-05 lists `ScreeningOptions.policy_version` but not this enum; also update `ScreeningExposure.basis` (`:2260-2262`) and `ScreeningCoverage`, and document the direction vocabulary.
+- **F5b**: Golden corpus proves *verdict* parity only. "v1 output identical" also covers the `Result` envelope — add a serialization parity test asserting a v1-selected screening emits no new keys; requires `,omitempty` on `ExposureItem` additions and `Coverage.OnchainCoverage`/`SourcesEvaluated` (phase-03 lists them without omitempty — a bare `int`/`string` adds `"onchain_coverage":""`, `"sources_evaluated":0` to every v1 response).
+- Minor: record the proposal's §15 approval status — the proposal still declares "PROPOSED — pending §15 review"; plan.md should note the approval it relies on.
+
+---
+
+## 4. Required Plan Amendments (sign-off conditions)
+
+| # | Severity | Amendment |
+|---|----------|-----------|
+| A1 | **blocking** | Direction gate for both v1.1 provider paths: normalize provider `direction` at the mapper; only INBOUND items enter `SourceAddress` grouping + flat-21/generic weights; OUTBOUND → weight-0 informational (`possible_victim_contact`-aligned), never grouped/scored. Populate `Finding.Direction`. Document deliberate v1-vs-v1.1 divergence. |
+| A2 | **blocking** | Receiver-check honesty: `ListWalletIndexStates` → `wallet_id = ANY(ids)` covering candidate + sources; unindexed sources = receiver-check-unverifiable → `coverage:"partial"` + explicit unchecked count; document chain-taint's index-coverage bound in plan.md. |
+| A3 | required | Coverage completeness: `status='indexing'` → partial; define `stale` concretely (wire `IndexingFreshTTL` into `Deps`); write the multi-row resolution rule. |
+| A4 | required | Service-classified gate independent of `include_labels`: analyzer checks the candidate's own labels in the same bulk call; signal via a dedicated non-`KindLabel` channel. |
+| A5 | required | `,omitempty` on `Options.PolicyVersion`, `ExposureItem` additions, `Coverage` additions; add v1 response-envelope parity test alongside the verdict golden. |
+| A6 | required | Finding `VerificationStatus` = best taint-evidence status, not unconditional `verified`. |
+| A7 | required | Exclude `disputed` rows from the taint set, or write explicit justification vs. the engine's disputed→0 treatment. |
+| A8 | required | `MaxHops` semantics: sources carry `Hops=1`, scored iff `MaxHops≥1`; receiver check unaffected. |
+| A9 | required | Explicit dedupe-winner rule for winner-scores-zero groups, with coverage-partial caveat. |
+| A10 | required | Bound the depth-2 sender set (named constant); overflow → coverage partial. |
+| A11 | clarification | Outbound-counterparty taint: merge into the first bulk check (state it) or correct the "2 bulk checks" claim. |
+| A12 | minor | `openapi.yaml`: update `ScreeningScoring.policy_version` + `ScreeningExposure.basis` enums; direction vocabulary. |
+| A13 | minor | Define `ExposureItem.Scored` under v1.1 and the multi-label `Category` rule. |
+| A14 | minor | Env-overlay network validation: resolver-derived codes or explicit EVM-only note. |
+| A15 | minor | Record the proposal's §15 approval status in plan.md. |
+
+**Recommended (non-blocking)**: when no usable candidate index exists, enqueue candidate (and optionally sources) onto `warmindex.Queue` — it no-ops when disabled (`cmd/api/main.go:199`) and turns the coverage footgun into self-healing coverage for repeat screenings.
+
+**Open question for the orchestrator**: under v1.1 + absent index coverage → `UNAVAILABLE` + degraded → `PARTIAL`, nearly every never-indexed wallet screens PARTIAL — a v1→v1.1 status change beyond score. Defensible and honest, but state it explicitly as a rollout consequence, or choose `AVAILABLE` + `onchain_coverage:"absent"` without degraded. Pick one, document.
+
+---
+
+## 5. Invariant Compliance Check (AGENTS.md §5)
+
+| Invariant | Plan status |
+|---|---|
+| Indirect ≠ direct attribution | ✓ capped separate block — *provided A1 lands* |
+| reported stays reported | ✗ as written — `verified` on reported-backed findings (A6), `disputed` taints (A7) |
+| unknown ≠ clean | ✓ partial coverage + honest statuses — *source-level gap, A2* |
+| provider failure ≠ clean | ✓ degraded fold preserved |
+| GAMBLING/EXCHANGE/MIXER never raise score | ✓ excluded from taint set — *gate has the A4 hole* |
+| ETH listing ≠ BSC listing | ✓ `sw.network_id=$1` same-network only |
+| No float money math | ✓ big.Int only |
+
+**Bottom line**: structure and mechanics are good; the plan is one direction-gate and one source-coverage-read away from contract-correctness, plus spec-tightening amendments. With A1–A2 fixed and A3–A10 written into the phase files, I would sign off.
+
+Status: DONE_WITH_CONCERNS
+Summary: Plan verified against code and structurally complete (5/5 phase files), but has one MUST-NOT-class defect (outbound provider exposures scoring +21 — the only emitting provider is outbound-shaped) and one coverage-honesty blind spot (receiver checks read unindexed source wallets while only the candidate's index state is checked); 15 amendments required before sign-off.
+Concerns/Blockers: Blocking amendments A1 (direction gate) and A2 (per-source index-state coverage for chain-taint); report write to `plans/.../reports/critic-round-1.md` was rejected by the user, so the full critique is delivered inline in this reply.

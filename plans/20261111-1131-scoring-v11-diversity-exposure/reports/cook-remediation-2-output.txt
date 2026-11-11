@@ -1,0 +1,16 @@
+Reading the current emission and receiver-check sections before making the round-2 fixes.Implementing the three fixes. First the analyzer changes — service-exclusion from `chainTainted`, cp receivers in the receiver-check, and the victim-contact chain gate.Now the TDD tests — service-source chain-only exclusion, cp chain-taint contact, and per-request policy override.The cp has no own label so `tinfo[cp]` is nil — the gate must check chain before requiring `t`.Now the per-request policy override test — checking `resolvePolicy` semantics first.All three items pass. Updating the report, then the final gate run.All three round-2 items resolved, gates green on the final run.
+
+**R2-1 (major)** — `exposure.go`: service-classified receivers are now excluded when building `chainTainted`, so a chain-tainted exchange can no longer mass-flag all its recipients as +30 sources. Service addresses still score via direct taint/sanctions (unchanged, per round-1). Tests: `TestAnalyze_ServiceSourceChainTaintExcluded` (chain-only EXCHANGE → no finding) alongside the retained `TestAnalyze_ServiceClassifiedStillTainted`.
+
+**R2-2 (nit)** — non-source outbound counterparties with wallet IDs now join the same index-state-gated receiver check; `possible_victim_contact` emits for direct **or** chain taint (service-only cps still require direct taint, matching the source rule). A cp with unusable index is never chain-asserted. Test: `TestAnalyze_ChainTaintedVictimContact` (chain contact emitted; service-only-cp exclusion case).
+
+**R2-3 (nit)** — `TestService_RequestPolicyOverrideBothDirections`: deployment v1.1 + request `v1.0.0` → v1 verdict, persisted `v1.0.0`, no onchain leg; deployment v1.0.0 + request `v1.1.0` → v1.1 verdict, persisted `v1.1.0`, absent→PARTIAL.
+
+`reports/final-verification.md` updated with the round-2 remediation map. No commits; v1 golden corpus still byte-identical.
+
+```
+Status: DONE
+Summary: Fixed the residual major (service sources excluded from chain-taint branch) + both nits (chain-tainted victim contacts, per-request policy override test); 4 new tests; remediation map updated in reports/final-verification.md.
+Gates: sqlc generate PASS; gofmt -l . PASS (0 lines); go build ./... PASS; go vet ./... PASS; go test ./... PASS (all packages incl. _test-DB integration; fresh -count=1 runs on scoring+screening green)
+Concerns: none
+```

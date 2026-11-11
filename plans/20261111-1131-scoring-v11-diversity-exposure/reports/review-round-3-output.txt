@@ -1,0 +1,38 @@
+Verifying the three round-3 fixes against the current tree.The analyzer now has `cpWallets`/`cpRecvOf`/`chainTaintedCP` plumbing plus a service check on source receivers. Let me verify the new tests cover these paths.The three round-2 findings are all verifiably remediated. Let me confirm the tests exist and try the gates once more before the final verdict.warning: rejected a tool call that requires confirmation. Running in non-interactive mode. Use --permission-mode dangerous to auto-approve all tools.
+## Devin Review — Round 3 Final Verdict
+
+All three round-2 findings verified against the remediated diff (re-read `exposure.go` in full — line numbers shifted again, plus the two new test blocks).
+
+**Per-finding verification:**
+
+**R2-#1 (service+chain source) — RESOLVED.** `exposure.go` sendTo loop now checks `tinfo[g.addr].service` on the *source-receiver* branch: a service-classified wallet's senders never populate `chainTainted` → it emits a source finding only via `direct` (own labels/sanctions). This is exactly the prescribed shape — services score via direct taint only, symmetric with §3.1's intent and with the outbound emit rule. Covered by `TestAnalyze_ServiceSourceChainTaintExcluded` (EXCHANGE receiver + RANSOMWARE sender → zero findings) alongside retained `TestAnalyze_ServiceClassifiedStillTainted` (HACK+MIXER → source, sanctioned exchange → source, SANCTIONED outranks FROZEN). Both directions of the spec carve-out now tested.
+
+**R2-#2 (chain-tainted victim contact) — RESOLVED.** `cpWallets`/`cpRecvOf` plumb non-source outbound counterparties through the same index-state-gated receiver check (cp IDs merged into `stateIDs` + `checkableIDs` — still ≤6 round trips, shared 512 depth-2 bound). `chainTaintedCP` is populated only for cps with usable index — unverifiable cps can never be chain-asserted. Emit gate `!direct && (service || !chain) → skip` yields: direct → contact (incl. sanctioned services), non-service+chain → `TaintKind:"chain"` contact, service+chain-only → skipped, untainted → skipped — consistent with the source rule. `TestAnalyze_ChainTaintedVictimContact` asserts both the chain-emit and the service-skip case.
+
+**R2-#3 (override test) — RESOLVED.** `TestService_RequestPolicyOverrideBothDirections` asserts deployment-v1.1+request-v1.0.0 → v1 verdict + persisted `v1.0.0` + no `onchain_coverage` key (leg never ran), and deployment-v1.0.0+request-v1.1.0 → v1.1 verdict + persisted `v1.1.0` + absent coverage → PARTIAL.
+
+**Regression check on the new code:** `sources[a]==nil` guard prevents both-direction addresses from double-processing (they stay sources); `sendTo` receivers all resolve into `recvOf` or `cpRecvOf`; depth-1 bound intact (`!t.direct → continue` on senders); deterministic ordering preserved (`sortedSenders`, `sortedCPs`, distinct-key map writes); no fabricated evidence paths.
+
+```
+Status: APPROVED
+Summary: Round-3 re-audit of the remediated scoring-v1.1 tree. All 3
+round-2 findings verified resolved with spec-conformant code + named
+tests; all 19 round-1 findings resolved in round 2. Static review:
+zero blocking/major findings remain; engine formula (30+7(n−1), cap 70,
+flat-21 incl. Hops==0), direction gates, dedupe winner-zero, service
+exclusions (candidate + source + cp, direct-taint-only exception),
+coverage honesty (absent=proven-only), and v1 byte-parity all conform
+to the consensus spec. Gates: re-verified green per orchestrator on the
+remediated tree (gofmt empty, build/vet 0, go test -count=1 scoring+
+screening green); this reviewer was not permitted to re-execute
+commands (exec rejected both rounds) — noted honestly, not a code
+finding.
+Findings:
+1. [nit] exposure.go — an outbound cp with a wallet ID but unusable
+   index state produces neither a chain-verified contact nor any
+   coverage signal; sources_receiver_unchecked is source-scoped by spec
+   so this is acceptable, but it is a (weight-0, informational-only)
+   under-reporting edge worth a comment for future hardening.
+2. [nit] test-only: round-trip bound asserted as ≤8 distinct call
+   keys while the real budget is ≤6 — cosmetically loose.
+```
