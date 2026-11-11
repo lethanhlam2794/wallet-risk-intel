@@ -62,6 +62,9 @@ ON CONFLICT (network_id, normalized_address)
 DO UPDATE SET updated_at = wallets.updated_at
 `
 
+// 'evm' literal: staged sanctions rows are pre-validated EVM addresses
+// (ofac mapper NormalizeEVM upstream); non-EVM stamping is an enablement
+// task (docs/tron-indexer-semantics.md §f).
 func (q *Queries) PublishEnsureWallets(ctx context.Context, runID pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, publishEnsureWallets, runID)
 	if err != nil {

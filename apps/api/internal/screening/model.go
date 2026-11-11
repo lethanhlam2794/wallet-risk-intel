@@ -43,20 +43,24 @@ type Request struct {
 // OptionsIn carries optional §9.6 options — pointers distinguish an
 // explicit false from an omitted option (defaults never erase intent).
 type OptionsIn struct {
-	IncludeSanctions *bool `json:"include_sanctions,omitempty"`
-	IncludeLabels    *bool `json:"include_labels,omitempty"`
-	IncludeExposure  *bool `json:"include_exposure,omitempty"`
-	MaxHops          *int  `json:"max_hops,omitempty"`
-	RefreshProviders *bool `json:"refresh_providers,omitempty"`
+	IncludeSanctions *bool   `json:"include_sanctions,omitempty"`
+	IncludeLabels    *bool   `json:"include_labels,omitempty"`
+	IncludeExposure  *bool   `json:"include_exposure,omitempty"`
+	MaxHops          *int    `json:"max_hops,omitempty"`
+	RefreshProviders *bool   `json:"refresh_providers,omitempty"`
+	PolicyVersion    *string `json:"policy_version,omitempty"`
 }
 
-// Options is the defaulted option set (plan §3.6).
+// Options is the defaulted option set (plan §3.6). PolicyVersion is
+// ,omitempty: an absent option marshals byte-identically to pre-v1.1
+// clients, so idempotency hashes never shift for them (A5).
 type Options struct {
-	IncludeSanctions bool `json:"include_sanctions"`
-	IncludeLabels    bool `json:"include_labels"`
-	IncludeExposure  bool `json:"include_exposure"`
-	MaxHops          int  `json:"max_hops"`
-	RefreshProviders bool `json:"refresh_providers"`
+	IncludeSanctions bool   `json:"include_sanctions"`
+	IncludeLabels    bool   `json:"include_labels"`
+	IncludeExposure  bool   `json:"include_exposure"`
+	MaxHops          int    `json:"max_hops"`
+	RefreshProviders bool   `json:"refresh_providers"`
+	PolicyVersion    string `json:"policy_version,omitempty"`
 }
 
 // DefaultOptions returns the §3.6 defaults: all includes on,
@@ -89,6 +93,9 @@ func (o *OptionsIn) Resolve() Options {
 	}
 	if o.RefreshProviders != nil {
 		d.RefreshProviders = *o.RefreshProviders
+	}
+	if o.PolicyVersion != nil {
+		d.PolicyVersion = *o.PolicyVersion
 	}
 	return d
 }
@@ -156,6 +163,13 @@ type ExposureItem struct {
 	Source       string   `json:"source"`
 	Basis        string   `json:"basis"`
 	Scored       bool     `json:"scored"`
+	// v1.1 additive evidence fields — all omitempty (A5 wire parity).
+	SourceAddress   string   `json:"source_address,omitempty"`
+	MeaningfulCount int      `json:"meaningful_count,omitempty"`
+	TxHashes        []string `json:"tx_hashes,omitempty"`
+	Coverage        string   `json:"coverage,omitempty"`
+	Reason          string   `json:"reason,omitempty"`
+	TaintKind       string   `json:"taint_kind,omitempty"`
 }
 
 // ExposuresBlock carries provider-reported exposures — never under
@@ -171,6 +185,10 @@ type Coverage struct {
 	Tracing           string `json:"tracing"` // provider_reported_only in P6
 	MaxHopsRequested  int    `json:"max_hops_requested"`
 	DisabledByRequest bool   `json:"disabled_by_request,omitempty"`
+	// v1.1 coverage-honesty fields — all omitempty (A5).
+	OnchainCoverage          string `json:"onchain_coverage,omitempty"`
+	SourcesEvaluated         int    `json:"sources_evaluated,omitempty"`
+	SourcesReceiverUnchecked int    `json:"sources_receiver_unchecked,omitempty"`
 }
 
 // ScoringBlock mirrors the engine verdict plus the policy version.

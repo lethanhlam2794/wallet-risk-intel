@@ -10,8 +10,10 @@ import (
 
 	"checkwallet/internal/enrichment"
 	"checkwallet/internal/label"
+
 	"checkwallet/internal/sanctions"
 	"checkwallet/internal/scoring"
+	"checkwallet/internal/wallet"
 )
 
 // gathered is the raw collector output the mapper folds into a
@@ -32,6 +34,8 @@ type gathered struct {
 	enrich    *enrichment.Result
 	enrichErr bool // hard fan-out failure — every provider input fails
 	enrichNil bool // no enrichment collaborator configured
+
+	onchain *onchainExposure // v1.1 analyzer output (nil under v1)
 }
 
 // mapped is the mapper output: the engine input plus the response
@@ -51,8 +55,10 @@ type mapped struct {
 }
 
 // mapGathered runs the availability fold and converts gathered inputs
-// into findings + response blocks.
-func mapGathered(g *gathered, opts Options, catTypes map[string]string) *mapped {
+// into findings + response blocks. policy selects the exposure fold
+// variant — v1.1 merges onchain analyzer evidence; v1 is untouched.
+func mapGathered(g *gathered, opts Options, catTypes map[string]string,
+	policy string) *mapped {
 	m := &mapped{
 		providerStatus: ProviderStatus{Providers: map[string]ProviderStatusEntry{}},
 		catTypes:       catTypes,
@@ -61,7 +67,7 @@ func mapGathered(g *gathered, opts Options, catTypes map[string]string) *mapped 
 	m.foldSanctions(g, opts)
 	m.foldLabels(g, opts)
 	m.foldProviders(g)
-	m.foldExposure(g, opts)
+	m.foldExposure(g, opts, policy)
 
 	m.status = foldStatus(m.usable, m.degraded)
 	return m
@@ -315,7 +321,7 @@ func (m *mapped) mapProviderData(pr enrichment.ProviderResult) {
 // evaluated:false. Provider-reported items list regardless of hop
 // eligibility — hiding reported evidence is a silent drop — while
 // Scored records hops ≤ max_hops ∧ ≤ 2.
-func (m *mapped) foldExposure(g *gathered, opts Options) {
+func (m *mapped) foldExposure(g *gathered, opts Options, policy string) {
 	blk := ExposuresBlock{
 		Evaluated: opts.IncludeExposure,
 		Items:     []ExposureItem{},
@@ -336,6 +342,7 @@ func (m *mapped) foldExposure(g *gathered, opts Options) {
 	}
 
 	providerUsable := len(m.completeness.Providers.Usable) > 0
+	v11 := policy == scoring.PolicyV1_1
 	if g.enrich != nil {
 		for _, pr := range g.enrich.Providers {
 			if pr.Status != "OK" {
@@ -352,9 +359,29 @@ func (m *mapped) foldExposure(g *gathered, opts Options) {
 					Basis:        scoring.BasisProviderReported,
 					Scored:       e.Hops >= 1 && e.Hops <= opts.MaxHops && e.Hops <= 2,
 				}
+				fkind := scoring.KindExposure
+				var srcAddr, fdir string
+				if v11 {
+					// A1 direction gate: normalized provider direction
+					// steers kind; parseable EVM counterparties carry
+					// SourceAddress for engine dedupe. A12: the wire
+					// item emits the normalized vocabulary.
+					fdir = normalizeDirectionV11(e.Direction)
+					if fdir != "" {
+						item.Direction = fdir
+					}
+					if na, err := wallet.NormalizeEVM(e.Counterparty); err == nil {
+						srcAddr = na
+						item.SourceAddress = na
+					}
+					if fdir == "OUTBOUND" {
+						fkind = scoring.KindPossibleVictimContact
+						item.Scored = false
+					}
+				}
 				blk.Items = append(blk.Items, item)
 				m.findings = append(m.findings, scoring.Finding{
-					Kind:     scoring.KindExposure,
+					Kind:     fkind,
 					Category: item.Category,
 					Source:   pr.Source,
 					Ref: fmt.Sprintf("%s:%s:h%d:%s", pr.Source,
@@ -362,6 +389,8 @@ func (m *mapped) foldExposure(g *gathered, opts Options) {
 					Basis:              scoring.BasisProviderReported,
 					Hops:               e.Hops,
 					VerificationStatus: scoring.VerificationReported,
+					SourceAddress:      srcAddr,
+					Direction:          fdir,
 				})
 				m.evidence = append(m.evidence, EvidenceRef{
 					Kind: "exposure",
@@ -373,12 +402,45 @@ func (m *mapped) foldExposure(g *gathered, opts Options) {
 			}
 		}
 	}
+
+	// v1.1 onchain fold: merge analyzer findings/items; coverage honesty.
+	if v11 && g.onchain != nil {
+		o := g.onchain
+		blk.Items = append(blk.Items, o.items...)
+		m.findings = append(m.findings, o.findings...)
+		m.evidence = append(m.evidence, o.evidence...)
+		blk.Coverage.Tracing = "provider_reported+onchain_computed"
+		blk.Coverage.OnchainCoverage = o.onchainCoverage
+		blk.Coverage.SourcesEvaluated = o.sourcesEvaluated
+		blk.Coverage.SourcesReceiverUnchecked = o.sourcesReceiverUnchecked
+		if o.degraded || o.onchainCoverage == "absent" ||
+			o.serviceClassUnknown {
+			m.degraded++
+		}
+	}
 	m.exposures = blk
+	// The exposure dimension has two legs under v1.1: provider-reported
+	// and on-chain computed. An evaluated on-chain leg makes the
+	// dimension usable even when no provider ran (finding #12).
+	onchainUsable := v11 && g.onchain != nil && g.onchain.evaluated
+	expUsable := providerUsable || onchainUsable
 	m.completeness.Exposure = DimensionStatus{
 		Requested:  true,
-		DataStatus: availabilityOf(providerUsable),
-		Usable:     providerUsable,
+		DataStatus: availabilityOf(expUsable),
+		Usable:     expUsable,
 	}
+}
+
+// normalizeDirectionV11 maps provider direction strings onto the v1.1
+// vocabulary: inbound→INBOUND, outbound→OUTBOUND, else unknown "".
+func normalizeDirectionV11(d string) string {
+	switch strings.ToLower(strings.TrimSpace(d)) {
+	case "inbound", "in":
+		return "INBOUND"
+	case "outbound", "out":
+		return "OUTBOUND"
+	}
+	return ""
 }
 
 // availabilityOf reports AVAILABLE when any provider leg is usable.

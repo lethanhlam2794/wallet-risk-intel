@@ -21,6 +21,7 @@ import (
 	"checkwallet/internal/db"
 	"checkwallet/internal/middleware"
 	"checkwallet/internal/network"
+	"checkwallet/internal/scoring"
 	"checkwallet/internal/wallet"
 )
 
@@ -92,6 +93,12 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	opts := req.Options.Resolve()
+	if opts.PolicyVersion != "" && !scoring.KnownPolicy(opts.PolicyVersion) {
+		middleware.RespondError(c, http.StatusBadRequest,
+			middleware.CodeBadRequest,
+			"options.policy_version is not a registered scoring policy")
+		return
+	}
 	if opts.MaxHops < 0 || opts.MaxHops > 2 {
 		middleware.RespondError(c, http.StatusBadRequest,
 			middleware.CodeBadRequest, "options.max_hops must be between 0 and 2")

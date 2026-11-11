@@ -88,6 +88,66 @@ LIMIT $3;
 SELECT * FROM wallet_index_state
 WHERE network_id = $1 AND wallet_id = $2 AND source_id = $3;
 
+-- v1.1 exposure analyzer scan (phase-02): direction-bounded confirmed
+-- transfer listing for one wallet. Only confirmed, non-error, non-self
+-- rows move value — pending/error/self rows never reach the analyzer.
+-- Declared scan order (block_timestamp, tx_hash, transfer_index) matches
+-- the BFS convention so scan-limit truncation is deterministic.
+-- name: ListConfirmedCounterpartyTransfers :many
+SELECT t.id, t.tx_hash, t.transfer_index, t.transfer_type,
+       t.asset_identifier, t.amount_raw::text AS amount_raw,
+       t.block_number, t.block_timestamp,
+       CASE WHEN t.to_wallet_id = sqlc.arg('wallet_id')::bigint
+            THEN COALESCE(fw.normalized_address, '')
+            ELSE COALESCE(tw.normalized_address, '')
+       END::text AS counterparty_address,
+       CASE WHEN t.to_wallet_id = sqlc.arg('wallet_id')::bigint
+            THEN t.from_wallet_id
+            ELSE t.to_wallet_id
+       END AS counterparty_wallet_id
+FROM transactions t
+LEFT JOIN wallets fw ON fw.id = t.from_wallet_id
+LEFT JOIN wallets tw ON tw.id = t.to_wallet_id
+WHERE t.network_id = sqlc.arg('network_id')::bigint
+  AND t.confirmation_status = 'confirmed'
+  AND NOT t.is_error
+  AND ((sqlc.arg('direction')::text = 'in'
+        AND t.to_wallet_id = sqlc.arg('wallet_id')::bigint
+        AND (t.from_wallet_id IS NULL
+             OR t.from_wallet_id <> sqlc.arg('wallet_id')::bigint))
+    OR (sqlc.arg('direction')::text = 'out'
+        AND t.from_wallet_id = sqlc.arg('wallet_id')::bigint
+        AND (t.to_wallet_id IS NULL
+             OR t.to_wallet_id <> sqlc.arg('wallet_id')::bigint)))
+ORDER BY t.block_timestamp, t.tx_hash, t.transfer_index
+LIMIT sqlc.arg('lim')::bigint;
+
+-- Receiver-check scan (v1.1 phase-02): ONE bounded inbound listing over
+-- the whole source-wallet set for chain-taint detection — confirmed,
+-- non-error, non-self rows only, deterministic order.
+-- name: ListConfirmedInboundToWallets :many
+SELECT t.id, t.tx_hash, t.transfer_index, t.transfer_type,
+       t.asset_identifier, t.amount_raw::text AS amount_raw,
+       t.block_number, t.block_timestamp,
+       t.to_wallet_id AS receiver_wallet_id,
+       COALESCE(fw.normalized_address, '') AS counterparty_address
+FROM transactions t
+LEFT JOIN wallets fw ON fw.id = t.from_wallet_id
+WHERE t.network_id = sqlc.arg('network_id')::bigint
+  AND t.confirmation_status = 'confirmed'
+  AND NOT t.is_error
+  AND t.to_wallet_id = ANY(sqlc.arg('wallet_ids')::bigint[])
+  AND (t.from_wallet_id IS NULL OR t.from_wallet_id <> t.to_wallet_id)
+ORDER BY t.block_timestamp, t.tx_hash, t.transfer_index
+LIMIT sqlc.arg('lim')::bigint;
+
+-- Bulk index-state read (phase-02): every per-source coverage row for
+-- the candidate plus all on-chain source wallets in one round trip.
+-- name: ListWalletIndexStates :many
+SELECT * FROM wallet_index_state
+WHERE network_id = sqlc.arg('network_id')::bigint
+  AND wallet_id = ANY(sqlc.arg('wallet_ids')::bigint[]);
+
 -- Claim marker: status='indexing' preserves watermark/counters; updated_at
 -- is the claim timestamp the stale-claim horizon (IndexingStaleAfter)
 -- reads; error is cleared so a live claim never echoes a stale ErrKind.

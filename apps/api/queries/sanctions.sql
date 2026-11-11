@@ -46,6 +46,21 @@ WHERE sw.normalized_address = $1
   AND sw.network_id IS NULL
   AND sw.revoked_at IS NULL;
 
+-- Bulk direct-match read (v1.1 phase-02): active sanctions listings over
+-- a normalized-address set on one network — same semantics as
+-- MatchSanctionsWallets (live entity + live listing, same network).
+-- name: BulkMatchSanctionedAddresses :many
+SELECT sw.normalized_address, se.id AS sanctions_entity_id,
+       se.external_entity_id, se.primary_name, se.entity_type,
+       src.code AS source_code
+FROM sanctions_wallets sw
+JOIN sanctions_entities se ON se.id = sw.sanctions_entity_id
+    AND se.revoked_at IS NULL
+JOIN data_sources src ON src.id = se.source_id
+WHERE sw.network_id = sqlc.arg('network_id')::bigint
+  AND sw.normalized_address = ANY(sqlc.arg('addresses')::text[])
+  AND sw.revoked_at IS NULL;
+
 -- name: GetSanctionsEntityByID :one
 SELECT se.*, src.code AS source_code, src.name AS source_name, src.homepage_url AS source_homepage
 FROM sanctions_entities se

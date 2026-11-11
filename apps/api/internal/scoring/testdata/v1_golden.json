@@ -1,0 +1,1079 @@
+[
+  {
+    "name": "empty usable",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": null
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 0,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": null
+    }
+  },
+  {
+    "name": "empty unusable",
+    "findingset": {
+      "has_usable_data": false,
+      "max_hops": 0,
+      "findings": null
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": null,
+      "risk_level": "UNKNOWN",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": null
+    }
+  },
+  {
+    "name": "unusable with findings",
+    "findingset": {
+      "has_usable_data": false,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "label",
+          "category": "SCAM",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "fp1",
+          "verification_status": "verified",
+          "confidence": "high"
+        },
+        {
+          "kind": "provider_failed",
+          "source": "goplus",
+          "ref": "goplus"
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": null,
+      "risk_level": "UNKNOWN",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "DIRECT_LABEL",
+          "category": "SCAM",
+          "verification_status": "verified",
+          "weight": 85,
+          "evidence_ref": "fp1"
+        },
+        {
+          "code": "PROVIDER_FAILED",
+          "weight": 0,
+          "evidence_ref": "goplus"
+        }
+      ]
+    }
+  },
+  {
+    "name": "sanctions direct",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "sanctions_direct",
+          "category": "SANCTIONED",
+          "source": "ofac",
+          "ref": "sanctions_entity:7",
+          "verification_status": "verified",
+          "confidence": "high"
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 100,
+      "risk_level": "CRITICAL",
+      "flags": [
+        "DIRECT_SANCTIONS"
+      ],
+      "blocks": {
+        "direct": {
+          "subtotal": 100,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "DIRECT_SANCTIONS_MATCH",
+          "category": "SANCTIONED",
+          "verification_status": "verified",
+          "weight": 100,
+          "evidence_ref": "sanctions_entity:7"
+        }
+      ]
+    }
+  },
+  {
+    "name": "each label weight",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "label",
+          "category": "RANSOMWARE",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "fp-r",
+          "verification_status": "verified",
+          "confidence": "high"
+        },
+        {
+          "kind": "label",
+          "category": "HACK",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "fp-h",
+          "verification_status": "reported",
+          "confidence": "medium"
+        },
+        {
+          "kind": "label",
+          "category": "DARKNET",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "fp-d",
+          "verification_status": "unverified",
+          "confidence": "low"
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 95,
+      "risk_level": "CRITICAL",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 95,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "DIRECT_LABEL",
+          "category": "RANSOMWARE",
+          "verification_status": "verified",
+          "weight": 95,
+          "evidence_ref": "fp-r"
+        },
+        {
+          "code": "DIRECT_LABEL",
+          "category": "HACK",
+          "verification_status": "reported",
+          "weight": 57,
+          "evidence_ref": "fp-h"
+        },
+        {
+          "code": "DIRECT_LABEL",
+          "category": "DARKNET",
+          "verification_status": "unverified",
+          "weight": 30,
+          "evidence_ref": "fp-d"
+        }
+      ]
+    }
+  },
+  {
+    "name": "classification kinds",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "label",
+          "category": "GAMBLING",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "fp-g",
+          "verification_status": "verified",
+          "confidence": "high"
+        },
+        {
+          "kind": "label",
+          "category": "MIXER",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "fp-m",
+          "verification_status": "reported",
+          "confidence": "high"
+        },
+        {
+          "kind": "label",
+          "category": "EXCHANGE",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "fp-e",
+          "verification_status": "verified",
+          "confidence": "high"
+        },
+        {
+          "kind": "label",
+          "category": "BRAND_NEW_THREAT",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "fp-n",
+          "verification_status": "verified",
+          "confidence": "high"
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 0,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "LABEL_CLASSIFICATION",
+          "category": "BRAND_NEW_THREAT",
+          "verification_status": "verified",
+          "weight": 0,
+          "evidence_ref": "fp-n"
+        },
+        {
+          "code": "LABEL_CLASSIFICATION",
+          "category": "EXCHANGE",
+          "verification_status": "verified",
+          "weight": 0,
+          "evidence_ref": "fp-e"
+        },
+        {
+          "code": "LABEL_CLASSIFICATION",
+          "category": "GAMBLING",
+          "verification_status": "verified",
+          "weight": 0,
+          "evidence_ref": "fp-g"
+        },
+        {
+          "code": "LABEL_CLASSIFICATION",
+          "category": "MIXER",
+          "verification_status": "reported",
+          "weight": 0,
+          "evidence_ref": "fp-m"
+        }
+      ]
+    }
+  },
+  {
+    "name": "disputed label zero",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "label",
+          "category": "SCAM",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "fp-x",
+          "verification_status": "disputed",
+          "confidence": "high"
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 0,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "DIRECT_LABEL",
+          "category": "SCAM",
+          "verification_status": "disputed",
+          "weight": 0,
+          "evidence_ref": "fp-x"
+        }
+      ]
+    }
+  },
+  {
+    "name": "dedup strongest wins",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "label",
+          "category": "SCAM",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "same-key",
+          "verification_status": "disputed",
+          "confidence": "low"
+        },
+        {
+          "kind": "label",
+          "category": "SCAM",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "same-key",
+          "verification_status": "verified",
+          "confidence": "high"
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 85,
+      "risk_level": "CRITICAL",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 85,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "DIRECT_LABEL",
+          "category": "SCAM",
+          "verification_status": "verified",
+          "weight": 85,
+          "evidence_ref": "same-key"
+        }
+      ]
+    }
+  },
+  {
+    "name": "provider observation sanctioned",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "provider_observation",
+          "category": "SANCTIONED",
+          "category_type": "LEGAL",
+          "source": "goplus",
+          "ref": "goplus:sanctioned",
+          "verification_status": "reported",
+          "confidence": "medium"
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 54,
+      "risk_level": "MEDIUM",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 54,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "PROVIDER_OBSERVATION",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 54,
+          "evidence_ref": "goplus:sanctioned"
+        }
+      ]
+    }
+  },
+  {
+    "name": "provider score bands",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "provider_score",
+          "source": "goplus",
+          "ref": "goplus:score",
+          "provider_score": 90
+        },
+        {
+          "kind": "provider_score",
+          "source": "publicaml",
+          "ref": "publicaml:score",
+          "provider_score": 55
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 20,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 20,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "PROVIDER_SCORE",
+          "weight": 20,
+          "evidence_ref": "goplus:score"
+        },
+        {
+          "code": "PROVIDER_SCORE",
+          "weight": 0,
+          "evidence_ref": "publicaml:score"
+        }
+      ]
+    }
+  },
+  {
+    "name": "provider score dedup highest",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "provider_score",
+          "source": "goplus",
+          "ref": "goplus:score",
+          "verification_status": "reported",
+          "provider_score": 30
+        },
+        {
+          "kind": "provider_score",
+          "source": "goplus",
+          "ref": "goplus:score",
+          "verification_status": "reported",
+          "provider_score": 75
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 10,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 10,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "PROVIDER_SCORE",
+          "verification_status": "reported",
+          "weight": 10,
+          "evidence_ref": "goplus:score"
+        }
+      ]
+    }
+  },
+  {
+    "name": "exposure hops mix",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 2,
+      "findings": [
+        {
+          "kind": "exposure",
+          "category": "SANCTIONED",
+          "source": "goplus",
+          "ref": "cp-1",
+          "verification_status": "reported",
+          "basis": "provider_reported",
+          "hops": 1
+        },
+        {
+          "kind": "exposure",
+          "category": "SANCTIONED",
+          "source": "goplus",
+          "ref": "cp-2",
+          "verification_status": "reported",
+          "basis": "provider_reported",
+          "hops": 2
+        },
+        {
+          "kind": "exposure",
+          "category": "SANCTIONED",
+          "source": "goplus",
+          "ref": "cp-3",
+          "verification_status": "reported",
+          "basis": "provider_reported",
+          "hops": 3
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 11,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 11,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 7,
+          "evidence_ref": "cp-1"
+        },
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 4,
+          "evidence_ref": "cp-2"
+        },
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 0,
+          "evidence_ref": "cp-3"
+        }
+      ]
+    }
+  },
+  {
+    "name": "exposure above max hops",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 1,
+      "findings": [
+        {
+          "kind": "exposure",
+          "category": "SANCTIONED",
+          "source": "goplus",
+          "ref": "cp-1",
+          "verification_status": "reported",
+          "basis": "provider_reported",
+          "hops": 2
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 0,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 0,
+          "evidence_ref": "cp-1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "exposure non-provider basis",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 2,
+      "findings": [
+        {
+          "kind": "exposure",
+          "category": "SCAM",
+          "source": "goplus",
+          "ref": "cp-1",
+          "verification_status": "reported",
+          "basis": "graph_trace",
+          "hops": 1
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 0,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SCAM",
+          "verification_status": "reported",
+          "weight": 0,
+          "evidence_ref": "cp-1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "exposure cap saturated",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 2,
+      "findings": [
+        {
+          "kind": "exposure",
+          "category": "SANCTIONED",
+          "source": "goplus",
+          "ref": "cp-a",
+          "verification_status": "reported",
+          "basis": "provider_reported",
+          "hops": 1
+        },
+        {
+          "kind": "exposure",
+          "category": "SANCTIONED",
+          "source": "goplus",
+          "ref": "cp-b",
+          "verification_status": "reported",
+          "basis": "provider_reported",
+          "hops": 1
+        },
+        {
+          "kind": "exposure",
+          "category": "SANCTIONED",
+          "source": "goplus",
+          "ref": "cp-c",
+          "verification_status": "reported",
+          "basis": "provider_reported",
+          "hops": 1
+        },
+        {
+          "kind": "exposure",
+          "category": "SANCTIONED",
+          "source": "goplus",
+          "ref": "cp-d",
+          "verification_status": "reported",
+          "basis": "provider_reported",
+          "hops": 1
+        },
+        {
+          "kind": "exposure",
+          "category": "SANCTIONED",
+          "source": "goplus",
+          "ref": "cp-e",
+          "verification_status": "reported",
+          "basis": "provider_reported",
+          "hops": 1
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 20,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 20,
+          "capped": true
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 7,
+          "evidence_ref": "cp-a"
+        },
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 7,
+          "evidence_ref": "cp-b"
+        },
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 7,
+          "evidence_ref": "cp-c"
+        },
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 7,
+          "evidence_ref": "cp-d"
+        },
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 7,
+          "evidence_ref": "cp-e"
+        }
+      ]
+    }
+  },
+  {
+    "name": "cross chain + stale + failed + not_evaluated",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "cross_chain_listing",
+          "category": "SANCTIONED",
+          "source": "ofac",
+          "ref": "sanctions_entity:9@bsc"
+        },
+        {
+          "kind": "snapshot_stale",
+          "source": "ofac",
+          "ref": "sanctions_snapshot"
+        },
+        {
+          "kind": "provider_failed",
+          "source": "chainabuse",
+          "ref": "chainabuse"
+        },
+        {
+          "kind": "not_evaluated",
+          "ref": "labels"
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 0,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "CROSS_CHAIN_LISTING",
+          "category": "SANCTIONED",
+          "weight": 0,
+          "evidence_ref": "sanctions_entity:9@bsc"
+        },
+        {
+          "code": "NOT_EVALUATED",
+          "weight": 0,
+          "evidence_ref": "labels"
+        },
+        {
+          "code": "PROVIDER_FAILED",
+          "weight": 0,
+          "evidence_ref": "chainabuse"
+        },
+        {
+          "code": "SNAPSHOT_STALE",
+          "weight": 0,
+          "evidence_ref": "sanctions_snapshot"
+        }
+      ]
+    }
+  },
+  {
+    "name": "combined formula cap 100",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 2,
+      "findings": [
+        {
+          "kind": "sanctions_direct",
+          "category": "SANCTIONED",
+          "source": "ofac",
+          "ref": "sdn-1"
+        },
+        {
+          "kind": "label",
+          "category": "HACK",
+          "category_type": "MALICIOUS_ACTIVITY",
+          "source": "wallet_attribution",
+          "ref": "fp",
+          "verification_status": "verified",
+          "confidence": "high"
+        },
+        {
+          "kind": "exposure",
+          "category": "SANCTIONED",
+          "source": "goplus",
+          "ref": "c1",
+          "verification_status": "reported",
+          "basis": "provider_reported",
+          "hops": 1
+        },
+        {
+          "kind": "provider_score",
+          "source": "goplus",
+          "ref": "goplus:score",
+          "provider_score": 99
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 100,
+      "risk_level": "CRITICAL",
+      "flags": [
+        "DIRECT_SANCTIONS"
+      ],
+      "blocks": {
+        "direct": {
+          "subtotal": 100,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 7,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 20,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "DIRECT_SANCTIONS_MATCH",
+          "category": "SANCTIONED",
+          "verification_status": "verified",
+          "weight": 100,
+          "evidence_ref": "sdn-1"
+        },
+        {
+          "code": "DIRECT_LABEL",
+          "category": "HACK",
+          "verification_status": "verified",
+          "weight": 90,
+          "evidence_ref": "fp"
+        },
+        {
+          "code": "PROVIDER_SCORE",
+          "weight": 20,
+          "evidence_ref": "goplus:score"
+        },
+        {
+          "code": "EXPOSURE_PROVIDER",
+          "category": "SANCTIONED",
+          "verification_status": "reported",
+          "weight": 7,
+          "evidence_ref": "c1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown kind surfaced",
+    "findingset": {
+      "has_usable_data": true,
+      "max_hops": 0,
+      "findings": [
+        {
+          "kind": "future_kind",
+          "source": "x",
+          "ref": "y"
+        }
+      ]
+    },
+    "verdict": {
+      "policy_version": "v1.0.0",
+      "score": 0,
+      "risk_level": "LOW",
+      "flags": null,
+      "blocks": {
+        "direct": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "exposure": {
+          "subtotal": 0,
+          "capped": false
+        },
+        "other": {
+          "subtotal": 0,
+          "capped": false
+        }
+      },
+      "reasons": [
+        {
+          "code": "NOT_EVALUATED",
+          "weight": 0,
+          "evidence_ref": "y"
+        }
+      ]
+    }
+  }
+]

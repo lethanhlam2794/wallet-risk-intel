@@ -505,7 +505,8 @@ func TestService_PersistFailed_AuditRow(t *testing.T) {
 	w, err := wallet.NewService(q).GetOrCreate(ctx, testNet(), testAddr, testAddr)
 	require.NoError(t, err)
 
-	require.NoError(t, svc.persistFailed(w.ID, canonical(DefaultOptions())))
+	require.NoError(t, svc.persistFailed(w.ID, canonical(DefaultOptions()),
+		svc.resolvePolicy(canonical(DefaultOptions()))))
 
 	var row db.ScreeningResult
 	rows, err := q.ListScreeningResultsByWallet(ctx,
@@ -565,4 +566,94 @@ func TestService_StaleSnapshot_Partial(t *testing.T) {
 		}
 	}
 	assert.True(t, sawStale, "staleness must be an explicit reason")
+}
+
+// --- Remediation round 1: service-level v1.1 coverage (major #4) ---
+
+// v1.1 end-to-end: persisted scoring_policy_version="v1.1.0",
+// absent on-chain coverage → PARTIAL (degraded leg + usable sanctions),
+// and the absent coverage triggers warm-index enqueue.
+func TestService_V11_PersistedPolicyAbsentCoverage(t *testing.T) {
+	pool := testutil.RequireTestPoolDSN(t, testDSN)
+	var enqueued atomic.Int32
+	svc := New(Deps{
+		Pool: pool, Queries: db.New(pool),
+		Sanctions: &fakeSanctions{
+			lookup: &sanctions.WalletLookup{}, status: DataAvailable},
+		Labels:  &fakeLabels{status: DataUnavailable},
+		Wallets: wallet.NewService(db.New(pool)),
+		Policy:  scoring.PolicyV1_1,
+		Enqueuer: func(context.Context, int64, string) {
+			enqueued.Add(1)
+		},
+	})
+	res := runScreening(t, svc, DefaultOptions())
+	assert.Equal(t, "v1.1.0", res.Scoring.PolicyVersion)
+	assert.Equal(t, StatusPartial, res.Status,
+		"absent onchain coverage degrades → PARTIAL, never COMPLETED")
+	assert.Equal(t, "absent", res.Exposures.Coverage.OnchainCoverage)
+	row := storedRow(t, pool, res.ScreeningID)
+	assert.Equal(t, "v1.1.0", row.ScoringPolicyVersion)
+	assert.Equal(t, int32(1), enqueued.Load(),
+		"absent coverage must trigger warm-index enqueue")
+}
+
+// A5 v1 envelope parity: under v1.0.0 no v1.1 wire keys exist — the
+// exposures block marshals without onchain_coverage/source_address/
+// meaningful_count, and the stored body is byte-faithful.
+func TestService_V1_EnvelopeParity(t *testing.T) {
+	pool := testutil.RequireTestPoolDSN(t, testDSN)
+	svc := newService(t, pool,
+		&fakeSanctions{lookup: &sanctions.WalletLookup{}, status: DataAvailable},
+		&fakeLabels{status: DataUnavailable},
+		nil)
+	res := runScreening(t, svc, DefaultOptions())
+	raw, err := json.Marshal(res.Exposures)
+	require.NoError(t, err)
+	for _, key := range []string{
+		"onchain_coverage", "source_address", "meaningful_count",
+		"taint_kind", "basis", "tx_hashes"} {
+		assert.NotContains(t, string(raw), key, "v1 wire must not emit %s", key)
+	}
+}
+
+// Round-2 nit: per-request policy_version overrides the deployment
+// policy in both directions, and the RESOLVED policy is persisted.
+func TestService_RequestPolicyOverrideBothDirections(t *testing.T) {
+	pool := testutil.RequireTestPoolDSN(t, testDSN)
+	newSvc := func(policy string) *Service {
+		return New(Deps{
+			Pool: pool, Queries: db.New(pool),
+			Sanctions: &fakeSanctions{
+				lookup: &sanctions.WalletLookup{}, status: DataAvailable},
+			Labels:  &fakeLabels{status: DataUnavailable},
+			Wallets: wallet.NewService(db.New(pool)),
+			Policy:  policy,
+		})
+	}
+
+	// Deployment v1.1 + request v1.0.0 → v1 verdict, persisted v1.0.0.
+	svc11 := newSvc(scoring.PolicyV1_1)
+	opts := DefaultOptions()
+	opts.PolicyVersion = "v1.0.0"
+	res := runScreening(t, svc11, opts)
+	assert.Equal(t, "v1.0.0", res.Scoring.PolicyVersion)
+	assert.Equal(t, "v1.0.0",
+		storedRow(t, pool, res.ScreeningID).ScoringPolicyVersion)
+	// v1 resolved → the onchain leg never ran: no coverage key.
+	raw, err := json.Marshal(res.Exposures)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "onchain_coverage")
+
+	// Deployment v1.0.0 + request v1.1.0 → v1.1 verdict, persisted
+	// v1.1.0, onchain leg ran (absent coverage → PARTIAL).
+	svc10 := newSvc(scoring.PolicyV1)
+	opts2 := DefaultOptions()
+	opts2.PolicyVersion = "v1.1.0"
+	res2 := runScreening(t, svc10, opts2)
+	assert.Equal(t, "v1.1.0", res2.Scoring.PolicyVersion)
+	assert.Equal(t, "v1.1.0",
+		storedRow(t, pool, res2.ScreeningID).ScoringPolicyVersion)
+	assert.Equal(t, "absent", res2.Exposures.Coverage.OnchainCoverage)
+	assert.Equal(t, StatusPartial, res2.Status)
 }

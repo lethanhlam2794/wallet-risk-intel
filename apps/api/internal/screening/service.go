@@ -70,6 +70,17 @@ type Deps struct {
 	Wallets    WalletStore
 	Logger     *slog.Logger
 	Metrics    *metrics.Metrics
+	// Policy is the deployment scoring policy (SCORING_POLICY). Empty
+	// falls back to scoring.PolicyV1; a request's
+	// options.policy_version overrides it.
+	Policy string
+	// PriceTable is the v1.1 materiality seam; nil → pinned defaults.
+	PriceTable scoring.PriceTableV1_1
+	// FreshTTL is the index-state staleness horizon (IndexingFreshTTL).
+	FreshTTL time.Duration
+	// Enqueuer enqueues the candidate for warm indexing when v1.1 finds
+	// no index coverage (self-healing rollout). Nil-safe.
+	Enqueuer func(ctx context.Context, networkID int64, addr string)
 	// Deadline bounds the detached pipeline; <=0 → 30s default.
 	Deadline time.Duration
 }
@@ -130,10 +141,23 @@ func (s *Service) Run(ctx context.Context, net network.Network,
 	return res, err
 }
 
+// resolvePolicy picks the scoring policy for this run: the request
+// override, then the deployment default, then v1.
+func (s *Service) resolvePolicy(req CanonicalRequest) string {
+	if req.Options.PolicyVersion != "" {
+		return req.Options.PolicyVersion
+	}
+	if s.d.Policy != "" {
+		return s.d.Policy
+	}
+	return scoring.PolicyV1
+}
+
 func (s *Service) run(ctx context.Context, net network.Network,
 	req CanonicalRequest, meta RunMeta) (*Result, error) {
 
 	opts := req.Options
+	policy := s.resolvePolicy(req)
 
 	// 1. Resolve/create the wallet row — FK target for persistence and
 	// provider observations. A failure here is pre-resolution: no row.
@@ -194,6 +218,26 @@ func (s *Service) run(ctx context.Context, net network.Network,
 	} else {
 		g.enrichNil = true
 	}
+	// 2b. v1.1 onchain analyzer leg — indexed data only, runs only when
+	// include_exposure ∧ resolved policy v1.1. Never calls EnsureIndexed
+	// or any provider.
+	if opts.IncludeExposure && policy == scoring.PolicyV1_1 && s.d.Queries != nil {
+		eg.Go(func() error {
+			pt := s.d.PriceTable
+			if pt == nil {
+				pt = scoring.DefaultPriceTableV1_1()
+			}
+			az := &exposureAnalyzer{
+				store: s.d.Queries, prices: pt,
+				freshTTL: s.d.FreshTTL, now: time.Now}
+			o := az.analyze(egctx, net.ID, net.Code, w.ID, req.Address)
+			g.onchain = &o
+			if o.onchainCoverage == "absent" && s.d.Enqueuer != nil {
+				s.d.Enqueuer(egctx, net.ID, req.Address)
+			}
+			return nil
+		})
+	}
 	_ = eg.Wait()
 
 	// 3. Category map for provider-observation category_type resolution.
@@ -210,16 +254,21 @@ func (s *Service) run(ctx context.Context, net network.Network,
 	}
 
 	// 4. Fold → map → score.
-	m := mapGathered(g, opts, catTypes)
+	m := mapGathered(g, opts, catTypes, policy)
 	maxHops := 0
 	if opts.IncludeExposure {
 		maxHops = opts.MaxHops
 	}
-	verdict := scoring.Evaluate(scoring.FindingSet{
-		HasUsableData: m.usable > 0,
-		MaxHops:       maxHops,
-		Findings:      m.findings,
-	})
+	svcClassified := false
+	if g.onchain != nil {
+		svcClassified = g.onchain.serviceClassified
+	}
+	verdict := scoring.EvaluateFor(scoring.FindingSet{
+		HasUsableData:              m.usable > 0,
+		MaxHops:                    maxHops,
+		CandidateServiceClassified: svcClassified,
+		Findings:                   m.findings,
+	}, policy)
 
 	// 5. Compose the §9.7 result.
 	screenedAt := time.Now().UTC()
@@ -259,7 +308,7 @@ func (s *Service) run(ctx context.Context, net network.Network,
 		// pipeline context may already be dead (deadline/drift), so the
 		// audit row gets a fresh bounded context; the claim is still
 		// released by the caller so a retry is never held hostage.
-		if ferr := s.persistFailed(w.ID, req); ferr != nil {
+		if ferr := s.persistFailed(w.ID, req, policy); ferr != nil {
 			s.log().Warn("failed-screening audit row not persisted",
 				"request_id", meta.RequestID, "error", ferr)
 		}
@@ -275,7 +324,8 @@ func (s *Service) run(ctx context.Context, net network.Network,
 // wallet's screening failed, per plan §3.5. The error message is a
 // static sanitized string: the result blob is replayed verbatim to
 // clients, so raw driver/schema detail must never be persisted.
-func (s *Service) persistFailed(walletID int64, req CanonicalRequest) error {
+func (s *Service) persistFailed(walletID int64, req CanonicalRequest,
+	policy string) error {
 	if s.d.Pool == nil || s.d.Queries == nil {
 		return fmt.Errorf("no persistence configured")
 	}
@@ -307,7 +357,7 @@ func (s *Service) persistFailed(walletID int64, req CanonicalRequest) error {
 			Labels:    SnapshotStatus{DataStatus: DataUnavailable},
 		},
 		Scoring: ScoringBlock{
-			PolicyVersion: scoring.PolicyV1,
+			PolicyVersion: policy,
 			RiskLevel:     scoring.RiskUnknown,
 			Flags:         []string{},
 			Blocks:        scoring.Blocks{},
@@ -337,7 +387,7 @@ func (s *Service) persistFailed(walletID int64, req CanonicalRequest) error {
 		RiskScore:            pgtype.Int2{},
 		RiskLevel:            res.RiskLevel,
 		ScreeningStatus:      StatusFailed,
-		ScoringPolicyVersion: scoring.PolicyV1,
+		ScoringPolicyVersion: policy,
 		Findings:             []byte("[]"),
 		ProviderStatus:       providerJSON,
 		ScreenedAt:           pgtype.Timestamptz{Time: screenedAt, Valid: true},

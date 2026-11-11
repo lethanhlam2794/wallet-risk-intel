@@ -56,6 +56,7 @@ import (
 	"checkwallet/internal/provider/walletattribution"
 	"checkwallet/internal/providerconfig"
 	"checkwallet/internal/sanctions"
+	"checkwallet/internal/scoring"
 	"checkwallet/internal/screening"
 	"checkwallet/internal/systemuser"
 	"checkwallet/internal/tracing"
@@ -110,6 +111,20 @@ func run() error {
 	resolver, err := loadResolver(ctx, queries)
 	if err != nil {
 		return err
+	}
+
+	// A14: SCORING_ASSET_PRICES overlay keys must name networks the
+	// resolver actually serves — validated here at wiring, where the
+	// active code set exists.
+	if len(cfg.ScoringAssetPrices) > 0 {
+		active := map[string]bool{}
+		for _, n := range resolver.List() {
+			active[n.Code] = true
+		}
+		if err := scoring.ValidateScoringAssetPriceNetworks(
+			cfg.ScoringAssetPrices, active); err != nil {
+			return err
+		}
 	}
 
 	// DB-managed provider config: any resolution error is boot-fatal and
@@ -183,6 +198,16 @@ func run() error {
 		Wallets:    wallet.NewService(queries),
 		Logger:     log,
 		Metrics:    m,
+		Policy:     cfg.ScoringPolicy,
+		PriceTable: scoring.DefaultPriceTableV1_1(),
+		FreshTTL:   cfg.IndexingFreshTTL,
+		Enqueuer: func(ctx context.Context, netID int64, addr string) {
+			if err := warmindex.NewQueue(queries, cfg.WarmIndexEnabled, log).
+				Enqueue(ctx, netID, addr, warmindex.PriorityRiskyLabel,
+					"exposure_v11_absent_coverage", nil); err != nil {
+				log.Warn("warmindex enqueue failed", "error", err)
+			}
+		},
 	})
 
 	// Transaction-indexing providers (spec §19 phase 6). Both adapters are

@@ -2184,6 +2184,18 @@ components:
               default: false
               description: Bypass the provider cache when the refresh
                 cooldown allows it.
+            policy_version:
+              type: string
+              enum: ["v1.0.0", "v1.1.0"]
+              description: |
+                Scoring policy for this request. Absent → the deployment
+                `SCORING_POLICY` default (itself defaulting to v1.0.0).
+                `v1.1.0` (diversity-weighted exposure) adds on-chain
+                evidence computed from indexed transactions: distinct
+                risky-source weighting (30 + 7×(n−1) per meaningful
+                inbound), a $100 materiality floor, a 70-point exposure
+                cap, and coverage-honesty fields. Unknown values are
+                rejected with 400 before the idempotency claim.
     ScreeningResult:
       type: object
       description: |
@@ -2247,41 +2259,99 @@ components:
     ScreeningExposure:
       type: object
       description: |
-        Provider-reported indirect exposure — `basis` is always
-        `provider_reported`; never under `transaction_evidence` and
-        never proof of ownership.
+        Indirect exposure evidence — provider-reported (`basis =
+        provider_reported`) or indexed on-chain (`basis =
+        onchain_computed`, v1.1.0 only); never under
+        `transaction_evidence` and never proof of ownership.
       properties:
         counterparty: { type: string }
         category: { type: string }
         hops: { type: integer }
-        direction: { type: string }
+        direction:
+          type: string
+          enum: [INBOUND, OUTBOUND, inbound, outbound, mixed]
+          description: |
+            Transfer direction relative to the screened wallet. Under
+            v1.1.0 the normalized vocabulary `INBOUND`/`OUTBOUND` is
+            emitted on every item (provider rows are normalized at
+            mapping); under v1.0.0 the raw provider vocabulary is
+            preserved byte-for-byte.
         provider_score: { type: number }
         source: { type: string }
         basis:
           type: string
-          enum: [provider_reported]
+          enum: [provider_reported, onchain_computed]
         scored:
           type: boolean
           description: |
-            Whether hops satisfied `max_hops` ∧ ≤ 2. Unscored items are
-            listed as reported evidence, never silently dropped.
+            Whether hops satisfied `max_hops` ∧ ≤ 2 (v1.0.0) or the item
+            is emit-time eligible under v1.1.0 (tainted ∧ meaningful
+            inbound). Unscored items are listed as reported evidence,
+            never silently dropped.
+        source_address:
+          type: string
+          description: v1.1.0 — normalized counterparty address used for
+            engine-side source dedupe (onchain + provider items).
+        meaningful_count:
+          type: integer
+          description: v1.1.0 — confirmed inbound transfers from this
+            source priced ≥ $100 under the pinned table.
+        tx_hashes:
+          type: array
+          items: { type: string }
+          description: v1.1.0 — first ≤10 meaningful-transfer tx hashes.
+        coverage:
+          type: string
+          enum: [complete, partial]
+          description: v1.1.0 — per-finding evidence completeness.
+        reason:
+          type: string
+          enum: [below_materiality_floor, unpriced_asset,
+                 unassessable_amount]
+          description: v1.1.0 — why a tainted source scored zero.
+            `unassessable_amount` covers transfers whose raw amounts
+            could not be interpreted; `unpriced_asset` covers assets
+            absent from the price table.
+        taint_kind:
+          type: string
+          enum: [direct, chain]
+          description: v1.1.0 — taint provenance (direct label/sanctions
+            or one-level receiver-of-tainted chain).
     ScreeningCoverage:
       type: object
       properties:
         tracing:
           type: string
-          enum: [provider_reported_only, bounded_bfs]
+          enum: [provider_reported_only, bounded_bfs,
+                 "provider_reported+onchain_computed"]
           description: >-
-            Own-graph tracing is provider_reported_only on this surface;
+            Own-graph tracing is provider_reported_only on this surface
+            (v1.0.0) or provider_reported+onchain_computed under v1.1.0;
             bounded_bfs is the /exposures method.
         max_hops_requested: { type: integer }
         disabled_by_request: { type: boolean }
+        onchain_coverage:
+          type: string
+          enum: [complete, partial, absent]
+          description: |
+            v1.1.0 — honesty signal for the indexed-evidence leg:
+            `absent` asserts no index coverage exists; `partial` covers
+            stale/partial/truncated state, scan-limit hits, source or
+            depth-2 bounds, unverifiable receiver checks, and query
+            degradation.
+        sources_evaluated:
+          type: integer
+          description: v1.1.0 — distinct on-chain sources evaluated.
+        sources_receiver_unchecked:
+          type: integer
+          description: v1.1.0 — sources whose chain-taint verdict could
+            not be verified (missing or unusable index state).
     ScreeningScoring:
       type: object
       properties:
         policy_version:
           type: string
-          enum: ["v1.0.0"]
+          enum: ["v1.0.0", "v1.1.0"]
         score:
           type: ["integer", "null"]
           minimum: 0
@@ -2316,13 +2386,19 @@ components:
           enum: [DIRECT_SANCTIONS_MATCH, DIRECT_LABEL,
                  LABEL_CLASSIFICATION, PROVIDER_OBSERVATION,
                  PROVIDER_SCORE, EXPOSURE_PROVIDER, CROSS_CHAIN_LISTING,
-                 SNAPSHOT_STALE, PROVIDER_FAILED, NOT_EVALUATED]
+                 SNAPSHOT_STALE, PROVIDER_FAILED, NOT_EVALUATED,
+                 EXPOSURE_ONCHAIN_SOURCE, EXPOSURE_PROVIDER_SOURCE,
+                 EXPOSURE_INFORMATIONAL, PROCEEDS_RECEIVER,
+                 POSSIBLE_VICTIM_CONTACT, SERVICE_CLASSIFIED_CANDIDATE]
         category: { type: string }
         verification_status:
           type: string
           enum: [verified, reported, unverified, disputed]
         weight: { type: integer }
         evidence_ref: { type: string }
+        detail:
+          type: string
+          description: v1.1.0 — finding reason or dedupe-suppression note.
     EvidenceRef:
       type: object
       description: |

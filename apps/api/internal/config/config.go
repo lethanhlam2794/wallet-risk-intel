@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"checkwallet/internal/scoring"
 )
 
 const defaultOFACSnapshotURL = "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN_ADVANCED.XML"
@@ -54,6 +56,14 @@ type Config struct {
 	EnrichmentNegativeTTL     time.Duration // degraded/negative cache TTL
 	EnrichmentRefreshCooldown time.Duration // refresh=1 quota guard cooldown (F3)
 	EnrichmentDeadline        time.Duration // provider fan-out parent deadline (F2)
+
+	// ScoringPolicy selects the scoring engine policy (SCORING_POLICY).
+	// Validated against scoring.KnownPolicy — unknown fails closed at boot.
+	ScoringPolicy string
+	// ScoringAssetPrices overlays the policy v1.1 pinned price table
+	// (SCORING_ASSET_PRICES JSON, "<net>:<asset|native>" keys). Changes
+	// v1.1 outcomes — treat as deployment-pinned config.
+	ScoringAssetPrices map[string]scoring.AssetPriceV1_1
 
 	// Transaction indexing providers (spec §11, phase 6).
 	EtherscanAPIKey        string
@@ -200,6 +210,7 @@ func Load() (*Config, error) {
 		PublicAMLAPIKey:            os.Getenv("PUBLICAML_API_KEY"),
 		ChainabuseBaseURL:          envOr("CHAINABUSE_BASE_URL", defaultChainabuseBaseURL),
 		ChainabuseAPIKey:           os.Getenv("CHAINABUSE_API_KEY"),
+		ScoringPolicy:              envOr("SCORING_POLICY", scoring.PolicyV1),
 		EnrichmentCacheTTL:         envDur("ENRICHMENT_CACHE_TTL", 15*time.Minute),
 		EnrichmentNegativeTTL:      envDur("ENRICHMENT_NEGATIVE_TTL", time.Minute),
 		EnrichmentRefreshCooldown:  envDur("ENRICHMENT_REFRESH_COOLDOWN", time.Minute),
@@ -256,8 +267,16 @@ func Load() (*Config, error) {
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("config: DATABASE_URL is required")
 	}
+	if !scoring.KnownPolicy(cfg.ScoringPolicy) {
+		return nil, fmt.Errorf("config: SCORING_POLICY: %q is not a registered scoring policy", cfg.ScoringPolicy)
+	}
 
 	var err error
+	if cfg.ScoringAssetPrices, err = scoring.ParseScoringAssetPrices(
+		os.Getenv("SCORING_ASSET_PRICES")); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	scoring.ApplyScoringAssetPrices(cfg.ScoringAssetPrices)
 	if cfg.OFACDownloadMaxBytes, err = envInt64("OFAC_DOWNLOAD_MAX_BYTES", 512<<20); err != nil {
 		return nil, err
 	}

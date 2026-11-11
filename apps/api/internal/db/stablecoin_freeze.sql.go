@@ -160,6 +160,9 @@ ON CONFLICT (network_id, normalized_address) DO NOTHING
 `
 
 // ---- publish ----
+// 'evm' literal: freeze-scan contracts are EVM-only upstream (scanner
+// NormalizeEVM); non-EVM stamping is an enablement task
+// (docs/tron-indexer-semantics.md §f).
 // wallet_address is the normalized lowercase form the scanner extracted
 // from the log — the chain provides exactly one representation, so
 // address and normalized_address coincide. network_id resolves per

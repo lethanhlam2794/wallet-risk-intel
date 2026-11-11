@@ -19,9 +19,15 @@ const (
 	// KindProviderScore is a provider-emitted numeric score; only the
 	// maximum band contributes to the other block (max, never sum).
 	KindProviderScore = "provider_score"
-	// KindExposure is a provider-reported counterparty exposure.
-	// Basis must be BasisProviderReported.
+	// KindExposure is a provider-reported or onchain-computed
+	// counterparty exposure. Basis identifies the evidence class.
 	KindExposure = "exposure"
+	// KindProceedsReceiver (v1.1) marks ≥1 meaningful inbound from a
+	// direct-tainted source — informational evidence, weight 0.
+	KindProceedsReceiver = "proceeds_receiver"
+	// KindPossibleVictimContact (v1.1) marks an outbound contact to a
+	// tainted counterparty — informational evidence, weight 0.
+	KindPossibleVictimContact = "possible_victim_contact"
 	// KindCrossChainListing is a cross-chain address observation —
 	// informational evidence, never a direct listing (AGENTS.md §5).
 	KindCrossChainListing = "cross_chain_listing"
@@ -41,6 +47,9 @@ const (
 	// BasisProviderReported is the only exposure basis in policy v1 —
 	// provider-reported counterparties, not graph-derived proof.
 	BasisProviderReported = "provider_reported"
+	// BasisOnchainComputed (v1.1) is computed from the indexed
+	// transactions table at screening time — never provider data.
+	BasisOnchainComputed = "onchain_computed"
 )
 
 // Verification statuses (wallet_labels.verification_status parity).
@@ -67,10 +76,17 @@ const (
 	ReasonProviderObservation  = "PROVIDER_OBSERVATION"
 	ReasonProviderScore        = "PROVIDER_SCORE"
 	ReasonExposureProvider     = "EXPOSURE_PROVIDER"
-	ReasonCrossChainListing    = "CROSS_CHAIN_LISTING"
-	ReasonSnapshotStale        = "SNAPSHOT_STALE"
-	ReasonProviderFailed       = "PROVIDER_FAILED"
-	ReasonNotEvaluated         = "NOT_EVALUATED"
+	// v1.1 reason codes.
+	ReasonExposureOnchainSource      = "EXPOSURE_ONCHAIN_SOURCE"
+	ReasonExposureProviderSource     = "EXPOSURE_PROVIDER_SOURCE"
+	ReasonExposureInformational      = "EXPOSURE_INFORMATIONAL"
+	ReasonProceedsReceiver           = "PROCEEDS_RECEIVER"
+	ReasonPossibleVictimContact      = "POSSIBLE_VICTIM_CONTACT"
+	ReasonServiceClassifiedCandidate = "SERVICE_CLASSIFIED_CANDIDATE"
+	ReasonCrossChainListing          = "CROSS_CHAIN_LISTING"
+	ReasonSnapshotStale              = "SNAPSHOT_STALE"
+	ReasonProviderFailed             = "PROVIDER_FAILED"
+	ReasonNotEvaluated               = "NOT_EVALUATED"
 )
 
 // Flags.
@@ -102,6 +118,15 @@ type Finding struct {
 	Basis              string `json:"basis,omitempty"`
 	Hops               int    `json:"hops,omitempty"`
 	ProviderScore      *int   `json:"provider_score,omitempty"`
+	// v1.1 evidence fields — all additive omitempty so v1 payloads
+	// stay byte-identical.
+	SourceAddress   string   `json:"source_address,omitempty"`
+	Direction       string   `json:"direction,omitempty"` // "INBOUND" | "OUTBOUND"
+	MeaningfulCount int      `json:"meaningful_count,omitempty"`
+	TxHashes        []string `json:"tx_hashes,omitempty"`
+	Coverage        string   `json:"coverage,omitempty"` // "complete" | "partial"
+	Reason          string   `json:"reason,omitempty"`
+	TaintKind       string   `json:"taint_kind,omitempty"` // "direct" | "chain"
 }
 
 // DedupKey is the plan §3.5 dedup identity.
@@ -117,8 +142,13 @@ type FindingSet struct {
 	HasUsableData bool `json:"has_usable_data"`
 	// MaxHops is the request's exposure hop bound (0–2); exposures
 	// beyond it stay listed but unscored.
-	MaxHops  int       `json:"max_hops"`
-	Findings []Finding `json:"findings"`
+	MaxHops int `json:"max_hops"`
+	// CandidateServiceClassified (v1.1) is a dedicated engine input:
+	// the screening analyzer's verdict that the candidate itself
+	// carries a non-disputed service classification. Engine input
+	// only — never serialized into the findings JSONB column.
+	CandidateServiceClassified bool      `json:"-"`
+	Findings                   []Finding `json:"findings"`
 }
 
 // Reason is one explainable contribution (or explicit non-contribution)
@@ -129,6 +159,9 @@ type Reason struct {
 	VerificationStatus string `json:"verification_status,omitempty"`
 	Weight             int    `json:"weight"`
 	EvidenceRef        string `json:"evidence_ref,omitempty"`
+	// Detail (v1.1) carries Finding.Reason or a dedupe note for
+	// explainability — additive omitempty.
+	Detail string `json:"detail,omitempty"`
 }
 
 // BlockScore reports one scoring block's subtotal and whether its cap

@@ -166,6 +166,9 @@ type BulkResolveWalletsRow struct {
 
 // Bulk counterparty resolve (wallets.sql convention: the no-op DO UPDATE
 // forces RETURNING for pre-existing rows — none are omitted).
+// 'evm' literal: upstream feeds are EVM-only (buildRows NormalizeEVMs both
+// endpoints); non-EVM stamping is an enablement task
+// (docs/tron-indexer-semantics.md §f).
 func (q *Queries) BulkResolveWallets(ctx context.Context, arg BulkResolveWalletsParams) ([]BulkResolveWalletsRow, error) {
 	rows, err := q.db.Query(ctx, bulkResolveWallets, arg.Column1, arg.Column2)
 	if err != nil {
@@ -215,6 +218,167 @@ func (q *Queries) GetWalletIndexState(ctx context.Context, arg GetWalletIndexSta
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listConfirmedCounterpartyTransfers = `-- name: ListConfirmedCounterpartyTransfers :many
+SELECT t.id, t.tx_hash, t.transfer_index, t.transfer_type,
+       t.asset_identifier, t.amount_raw::text AS amount_raw,
+       t.block_number, t.block_timestamp,
+       CASE WHEN t.to_wallet_id = $1::bigint
+            THEN COALESCE(fw.normalized_address, '')
+            ELSE COALESCE(tw.normalized_address, '')
+       END::text AS counterparty_address,
+       CASE WHEN t.to_wallet_id = $1::bigint
+            THEN t.from_wallet_id
+            ELSE t.to_wallet_id
+       END AS counterparty_wallet_id
+FROM transactions t
+LEFT JOIN wallets fw ON fw.id = t.from_wallet_id
+LEFT JOIN wallets tw ON tw.id = t.to_wallet_id
+WHERE t.network_id = $2::bigint
+  AND t.confirmation_status = 'confirmed'
+  AND NOT t.is_error
+  AND (($3::text = 'in'
+        AND t.to_wallet_id = $1::bigint
+        AND (t.from_wallet_id IS NULL
+             OR t.from_wallet_id <> $1::bigint))
+    OR ($3::text = 'out'
+        AND t.from_wallet_id = $1::bigint
+        AND (t.to_wallet_id IS NULL
+             OR t.to_wallet_id <> $1::bigint)))
+ORDER BY t.block_timestamp, t.tx_hash, t.transfer_index
+LIMIT $4::bigint
+`
+
+type ListConfirmedCounterpartyTransfersParams struct {
+	WalletID  int64  `json:"wallet_id"`
+	NetworkID int64  `json:"network_id"`
+	Direction string `json:"direction"`
+	Lim       int64  `json:"lim"`
+}
+
+type ListConfirmedCounterpartyTransfersRow struct {
+	ID                   int64              `json:"id"`
+	TxHash               string             `json:"tx_hash"`
+	TransferIndex        string             `json:"transfer_index"`
+	TransferType         string             `json:"transfer_type"`
+	AssetIdentifier      pgtype.Text        `json:"asset_identifier"`
+	AmountRaw            string             `json:"amount_raw"`
+	BlockNumber          pgtype.Int8        `json:"block_number"`
+	BlockTimestamp       pgtype.Timestamptz `json:"block_timestamp"`
+	CounterpartyAddress  string             `json:"counterparty_address"`
+	CounterpartyWalletID interface{}        `json:"counterparty_wallet_id"`
+}
+
+// v1.1 exposure analyzer scan (phase-02): direction-bounded confirmed
+// transfer listing for one wallet. Only confirmed, non-error, non-self
+// rows move value — pending/error/self rows never reach the analyzer.
+// Declared scan order (block_timestamp, tx_hash, transfer_index) matches
+// the BFS convention so scan-limit truncation is deterministic.
+func (q *Queries) ListConfirmedCounterpartyTransfers(ctx context.Context, arg ListConfirmedCounterpartyTransfersParams) ([]ListConfirmedCounterpartyTransfersRow, error) {
+	rows, err := q.db.Query(ctx, listConfirmedCounterpartyTransfers,
+		arg.WalletID,
+		arg.NetworkID,
+		arg.Direction,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListConfirmedCounterpartyTransfersRow{}
+	for rows.Next() {
+		var i ListConfirmedCounterpartyTransfersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TxHash,
+			&i.TransferIndex,
+			&i.TransferType,
+			&i.AssetIdentifier,
+			&i.AmountRaw,
+			&i.BlockNumber,
+			&i.BlockTimestamp,
+			&i.CounterpartyAddress,
+			&i.CounterpartyWalletID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listConfirmedInboundToWallets = `-- name: ListConfirmedInboundToWallets :many
+SELECT t.id, t.tx_hash, t.transfer_index, t.transfer_type,
+       t.asset_identifier, t.amount_raw::text AS amount_raw,
+       t.block_number, t.block_timestamp,
+       t.to_wallet_id AS receiver_wallet_id,
+       COALESCE(fw.normalized_address, '') AS counterparty_address
+FROM transactions t
+LEFT JOIN wallets fw ON fw.id = t.from_wallet_id
+WHERE t.network_id = $1::bigint
+  AND t.confirmation_status = 'confirmed'
+  AND NOT t.is_error
+  AND t.to_wallet_id = ANY($2::bigint[])
+  AND (t.from_wallet_id IS NULL OR t.from_wallet_id <> t.to_wallet_id)
+ORDER BY t.block_timestamp, t.tx_hash, t.transfer_index
+LIMIT $3::bigint
+`
+
+type ListConfirmedInboundToWalletsParams struct {
+	NetworkID int64   `json:"network_id"`
+	WalletIds []int64 `json:"wallet_ids"`
+	Lim       int64   `json:"lim"`
+}
+
+type ListConfirmedInboundToWalletsRow struct {
+	ID                  int64              `json:"id"`
+	TxHash              string             `json:"tx_hash"`
+	TransferIndex       string             `json:"transfer_index"`
+	TransferType        string             `json:"transfer_type"`
+	AssetIdentifier     pgtype.Text        `json:"asset_identifier"`
+	AmountRaw           string             `json:"amount_raw"`
+	BlockNumber         pgtype.Int8        `json:"block_number"`
+	BlockTimestamp      pgtype.Timestamptz `json:"block_timestamp"`
+	ReceiverWalletID    pgtype.Int8        `json:"receiver_wallet_id"`
+	CounterpartyAddress string             `json:"counterparty_address"`
+}
+
+// Receiver-check scan (v1.1 phase-02): ONE bounded inbound listing over
+// the whole source-wallet set for chain-taint detection — confirmed,
+// non-error, non-self rows only, deterministic order.
+func (q *Queries) ListConfirmedInboundToWallets(ctx context.Context, arg ListConfirmedInboundToWalletsParams) ([]ListConfirmedInboundToWalletsRow, error) {
+	rows, err := q.db.Query(ctx, listConfirmedInboundToWallets, arg.NetworkID, arg.WalletIds, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListConfirmedInboundToWalletsRow{}
+	for rows.Next() {
+		var i ListConfirmedInboundToWalletsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TxHash,
+			&i.TransferIndex,
+			&i.TransferType,
+			&i.AssetIdentifier,
+			&i.AmountRaw,
+			&i.BlockNumber,
+			&i.BlockTimestamp,
+			&i.ReceiverWalletID,
+			&i.CounterpartyAddress,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTransactions = `-- name: ListTransactions :many
@@ -384,6 +548,52 @@ func (q *Queries) ListWalletEdges(ctx context.Context, arg ListWalletEdgesParams
 			&i.ConfirmationStatus,
 			&i.FromAddress,
 			&i.ToAddress,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWalletIndexStates = `-- name: ListWalletIndexStates :many
+SELECT network_id, wallet_id, source_id, indexed_until_block, indexed_at, status, error, rows_indexed, rows_skipped_missing_contract, rows_skipped_invalid_address, history_truncated, updated_at FROM wallet_index_state
+WHERE network_id = $1::bigint
+  AND wallet_id = ANY($2::bigint[])
+`
+
+type ListWalletIndexStatesParams struct {
+	NetworkID int64   `json:"network_id"`
+	WalletIds []int64 `json:"wallet_ids"`
+}
+
+// Bulk index-state read (phase-02): every per-source coverage row for
+// the candidate plus all on-chain source wallets in one round trip.
+func (q *Queries) ListWalletIndexStates(ctx context.Context, arg ListWalletIndexStatesParams) ([]WalletIndexState, error) {
+	rows, err := q.db.Query(ctx, listWalletIndexStates, arg.NetworkID, arg.WalletIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WalletIndexState{}
+	for rows.Next() {
+		var i WalletIndexState
+		if err := rows.Scan(
+			&i.NetworkID,
+			&i.WalletID,
+			&i.SourceID,
+			&i.IndexedUntilBlock,
+			&i.IndexedAt,
+			&i.Status,
+			&i.Error,
+			&i.RowsIndexed,
+			&i.RowsSkippedMissingContract,
+			&i.RowsSkippedInvalidAddress,
+			&i.HistoryTruncated,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

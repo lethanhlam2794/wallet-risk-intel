@@ -1,8 +1,9 @@
 package scoring
 
-// PolicyV1 is the only scoring policy version (spec §10.2). Scores are
-// reproducible by policy version — any weight change is a NEW version,
-// never a silent edit.
+// PolicyV1 is the original scoring policy version (spec §10.2),
+// registered in the KnownPolicies registry beside PolicyV1_1. Scores
+// are reproducible by policy version — any weight change is a NEW
+// version, never a silent edit.
 const PolicyV1 = "v1.0.0"
 
 // §10.1 risk-dimension → mechanism map:

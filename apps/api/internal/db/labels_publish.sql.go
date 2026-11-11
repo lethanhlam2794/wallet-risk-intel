@@ -105,6 +105,9 @@ ON CONFLICT (network_id, normalized_address) DO NOTHING
 
 // Atomic labels publish: staged run → live tables in ONE transaction.
 // $1 = source_id, $2 = run_id. Every step is set-based; no interpolated SQL.
+// 'evm' literal: all staged rows are pre-validated EVM addresses — see
+// normalized-address comment below; non-EVM stamping is an enablement task
+// (docs/tron-indexer-semantics.md §f).
 // wallets.address keeps the CSV spelling verbatim (spec §7.3); the
 // normalized form is derived identically to wallet.NormalizeEVM (all staged
 // rows are pre-validated EVM addresses).

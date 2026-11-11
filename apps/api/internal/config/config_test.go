@@ -183,3 +183,23 @@ func TestLoad_FreezeScanNumericErrors(t *testing.T) {
 		t.Setenv(key, "")
 	}
 }
+
+func TestLoad_ScoringPolicy(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://wallet:devonly@127.0.0.1:5433/check_wallet?sslmode=disable")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "v1.0.0", cfg.ScoringPolicy, "default must stay v1")
+
+	t.Setenv("SCORING_POLICY", "v1.1.0")
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, "v1.1.0", cfg.ScoringPolicy)
+
+	for _, bad := range []string{"bogus", "v2.0.0", "v1.2.0", "1.0.0"} {
+		t.Setenv("SCORING_POLICY", bad)
+		_, err = Load()
+		require.Error(t, err, "unknown SCORING_POLICY %q must fail closed", bad)
+		assert.Contains(t, err.Error(), "SCORING_POLICY")
+	}
+}

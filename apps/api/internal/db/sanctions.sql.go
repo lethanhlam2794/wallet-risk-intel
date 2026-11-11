@@ -11,6 +11,63 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const bulkMatchSanctionedAddresses = `-- name: BulkMatchSanctionedAddresses :many
+SELECT sw.normalized_address, se.id AS sanctions_entity_id,
+       se.external_entity_id, se.primary_name, se.entity_type,
+       src.code AS source_code
+FROM sanctions_wallets sw
+JOIN sanctions_entities se ON se.id = sw.sanctions_entity_id
+    AND se.revoked_at IS NULL
+JOIN data_sources src ON src.id = se.source_id
+WHERE sw.network_id = $1::bigint
+  AND sw.normalized_address = ANY($2::text[])
+  AND sw.revoked_at IS NULL
+`
+
+type BulkMatchSanctionedAddressesParams struct {
+	NetworkID int64    `json:"network_id"`
+	Addresses []string `json:"addresses"`
+}
+
+type BulkMatchSanctionedAddressesRow struct {
+	NormalizedAddress string      `json:"normalized_address"`
+	SanctionsEntityID int64       `json:"sanctions_entity_id"`
+	ExternalEntityID  string      `json:"external_entity_id"`
+	PrimaryName       string      `json:"primary_name"`
+	EntityType        pgtype.Text `json:"entity_type"`
+	SourceCode        string      `json:"source_code"`
+}
+
+// Bulk direct-match read (v1.1 phase-02): active sanctions listings over
+// a normalized-address set on one network — same semantics as
+// MatchSanctionsWallets (live entity + live listing, same network).
+func (q *Queries) BulkMatchSanctionedAddresses(ctx context.Context, arg BulkMatchSanctionedAddressesParams) ([]BulkMatchSanctionedAddressesRow, error) {
+	rows, err := q.db.Query(ctx, bulkMatchSanctionedAddresses, arg.NetworkID, arg.Addresses)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BulkMatchSanctionedAddressesRow{}
+	for rows.Next() {
+		var i BulkMatchSanctionedAddressesRow
+		if err := rows.Scan(
+			&i.NormalizedAddress,
+			&i.SanctionsEntityID,
+			&i.ExternalEntityID,
+			&i.PrimaryName,
+			&i.EntityType,
+			&i.SourceCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countProgramEntities = `-- name: CountProgramEntities :one
 SELECT count(*) FROM sanctions_entity_programs sep
 JOIN sanctions_entities se ON se.id = sep.sanctions_entity_id AND se.revoked_at IS NULL

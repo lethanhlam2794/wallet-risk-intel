@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -11,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"checkwallet/internal/db"
+	"checkwallet/internal/middleware"
+	"checkwallet/internal/network"
 	"checkwallet/internal/testutil"
 )
 
@@ -73,4 +76,65 @@ func TestHandler_PollVanishingClaim_Conflict(t *testing.T) {
 
 	assert.Equal(t, http.StatusConflict, w.Code)
 	assert.Contains(t, w.Body.String(), "IDEMPOTENCY_IN_FLIGHT")
+}
+
+// handlerResolver is a one-network resolver for Create-level tests.
+func handlerResolver() *network.Resolver {
+	return network.NewResolver([]network.Network{{
+		ID: 1, Namespace: "eip155", ChainReference: "1",
+		Code: "ethereum", Name: "Ethereum"}})
+}
+
+func postCreate(t *testing.T, h *Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/screenings",
+		strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(middleware.CtxClient, &middleware.ClientIdentity{ID: 1, Role: "reader"})
+	h.Create(c)
+	return w
+}
+
+// Unknown options.policy_version → 400 before requestHash/claim work —
+// a nil Queries would panic on the claim path, so reaching 400 proves
+// validation ran first.
+func TestHandler_UnknownPolicyVersion_400(t *testing.T) {
+	h := NewHandler(nil, handlerResolver(), nil, nil)
+	w := postCreate(t, h, `{"network":"ethereum","address":"`+testAddr+
+		`","options":{"policy_version":"v9.9.9"}}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "policy_version")
+}
+
+// A registered v1.1.0 passes validation and reaches the pipeline.
+func TestHandler_PolicyVersionV1_1_Accepted(t *testing.T) {
+	pool := testutil.RequireTestPoolDSN(t, testDSN)
+	q := db.New(pool)
+	svc := newService(t, pool,
+		&fakeSanctions{lookup: nil, status: DataAvailable},
+		&fakeLabels{status: DataAvailable}, nil)
+	h := NewHandler(svc, handlerResolver(), q, nil)
+
+	w := postCreate(t, h, `{"network":"ethereum","address":"`+testAddr+
+		`","options":{"policy_version":"v1.1.0"}}`)
+	assert.Equal(t, http.StatusCreated, w.Code, "%s", w.Body.String())
+}
+
+// Idempotency stability: policy_version participates in the canonical
+// hash (A/B separates claims) while absent stays byte-identical for
+// clients that never send it (A5).
+func TestRequestHash_PolicyVersionSeparatesClaims(t *testing.T) {
+	base := CanonicalRequest{Network: "ethereum", Address: testAddr,
+		Options: DefaultOptions()}
+	v11 := base
+	v11.Options.PolicyVersion = "v1.1.0"
+	v10 := base
+	v10.Options.PolicyVersion = "v1.0.0"
+
+	assert.NotEqual(t, requestHash(base), requestHash(v11),
+		"explicit v1.1.0 must hash differently from absent")
+	assert.NotEqual(t, requestHash(v10), requestHash(v11),
+		"explicit v1.0.0 and v1.1.0 are different A/B requests")
 }
